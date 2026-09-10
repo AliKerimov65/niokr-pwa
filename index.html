@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6fed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="НИОКР">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>НИОКР Команда</title>
+<style>
+:root{--bg:#0f1117;--card:#1a1d29;--card2:#22263a;--txt:#e8eaf2;--mut:#8b90a5;--acc:#2f6fed;--ok:#3ecf8e;--warn:#f5a623;--bad:#ef5350;}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column}
+header{padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--card);display:flex;align-items:center;gap:10px;border-bottom:1px solid #262a3d;position:sticky;top:0;z-index:5}
+header .dot{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+header .dot.off{background:var(--bad)}
+header h1{font-size:17px;flex:1}
+header small{color:var(--mut)}
+header button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:600}
+main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
+.tabbar{display:flex;background:var(--card);border-top:1px solid #262a3d;padding-bottom:env(safe-area-inset-bottom)}
+.tabbar button{flex:1;background:none;border:0;color:var(--mut);padding:9px 2px 11px;font-size:12px;cursor:pointer}
+.tabbar button .ic{display:block;font-size:21px;margin-bottom:2px}
+.tabbar button.on{color:var(--acc);font-weight:700}
+.card{background:var(--card);border:1px solid #262a3d;border-radius:12px;padding:12px;margin-bottom:10px}
+.card h3{font-size:15px;margin-bottom:4px;word-break:break-word}
+.mut{color:var(--mut);font-size:12.5px}
+.row{display:flex;gap:8px;align-items:center}
+input,textarea,select{background:var(--card2);border:1px solid #30344d;color:var(--txt);border-radius:10px;padding:10px;font:inherit;width:100%}
+button.pri{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600;white-space:nowrap}
+.ch{display:flex;flex-direction:column;gap:8px}
+.msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid #262a3d}
+.msg.me{align-self:flex-end;background:#1d2b52;border-color:#2b3c6b}
+.msg b{font-size:12.5px;color:#9db8ff}
+.msg .t{font-size:11px;color:var(--mut);margin-top:3px}
+.msg img{max-width:100%;border-radius:8px;margin-top:6px}
+.msg a{color:#9db8ff}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--mut);margin-right:5px}
+.badge.ok{background:#12362a;color:var(--ok)} .badge.warn{background:#3a2c10;color:var(--warn)} .badge.bad{background:#3a1515;color:var(--bad)}
+.composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid #262a3d}
+.composer input{flex:1}
+.composer button{background:var(--acc);color:#fff;border:0;border-radius:10px;width:46px;font-size:18px}
+.chans{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px}
+.chans button{flex:0 0 auto;background:var(--card2);border:1px solid #30344d;color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px}
+.chans button.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:none;align-items:flex-end}
+#overlay .sheet{background:var(--card);border-radius:18px 18px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-height:88vh;overflow-y:auto}
+#overlay h2{font-size:18px;margin-bottom:12px}
+ol{padding-left:20px} ol li{margin:8px 0}
+.hidden{display:none!important}
+h2.pt{font-size:16px;margin:4px 0 10px}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="net"></span>
+  <h1>НИОКР Команда</h1>
+  <small id="who"></small>
+  <button id="installBtn" class="hidden">Установить</button>
+</header>
+<main id="view"></main>
+<div id="chatComposer" class="composer hidden">
+  <button onclick="document.getElementById('fileInp').click()" title="Прикрепить">📎</button>
+  <input type="file" id="fileInp" class="hidden">
+  <input id="mText" placeholder="Сообщение…" autocomplete="off">
+  <button onclick="sendMsg()">➤</button>
+</div>
+<nav class="tabbar">
+  <button data-v="chat" class="on"><span class="ic">💬</span>Чат</button>
+  <button data-v="tasks"><span class="ic">✅</span>Задачи</button>
+  <button data-v="news"><span class="ic">📢</span>Объявления</button>
+  <button data-v="files"><span class="ic">📁</span>Файлы</button>
+</nav>
+
+<div id="overlay"><div class="sheet" id="sheet"></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d){ try{ return JSON.parse(localStorage.getItem('niokr_'+k)) ?? d }catch(e){ return d } },
+  set(k, v){ localStorage.setItem('niokr_'+k, JSON.stringify(v)) }
+};
+let me = store.get('user', null);
+let view = 'chat', chan = store.get('chan', 'Общий');
+const CHANNELS = ['Общий','Технические вопросы','Отчётность'];
+
+/* ---------- регистрация исполнителя ---------- */
+function onboarding(){
+  $('#sheet').innerHTML = `<h2>Вход исполнителя</h2>
+    <div class="card"><p class="mut" style="margin-bottom:10px">Укажите имя и роль в проекте. Данные хранятся только на устройстве.</p>
+    <input id="nm" placeholder="Фамилия И.О."><div style="height:8px"></div>
+    <select id="rl"><option>ГИП / руководитель</option><option>Главный инженер</option><option>Инженер-конструктор</option><option>Инженер-геотехник</option><option>Инженер ПТО</option><option>Сметчик</option><option>Лаборант</option><option>Другое</option></select>
+    <div style="height:12px"></div><button class="pri" style="width:100%" onclick="saveUser()">Войти</button></div>`;
+  $('#overlay').style.display = 'flex';
+}
+function saveUser(){
+  const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
+  me = {name:n, role:$('#rl').value}; store.set('user', me);
+  $('#overlay').style.display='none'; render();
+}
+if(!me) onboarding(); else render();
+
+/* ---------- навигация ---------- */
+document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
+  view = b.dataset.v;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
+  render();
+});
+
+function render(){
+  $('#who').textContent = me ? me.name.split(' ')[0] : '';
+  $('#chatComposer').classList.toggle('hidden', view!=='chat');
+  const v = $('#view'); v.innerHTML='';
+  if(view==='chat') renderChat(v);
+  if(view==='tasks') renderTasks(v);
+  if(view==='news') renderNews(v);
+  if(view==='files') renderFiles(v);
+  v.scrollTop = v.scrollHeight;
+}
+
+/* ---------- ЧАТ ---------- */
+function renderChat(v){
+  v.innerHTML = `<div class="chans">${CHANNELS.map(c =>
+    `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);render()">${c}</button>`).join('')}</div>
+    <div class="ch" id="msgs"></div>`;
+  const msgs = store.get('chat_'+chan, []);
+  $('#msgs').innerHTML = msgs.map(m => `<div class="msg ${m.n===me.name?'me':''}">
+    <b>${esc(m.n)}</b> <span class="mut">${m.r||''}</span><div>${esc(m.x)}</div>
+    ${m.f ? (m.img ? `<img src="${m.f}">` : `<a href="${m.f}" download="${esc(m.fn)}">📄 ${esc(m.fn)}</a>`) : ''}
+    <div class="t">${m.t}</div></div>`).join('') || '<p class="mut">Сообщений пока нет — начните обсуждение.</p>';
+}
+function sendMsg(){
+  const inp = $('#mText'), txt = inp.value.trim(); if(!txt) return;
+  push({n:me.name, r:me.role, x:txt, t:now()}); inp.value='';
+}
+function push(m){
+  const arr = store.get('chat_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); render();
+}
+$('#mText')?.addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
+$('#fileInp').addEventListener('change', e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => push({n:me.name, r:me.role, x:'', t:now(), f:r.result, fn:f.name, img:f.type.startsWith('image/')});
+  r.readAsDataURL(f); e.target.value='';
+});
+
+/* ---------- ЗАДАЧИ ---------- */
+function renderTasks(v){
+  const ts = store.get('tasks', []);
+  v.innerHTML = `<h2 class="pt">Задачи исполнителей</h2>
+  <div class="card"><input id="tt" placeholder="Новая задача…" style="margin-bottom:8px">
+    <div class="row"><select id="ta" style="flex:1">${['ГИП','ГИ','Конструктор','Геотехник','ПТО','Сметчик','Лаборатория'].map(a=>`<option>${a}</option>`).join('')}</select>
+    <input id="td" type="date" style="flex:1"></div>
+    <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addTask()">Добавить задачу</button></div>
+  <div id="tl">${taskList(ts)}</div>`;
+}
+function taskList(ts){
+  if(!ts.length) return '<p class="mut">Задач нет.</p>';
+  return ts.map((t,i)=>`<div class="card"><div class="row"><h3 style="flex:1">${esc(t.t)}</h3>
+    <span class="badge ${t.s==='Выполнено'?'ok':t.s==='В работе'?'warn':''}">${t.s}</span></div>
+    <p class="mut">Ответственный: ${esc(t.a)} · Срок: ${t.d||'—'}</p>
+    <div style="height:8px"></div><div class="row">
+    ${t.s!=='Выполнено'?`<button class="pri" onclick="setTask(${i},'В работе')">В работу</button>
+    <button class="pri" style="background:var(--ok)" onclick="setTask(${i},'Выполнено')">✔ Выполнено</button>`:''}
+    <button class="pri" style="background:var(--bad)" onclick="delTask(${i})">Удалить</button></div></div>`).join('');
+}
+function addTask(){
+  const t = $('#tt').value.trim(); if(!t) return;
+  const ts = store.get('tasks', []);
+  ts.unshift({t, a:$('#ta').value, d:$('#td').value, s:'Новая'}); store.set('tasks', ts); render();
+}
+function setTask(i,s){ const ts = store.get('tasks',[]); ts[i].s=s; store.set('tasks',ts); render(); }
+function delTask(i){ const ts = store.get('tasks',[]); ts.splice(i,1); store.set('tasks',ts); render(); }
+
+/* ---------- ОБЪЯВЛЕНИЯ ---------- */
+function renderNews(v){
+  const ns = store.get('news', []);
+  v.innerHTML = `<h2 class="pt">Объявления по проекту</h2>
+  <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
+  <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addNews()">Опубликовать</button></div>
+  ${ns.map((n,i)=>`<div class="card"><h3>${esc(n.t)}</h3><p class="mut">${n.a} · ${n.t2}</p>
+  <div style="height:8px"></div><button class="pri" style="background:var(--bad)" onclick="delNews(${i})">Удалить</button></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
+}
+function addNews(){
+  const t = $('#nt').value.trim(); if(!t) return;
+  const ns = store.get('news', []); ns.unshift({t, a:me.name, t2:now()}); store.set('news', ns); render();
+}
+function delNews(i){ const ns = store.get('news',[]); ns.splice(i,1); store.set('news',ns); render(); }
+
+/* ---------- ФАЙЛЫ ---------- */
+function renderFiles(v){
+  const fs = store.get('files', []);
+  v.innerHTML = `<h2 class="pt">Документы проекта</h2>
+  <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
+  <button class="pri" style="width:100%" onclick="addFile()">Загрузить документ</button>
+  <p class="mut" style="margin-top:8px">⚠️ Файлы хранятся локально на устройстве. Для общего облачного хранилища подключите сервер (см. README).</p></div>
+  ${fs.map((f,i)=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.n)}</h3><p class="mut">${f.s} · ${f.t}</p></div>
+  ${f.img?`<img src="${f.d}" style="width:56px;height:56px;object-fit:cover;border-radius:8px">`:''}
+  <a href="${f.d}" download="${esc(f.n)}" style="color:#9db8ff;font-size:22px">⬇</a>
+  <button class="pri" style="background:var(--bad)" onclick="delFile(${i})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
+}
+function addFile(){
+  const f = $('#projFile').files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    const fs = store.get('files', []);
+    fs.unshift({n:f.name, s:(f.size/1024).toFixed(1)+' КБ', t:now(), d:r.result, img:f.type.startsWith('image/')});
+    store.set('files', fs); render();
+  };
+  r.readAsDataURL(f);
+}
+function delFile(i){ const fs = store.get('files',[]); fs.splice(i,1); store.set('files',fs); render(); }
+
+/* ---------- утилиты ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function now(){ const d=new Date(); return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function netUpd(){ $('#net').classList.toggle('off', !navigator.onLine); }
+addEventListener('online', netUpd); addEventListener('offline', netUpd); netUpd();
+
+/* ---------- УСТАНОВКА PWA ---------- */
+let deferredPrompt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; $('#installBtn').classList.remove('hidden'); });
+$('#installBtn').onclick = async () => { if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('#installBtn').classList.add('hidden'); } };
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isInStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+if(isIOS && !isInStandalone && me){
+  setTimeout(()=>{
+    $('#sheet').innerHTML = `<h2>Установка на iPhone</h2><ol>
+      <li>Нажмите кнопку <b>«Поделиться»</b> в Safari (квадрат со стрелкой вверх).</li>
+      <li>Пролистайте вниз и выберите <b>«На экран "Домой"»</b>.</li>
+      <li>Нажмите <b>«Добавить»</b> — иконка появится на рабочем столе.</li></ol>
+      <p class="mut">Открывайте приложение с рабочего стола — оно будет работать в полноэкранном режиме и офлайн.</p>
+      <div style="height:12px"></div><button class="pri" style="width:100%" onclick="$('#overlay').style.display='none'">Понятно</button>`;
+    $('#overlay').style.display = 'flex';
+  }, 1200);
+}
+
+/* ---------- Service Worker ---------- */
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
