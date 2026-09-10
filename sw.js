@@ -1,6 +1,6 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v1';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'niokr-pwa-v2';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -12,6 +12,8 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // API Supabase и CDN не кэшируем — только статику приложения
+  if (e.request.url.includes('supabase.co') || e.request.url.includes('supabase-js')) return;
   e.respondWith(
     fetch(e.request).then(res => {
       const copy = res.clone();

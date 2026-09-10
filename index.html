@@ -54,12 +54,15 @@ button.pri{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:
 ol{padding-left:20px} ol li{margin:8px 0}
 .hidden{display:none!important}
 h2.pt{font-size:16px;margin:4px 0 10px}
+#syncBadge{font-size:10.5px;padding:3px 8px;border-radius:12px;background:var(--card2);color:var(--mut)}
+#syncBadge.on{background:#12362a;color:var(--ok)}
 </style>
 </head>
 <body>
 <header>
   <span class="dot" id="net"></span>
   <h1>НИОКР Команда</h1>
+  <span id="syncBadge">Локальный режим</span>
   <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button>
 </header>
@@ -79,20 +82,65 @@ h2.pt{font-size:16px;margin:4px 0 10px}
 
 <div id="overlay"><div class="sheet" id="sheet"></div></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const store = {
-  get(k, d){ try{ return JSON.parse(localStorage.getItem('niokr_'+k)) ?? d }catch(e){ return d } },
+  get(k, d){ try{ const v = JSON.parse(localStorage.getItem('niokr_'+k)); return v==null?d:v }catch(e){ return d } },
   set(k, v){ localStorage.setItem('niokr_'+k, JSON.stringify(v)) }
 };
 let me = store.get('user', null);
 let view = 'chat', chan = store.get('chan', 'Общий');
 const CHANNELS = ['Общий','Технические вопросы','Отчётность'];
 
+/* ---------- подключение Supabase ---------- */
+let sb = null, SYNC = false;
+try{
+  if(typeof SUPABASE_URL!=='undefined' && SUPABASE_URL.indexOf('YOUR_')===-1){
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    SYNC = true;
+  }
+}catch(e){}
+const cid = store.get('cid', null) || (function(){ const c = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random()); store.set('cid', c); return c; })();
+function syncBadge(){ const b = $('#syncBadge'); b.textContent = SYNC ? 'Синхронизация' : 'Локальный режим'; b.classList.toggle('on', SYNC); }
+async function sbList(table, eq){
+  let q = sb.from(table).select('*').order('created_at',{ascending:true}).limit(300);
+  if(eq) q = q.eq(eq[0], eq[1]);
+  const r = await q; return r.error ? [] : (r.data || []);
+}
+
+/* удалённые (общие) данные */
+let rMsgs = [], rTasks = null, rNews = null, rDocs = null;
+
+async function loadChan(){
+  if(!SYNC) return;
+  rMsgs = (await sbList('messages', ['channel', chan])).map(rowToMsg);
+  if(view==='chat') render();
+}
+function rowToMsg(m){
+  return { n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at),
+    f:m.file_url||null, fn:m.file_name||'', img:m.file_url && /\.(png|jpe?g|gif|webp)$/i.test(m.file_url||'') };
+}
+async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks'); if(view==='tasks') render(); }
+async function loadNews(){ if(!SYNC) return; rNews = await sbList('announcements').then(a=>a.reverse()); if(view==='news') render(); }
+async function loadDocs(){ if(!SYNC) return; rDocs = await sbList('documents').then(a=>a.reverse()); if(view==='files') render(); }
+
+function subscribeAll(){
+  sb.channel('niokr-sync')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, p => {
+      if(p.new.channel===chan && p.new.client_id!==cid){ rMsgs.push(rowToMsg(p.new)); if(view==='chat') render(); }
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, loadTasks)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'announcements'}, loadNews)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'documents'}, loadDocs)
+    .subscribe();
+}
+
 /* ---------- регистрация исполнителя ---------- */
 function onboarding(){
   $('#sheet').innerHTML = `<h2>Вход исполнителя</h2>
-    <div class="card"><p class="mut" style="margin-bottom:10px">Укажите имя и роль в проекте. Данные хранятся только на устройстве.</p>
+    <div class="card"><p class="mut" style="margin-bottom:10px">Укажите имя и роль в проекте.</p>
     <input id="nm" placeholder="Фамилия И.О."><div style="height:8px"></div>
     <select id="rl"><option>ГИП / руководитель</option><option>Главный инженер</option><option>Инженер-конструктор</option><option>Инженер-геотехник</option><option>Инженер ПТО</option><option>Сметчик</option><option>Лаборант</option><option>Другое</option></select>
     <div style="height:12px"></div><button class="pri" style="width:100%" onclick="saveUser()">Войти</button></div>`;
@@ -101,14 +149,18 @@ function onboarding(){
 function saveUser(){
   const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
   me = {name:n, role:$('#rl').value}; store.set('user', me);
-  $('#overlay').style.display='none'; render();
+  $('#overlay').style.display='none'; start();
 }
-if(!me) onboarding(); else render();
+function start(){
+  syncBadge(); render();
+  if(SYNC){ subscribeAll(); loadChan(); }
+}
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
   document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
+  if(SYNC){ if(view==='tasks'&&rTasks===null) loadTasks(); if(view==='news'&&rNews===null) loadNews(); if(view==='files'&&rDocs===null) loadDocs(); }
   render();
 });
 
@@ -122,103 +174,137 @@ function render(){
   if(view==='files') renderFiles(v);
   v.scrollTop = v.scrollHeight;
 }
+const scrollDown = () => { const v=$('#view'); v.scrollTop = v.scrollHeight; };
 
 /* ---------- ЧАТ ---------- */
+function msgHTML(m){
+  return `<div class="msg ${m.n===me.name?'me':''}">
+    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span><div>${esc(m.x)}</div>
+    ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
+    <div class="t">${m.t}</div></div>`;
+}
 function renderChat(v){
   v.innerHTML = `<div class="chans">${CHANNELS.map(c =>
-    `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);render()">${c}</button>`).join('')}</div>
+    `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
     <div class="ch" id="msgs"></div>`;
-  const msgs = store.get('chat_'+chan, []);
-  $('#msgs').innerHTML = msgs.map(m => `<div class="msg ${m.n===me.name?'me':''}">
-    <b>${esc(m.n)}</b> <span class="mut">${m.r||''}</span><div>${esc(m.x)}</div>
-    ${m.f ? (m.img ? `<img src="${m.f}">` : `<a href="${m.f}" download="${esc(m.fn)}">📄 ${esc(m.fn)}</a>`) : ''}
-    <div class="t">${m.t}</div></div>`).join('') || '<p class="mut">Сообщений пока нет — начните обсуждение.</p>';
+  const msgs = SYNC ? rMsgs : store.get('chat_'+chan, []);
+  $('#msgs').innerHTML = msgs.map(msgHTML).join('') ||
+    `<p class="mut">${SYNC?'Подключено. Сообщений пока нет — начните обсуждение.':'Сообщения хранятся локально (Supabase не настроен).'}</p>`;
+  scrollDown();
 }
-function sendMsg(){
+function pushLocal(m){ const arr = store.get('chat_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); if(!SYNC) render(); }
+async function sendMsg(){
   const inp = $('#mText'), txt = inp.value.trim(); if(!txt) return;
-  push({n:me.name, r:me.role, x:txt, t:now()}); inp.value='';
+  inp.value='';
+  if(SYNC){
+    const row = {channel:chan, author:me.name, role:me.role, body:txt, client_id:cid};
+    rMsgs.push(rowToMsgLocal(row)); render();
+    const {error} = await sb.from('messages').insert(row);
+    if(error) alert('Не удалось отправить: '+error.message);
+  } else pushLocal({n:me.name, r:me.role, x:txt, t:now()});
 }
-function push(m){
-  const arr = store.get('chat_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); render();
-}
+function rowToMsgLocal(m){ return {n:m.author, r:m.role, x:m.body, t:now()}; }
 $('#mText')?.addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
-$('#fileInp').addEventListener('change', e => {
-  const f = e.target.files[0]; if(!f) return;
-  const r = new FileReader();
-  r.onload = () => push({n:me.name, r:me.role, x:'', t:now(), f:r.result, fn:f.name, img:f.type.startsWith('image/')});
-  r.readAsDataURL(f); e.target.value='';
+$('#fileInp').addEventListener('change', async e => {
+  const f = e.target.files[0]; if(!f) return; e.target.value='';
+  if(SYNC){
+    try{
+      const path = cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, f);
+      if(up.error) throw up.error;
+      const {data:u} = sb.storage.from('files').getPublicUrl(path);
+      const row = {channel:chan, author:me.name, role:me.role, body:'', file_name:f.name, file_url:u.publicUrl, client_id:cid};
+      rMsgs.push(rowToMsg({...row, created_at:new Date().toISOString()})); render();
+      await sb.from('messages').insert(row);
+    }catch(err){ alert('Ошибка загрузки файла: '+err.message); }
+  } else {
+    const r = new FileReader();
+    r.onload = () => pushLocal({n:me.name, r:me.role, x:'', t:now(), f:r.result, fn:f.name, img:f.type.startsWith('image/')});
+    r.readAsDataURL(f);
+  }
 });
 
 /* ---------- ЗАДАЧИ ---------- */
 function renderTasks(v){
-  const ts = store.get('tasks', []);
+  const ts = SYNC ? (rTasks||[]) : store.get('tasks', []);
   v.innerHTML = `<h2 class="pt">Задачи исполнителей</h2>
   <div class="card"><input id="tt" placeholder="Новая задача…" style="margin-bottom:8px">
     <div class="row"><select id="ta" style="flex:1">${['ГИП','ГИ','Конструктор','Геотехник','ПТО','Сметчик','Лаборатория'].map(a=>`<option>${a}</option>`).join('')}</select>
     <input id="td" type="date" style="flex:1"></div>
     <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addTask()">Добавить задачу</button></div>
-  <div id="tl">${taskList(ts)}</div>`;
+  <div id="tl">${taskList(ts.slice().reverse())}</div>`;
 }
 function taskList(ts){
   if(!ts.length) return '<p class="mut">Задач нет.</p>';
-  return ts.map((t,i)=>`<div class="card"><div class="row"><h3 style="flex:1">${esc(t.t)}</h3>
-    <span class="badge ${t.s==='Выполнено'?'ok':t.s==='В работе'?'warn':''}">${t.s}</span></div>
-    <p class="mut">Ответственный: ${esc(t.a)} · Срок: ${t.d||'—'}</p>
+  return ts.map(t=>{ const i=t.id; return `<div class="card"><div class="row"><h3 style="flex:1">${esc(t.title)}</h3>
+    <span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></div>
+    <p class="mut">Ответственный: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'} · ${esc(t.author||'')}</p>
     <div style="height:8px"></div><div class="row">
-    ${t.s!=='Выполнено'?`<button class="pri" onclick="setTask(${i},'В работе')">В работу</button>
+    ${t.status!=='Выполнено'?`<button class="pri" onclick="setTask(${i},'В работе')">В работу</button>
     <button class="pri" style="background:var(--ok)" onclick="setTask(${i},'Выполнено')">✔ Выполнено</button>`:''}
-    <button class="pri" style="background:var(--bad)" onclick="delTask(${i})">Удалить</button></div></div>`).join('');
+    <button class="pri" style="background:var(--bad)" onclick="delTask(${i})">Удалить</button></div></div>`; }).join('');
 }
-function addTask(){
+async function addTask(){
   const t = $('#tt').value.trim(); if(!t) return;
-  const ts = store.get('tasks', []);
-  ts.unshift({t, a:$('#ta').value, d:$('#td').value, s:'Новая'}); store.set('tasks', ts); render();
+  if(SYNC){ await sb.from('tasks').insert({title:t, assignee:$('#ta').value, deadline:$('#td').value||null, status:'Новая', author:me.name}); loadTasks(); }
+  else { const ts = store.get('tasks', []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks', ts); render(); }
 }
-function setTask(i,s){ const ts = store.get('tasks',[]); ts[i].s=s; store.set('tasks',ts); render(); }
-function delTask(i){ const ts = store.get('tasks',[]); ts.splice(i,1); store.set('tasks',ts); render(); }
+async function setTask(id,s){ if(SYNC){ await sb.from('tasks').update({status:s}).eq('id',id); loadTasks(); } else { const ts=store.get('tasks',[]); const t=ts.find(x=>x.id===id); if(t){t.status=s; store.set('tasks',ts); render();} } }
+async function delTask(id){ if(SYNC){ await sb.from('tasks').delete().eq('id',id); loadTasks(); } else { store.set('tasks', store.get('tasks',[]).filter(x=>x.id!==id)); render(); } }
 
 /* ---------- ОБЪЯВЛЕНИЯ ---------- */
 function renderNews(v){
-  const ns = store.get('news', []);
+  const ns = SYNC ? (rNews||[]) : store.get('news', []);
   v.innerHTML = `<h2 class="pt">Объявления по проекту</h2>
   <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
   <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addNews()">Опубликовать</button></div>
-  ${ns.map((n,i)=>`<div class="card"><h3>${esc(n.t)}</h3><p class="mut">${n.a} · ${n.t2}</p>
-  <div style="height:8px"></div><button class="pri" style="background:var(--bad)" onclick="delNews(${i})">Удалить</button></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
+  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3><p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}</p>
+  <div style="height:8px"></div><button class="pri" style="background:var(--bad)" onclick="delNews(${n.id})">Удалить</button></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
 }
-function addNews(){
+async function addNews(){
   const t = $('#nt').value.trim(); if(!t) return;
-  const ns = store.get('news', []); ns.unshift({t, a:me.name, t2:now()}); store.set('news', ns); render();
+  if(SYNC){ await sb.from('announcements').insert({body:t, author:me.name}); loadNews(); }
+  else { const ns = store.get('news', []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news', ns); render(); }
 }
-function delNews(i){ const ns = store.get('news',[]); ns.splice(i,1); store.set('news',ns); render(); }
+async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news', store.get('news',[]).filter(x=>x.id!==id)); render(); } }
 
 /* ---------- ФАЙЛЫ ---------- */
 function renderFiles(v){
-  const fs = store.get('files', []);
+  const fs = SYNC ? (rDocs||[]) : store.get('files', []);
   v.innerHTML = `<h2 class="pt">Документы проекта</h2>
   <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
   <button class="pri" style="width:100%" onclick="addFile()">Загрузить документ</button>
-  <p class="mut" style="margin-top:8px">⚠️ Файлы хранятся локально на устройстве. Для общего облачного хранилища подключите сервер (см. README).</p></div>
-  ${fs.map((f,i)=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.n)}</h3><p class="mut">${f.s} · ${f.t}</p></div>
-  ${f.img?`<img src="${f.d}" style="width:56px;height:56px;object-fit:cover;border-radius:8px">`:''}
-  <a href="${f.d}" download="${esc(f.n)}" style="color:#9db8ff;font-size:22px">⬇</a>
-  <button class="pri" style="background:var(--bad)" onclick="delFile(${i})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
+  <p class="mut" style="margin-top:8px">${SYNC?'Файлы доступны всем исполнителям.':'Supabase не настроен — файлы хранятся локально на устройстве.'}</p></div>
+  ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
+  <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#9db8ff;font-size:22px">⬇</a>
+  <button class="pri" style="background:var(--bad)" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
-function addFile(){
+async function addFile(){
   const f = $('#projFile').files[0]; if(!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    const fs = store.get('files', []);
-    fs.unshift({n:f.name, s:(f.size/1024).toFixed(1)+' КБ', t:now(), d:r.result, img:f.type.startsWith('image/')});
-    store.set('files', fs); render();
-  };
-  r.readAsDataURL(f);
+  if(SYNC){
+    try{
+      const path = cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, f);
+      if(up.error) throw up.error;
+      const {data:u} = sb.storage.from('files').getPublicUrl(path);
+      await sb.from('documents').insert({name:f.name, size:(f.size/1024).toFixed(1)+' КБ', url:u.publicUrl, author:me.name});
+      loadDocs();
+    }catch(err){ alert('Ошибка загрузки: '+err.message); }
+  } else {
+    const r = new FileReader();
+    r.onload = () => { const fs = store.get('files', []); fs.unshift({id:Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', created_at:new Date().toISOString(), d:r.result}); store.set('files', fs); render(); };
+    r.readAsDataURL(f);
+  }
 }
-function delFile(i){ const fs = store.get('files',[]); fs.splice(i,1); store.set('files',fs); render(); }
+async function delFile(id){
+  if(SYNC){ await sb.from('documents').delete().eq('id',id); loadDocs(); }
+  else { store.set('files', store.get('files',[]).filter(x=>x.id!==id)); render(); }
+}
 
 /* ---------- утилиты ---------- */
-function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function now(){ const d=new Date(); return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function fmtT(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?iso:d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
 function netUpd(){ $('#net').classList.toggle('off', !navigator.onLine); }
 addEventListener('online', netUpd); addEventListener('offline', netUpd); netUpd();
 
@@ -234,14 +320,16 @@ if(isIOS && !isInStandalone && me){
       <li>Нажмите кнопку <b>«Поделиться»</b> в Safari (квадрат со стрелкой вверх).</li>
       <li>Пролистайте вниз и выберите <b>«На экран "Домой"»</b>.</li>
       <li>Нажмите <b>«Добавить»</b> — иконка появится на рабочем столе.</li></ol>
-      <p class="mut">Открывайте приложение с рабочего стола — оно будет работать в полноэкранном режиме и офлайн.</p>
-      <div style="height:12px"></div><button class="pri" style="width:100%" onclick="$('#overlay').style.display='none'">Понятно</button>`;
+      <div style="height:12px"></div><button class="pri" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Понятно</button>`;
     $('#overlay').style.display = 'flex';
   }, 1200);
 }
 
 /* ---------- Service Worker ---------- */
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- старт ---------- */
+if(me) start(); else onboarding();
 </script>
 </body>
 </html>
