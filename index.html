@@ -494,7 +494,7 @@ async function delItem(id, i){
 async function loadPosts(tabId){
   const {data} = await sb.from('posts').select('*').eq('tab_id',tabId).order('created_at');
   const el = $('#posts'); if(!el) return;
-  el.innerHTML = (data||[]).slice().reverse().map(p=>`<div class="card"><p>${esc(p.body)}</p><p class="mut" style="margin-top:4px">${esc(p.author||'')} · ${fmtT(p.created_at)}</p></div>`).join('') || '<p class="mut">Записей нет.</p>';
+  el.innerHTML = (data||[]).slice().reverse().map(p=>`<div class="card"><p>${linkify(p.body)}</p><p class="mut" style="margin-top:4px">${esc(p.author||'')} · ${fmtT(p.created_at)}</p></div>`).join('') || '<p class="mut">Записей нет.</p>';
 }
 async function addPost(tabId){
   const b = $('#pText').value.trim(); if(!b) return;
@@ -509,7 +509,7 @@ function renderCustomTab(v){
       <button class="pri" style="width:100%" onclick="window.open('${esc(url)}','_blank')">↗ Открыть</button></div>`;
   }
   if(t.kind === 'text'){
-    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div class="card">${esc(t.config.text||'Пусто.').replace(/\n/g,'<br>')}</div>
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div class="card">${linkify(t.config.text||'Пусто.').replace(/\n/g,'<br>')}</div>
       ${isOwner?`<button class="sec" style="width:100%" onclick="editTabText(${t.id})">✏️ Править текст</button>`:''}`;
   }
   if(t.kind === 'list'){
@@ -563,7 +563,7 @@ const teamIds = () => TEAM_MEMBERS.map(m => m.member);
 function msgHTML(m){
   const mine = m.n===me.name && m.id;
   return `<div class="msg ${m.n===me.name?'me':''}">
-    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span>${mine?` <span style="cursor:pointer" title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}<div>${esc(m.x)}</div>
+    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span>${mine?` <span style="cursor:pointer" title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}<div>${linkify(m.x)}</div>
     ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
     <div class="t">${m.t}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div></div>`;
 }
@@ -657,7 +657,7 @@ function renderStages(v){
     ${s.responsible?`<p class="mut" style="margin-top:6px">👤 Ответственный: ${esc(s.responsible)}</p>`:''}
     <details><summary>Содержание этапа (${(s.subs||[]).length})</summary><ul class="subs">${(s.subs||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>
     <div class="row" style="margin-top:8px"><input id="note_${s.id}" placeholder="Примечание по ходу работ…" value="${esc(s.note||'')}"><button class="sec" onclick="setStageNote(${s.id})">💾</button></div>
-    ${s.note?`<p class="mut" style="margin-top:6px">📝 ${esc(s.note)}</p>`:''}
+    ${s.note?`<p class="mut" style="margin-top:6px">📝 ${linkify(s.note)}</p>`:''}
   </div>`).join('');
   v.innerHTML = html;
 }
@@ -684,7 +684,7 @@ function renderTasks(v){
 }
 function taskList(ts){
   if(!ts.length) return '<p class="mut">Задач нет.</p>';
-  return ts.map(t=>`<div class="card"><div class="row"><h3 style="flex:1">${esc(t.title)}</h3>
+  return ts.map(t=>`<div class="card"><div class="row"><h3 style="flex:1">${linkify(t.title)}</h3>
     <span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></div>
     <p class="mut">Исполнитель: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'} · ${esc(t.author||'')}</p>
     <div style="height:8px"></div><div class="row">
@@ -710,7 +710,7 @@ function renderNews(v){
   <div class="row"><button class="sec" onclick="document.getElementById('annFileInp').click()">📎 Файл/фото</button>
   <button class="pri" style="flex:1" onclick="addNews()">Опубликовать</button></div></div>
   <input type="file" id="annFileInp" class="hidden" onchange="pickAnnFile(this)">
-  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3>
+  ${ns.map(n=>`<div class="card"><h3>${linkify(n.body)}</h3>
   ${n.file_url ? (/\.(png|jpe?g|gif|webp)$/i.test(n.file_url) ? `<img src="${n.file_url}" style="max-width:100%;border-radius:8px;margin-top:6px">` : `<a href="${n.file_url}" download="${esc(n.file_name||'file')}" target="_blank" style="color:var(--acc)">📄 ${esc(n.file_name||'файл')}</a>`) : ''}
   <p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p><p class="mut" style="margin-top:2px">👁 Прочтение${readReceipt('ann', n.id)}</p>
   <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
@@ -979,6 +979,12 @@ function subscribeAll(){
 }
 
 /* ---------- утилиты ---------- */
+function linkify(s){
+  return esc(s).replace(/(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/g, function(u){
+    const href = u.indexOf('http')===0 ? u : 'https://' + u;
+    return `<a href="${href}" target="_blank" rel="noopener">${u}</a>`;
+  });
+}
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function now(){ const d=new Date(); return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
 function fmtT(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?iso:d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
