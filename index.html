@@ -966,6 +966,7 @@ function memberCard(name){
      <div style="height:12px"></div>
      <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
      ${(isSelf || (team&&team.is_owner))?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard('${esc(name)}')">✏️ Редактировать карточку</button>`:''}
+     ${isSelf?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="window.open('https://max.ru/'+MAX_BOT_NAME+'?start=pair_'+encodeURIComponent(me.name),'_blank')">🔗 Подключить MAX (получать сообщения сюда)</button>`:''}
      ${(team&&team.is_owner && !isSelf && MYTEAMS.filter(t=>t.id!==tid()).length)?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="moveMemberForm('${esc(name)}')">⇄ Переместить в другую мою команду</button>`:''}
      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
    </div>`;
@@ -1000,23 +1001,44 @@ function viaSms(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) 
 function viaWa(name){
   const m = MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('Не указан телефон');
   const t = msgText();
+  if(t && navigator.clipboard) navigator.clipboard.writeText(t).catch(()=>{});
   const digits = m.phone.replace(/[^\d]/g,'');
-  const wame = 'https://wa.me/' + digits + (t ? '?text=' + encodeURIComponent(t) : '');
-  if(/android/i.test(navigator.userAgent)){
-    // ШЛЮЗ Android: нативный intent открывает WhatsApp напрямую, без браузера
+  const ua = navigator.userAgent;
+  if(/android/i.test(ua)){
+    // Нативный шлюз Android: вызов приложения напрямую, НИКАКИХ веб-адресов (не зависит от блокировок)
     location.href = 'intent://send?phone=' + digits + (t ? '&text=' + encodeURIComponent(t) : '') + '#Intent;package=com.whatsapp;scheme=whatsapp;end';
-    setTimeout(() => { if(!document.hidden) window.open(wame, '_blank'); }, 900);
+  } else if(/iphone|ipad|ipod/i.test(ua)){
+    // iOS: whatsapp:// не требует интернета/веб; получателя выбирает в самом приложении (текст уже в буфере)
+    location.href = 'whatsapp://send' + (t ? '?text=' + encodeURIComponent(t) : '');
+    setTimeout(() => alert('Текст сообщения скопирован в буфер обмена. В WhatsApp выберите чат с «' + name + '» и вставьте. (iOS не разрешает указать получателя извне — ограничение Apple/WhatsApp)'), 700);
   } else {
-    // iOS / ПК: универсальная ссылка открывает приложение напрямую (при установленном WhatsApp)
-    window.open(wame, '_blank');
+    window.open('https://wa.me/' + digits + (t ? '?text=' + encodeURIComponent(t) : ''), '_blank');
   }
 }
 function viaTg(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.telegram) return alert('Не указан Telegram'); const t=msgText(); window.open('https://t.me/'+m.telegram.replace('@','')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
-function viaMax(name){
-  const m = MEMBERS.find(x=>x.name===name); if(!m||!m.max) return alert('В карточке участника не указан MAX');
-  let l = m.max.trim();
-  if(!/^https?:/i.test(l)) l = 'https://max.ru/' + (l[0]==='@' ? l : 'u/' + l.replace(/^u\//,''));
-  window.open(l, '_blank');
+const MAX_BOT_NAME = 'YOUR_MAX_BOT'; // имя бота-шлюза (подставлю после создания)
+async function viaMax(name){
+  const t = msgText() || ('Сообщение от ' + (me?me.name:'') + ' (НИОКР Команда)');
+  // ШЛЮЗ: если участник подключил MAX — отправляем напрямую, без открытия приложения
+  try{
+    const {data} = await sb.from('max_links').select('chat_id').eq('member', name).maybeSingle();
+    if(data && data.chat_id){
+      const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/max-bot', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'send', member:name, text:t})
+      });
+      const j = await r.json().catch(()=>({}));
+      if(r.ok && j.ok){ alert('Отправлено в MAX участнику «' + name + '» ✅'); return; }
+    }
+  }catch(e){}
+  const m = MEMBERS.find(x=>x.name===name);
+  if(m && m.max){
+    let l = m.max.trim();
+    if(!/^https?:/i.test(l)) l = 'https://max.ru/' + (l[0]==='@' ? l : 'u/' + l.replace(/^u\//,''));
+    window.open(l, '_blank');
+  } else {
+    alert('«' + name + '» ещё не подключил MAX. Попросите открыть свою карточку (Разное → себя) и нажать «Подключить MAX» — это одноразово, 10 секунд.');
+  }
 }
 function viaMail(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.email) return alert('Не указан e-mail'); const t=msgText(); location.href='mailto:'+m.email+(t?'?body='+encodeURIComponent(t):''); }
 function editCard(name){
