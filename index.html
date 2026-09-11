@@ -672,13 +672,38 @@ function renderNews(v){
   const ns = SYNC ? (rNews||[]) : store.get('news_'+(team?team.id:'x'), []);
   v.innerHTML = `<h2 class="pt">Объявления</h2>
   <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
-  <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addNews()">Опубликовать</button></div>
-  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3><p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p><p class="mut" style="margin-top:2px">👁 Прочтение${readReceipt('ann', n.id)}</p>
+  <div id="annFilePrev" style="margin-top:8px"></div>
+  <div style="height:8px"></div>
+  <div class="row"><button class="sec" onclick="document.getElementById('annFileInp').click()">📎 Файл/фото</button>
+  <button class="pri" style="flex:1" onclick="addNews()">Опубликовать</button></div></div>
+  <input type="file" id="annFileInp" class="hidden" onchange="pickAnnFile(this)">
+  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3>
+  ${n.file_url ? (/\.(png|jpe?g|gif|webp)$/i.test(n.file_url) ? `<img src="${n.file_url}" style="max-width:100%;border-radius:8px;margin-top:6px">` : `<a href="${n.file_url}" download="${esc(n.file_name||'file')}" target="_blank" style="color:var(--acc)">📄 ${esc(n.file_name||'файл')}</a>`) : ''}
+  <p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p><p class="mut" style="margin-top:2px">👁 Прочтение${readReceipt('ann', n.id)}</p>
   <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
+}
+let annFile = null;
+function pickAnnFile(inp){
+  const f = inp.files[0]; annFile = f || null;
+  const p = document.getElementById('annFilePrev');
+  if(!p) return;
+  p.innerHTML = f ? `📎 ${esc(f.name)} <span style="cursor:pointer" title="Убрать" onclick="annFile=null;document.getElementById('annFileInp').value='';document.getElementById('annFilePrev').innerHTML=''">✖</span>` : '';
 }
 async function addNews(){
   const t = $('#nt').value.trim(); if(!t) return;
-  if(SYNC){ await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name}); loadNews(); }
+  if(SYNC){
+    let file_name = null, file_url = null;
+    if(annFile){
+      const path = tid() + '/' + cid + '/' + Date.now() + '_' + annFile.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, annFile);
+      if(up.error) return alert('Ошибка загрузки файла: ' + up.error.message);
+      file_url = sb.storage.from('files').getPublicUrl(path).data.publicUrl;
+      file_name = annFile.name;
+    }
+    await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name, file_name, file_url});
+    annFile = null;
+    loadNews();
+  }
   else { const ns = store.get('news_'+(team?team.id:'x'), []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news_'+(team?team.id:'x'), ns); render(); }
 }
 async function editNews(id){
