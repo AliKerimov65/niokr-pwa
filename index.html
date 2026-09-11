@@ -96,6 +96,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="teamBtn" class="hidden">👥 Команда</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
+  <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
   <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
   <span id="syncBadge" title="Обновить данные">Локальный</span>
   <small id="who"></small>
@@ -135,6 +136,7 @@ let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
 let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
 let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = {};
+let AUTO = store.get('auto', true), autoTimer = null;
 
 /* ---------- Supabase ---------- */
 let sb = null, SYNC = false;
@@ -304,7 +306,7 @@ function start(){
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
-  render(); loadTeamMembers(); loadTabs(); loadDmPartners();
+  render(); loadTeamMembers(); loadTabs(); loadDmPartners(); autoSet();
   if(SYNC){
     subscribeAll();
     loadChan();
@@ -573,6 +575,20 @@ function renderCustomTab(v){
 }
 $('#tabsBtn').onclick = () => manageTabs();
 $('#membersBtn').onclick = () => membersSheet();
+function autoSet(){
+  const b = $('#autoBtn'); if(!b) return;
+  b.style.borderColor = AUTO ? 'var(--acc)' : 'var(--brd2)';
+  b.style.color = AUTO ? 'var(--acc)' : 'var(--mut)';
+  b.style.background = AUTO ? '#7a541014' : 'none';
+  b.title = 'Автообновление: ' + (AUTO ? 'вкл (30 с)' : 'выкл — нажмите для включения');
+  clearInterval(autoTimer); autoTimer = null;
+  if(AUTO && SYNC){
+    autoTimer = setInterval(async () => {
+      await Promise.all([loadChan(), loadTasks(), loadNews(), loadDocs(), loadStages(), loadMembers(), loadTeamMembers(), loadTabs(), loadDmPartners()]);
+    }, 30000);
+  }
+}
+$('#autoBtn').onclick = () => { AUTO = !AUTO; store.set('auto', AUTO); autoSet(); };
 $('#syncBadge').onclick = async () => {
   const b = $('#syncBadge');
   if(!SYNC){ location.reload(); return; }
