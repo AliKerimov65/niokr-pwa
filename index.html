@@ -228,9 +228,21 @@ function readReceipt(kind, id){
   if(!others.length) return '';
   const rb = readBy(kind, id).filter(n => others.includes(n));
   const names = rb.map(n => n.split(' ')[0]).join(', ');
-  return rb.length === others.length
-    ? ` · ✓✓ все (${rb.length}/${others.length})`
-    : rb.length ? ` · ✓ ${names} (${rb.length}/${others.length})` : ' · ✓ не прочитано';
+  const label = rb.length === others.length ? `✓✓ прочитали все (${rb.length}/${others.length})`
+    : rb.length ? `✓ прочитали: ${names} (${rb.length}/${others.length})` : `✓ не прочитано`;
+  return ` · <span style="cursor:pointer;border-bottom:1px dotted var(--mut)" title="Подробнее: кто прочитал" onclick="event.stopPropagation();readDetails('${kind}',${id})">${label}</span>`;
+}
+function readDetails(kind, id){
+  const others = TEAM_MEMBERS.map(t=>t.member).filter(n => n && n!==me.name);
+  const rb = readBy(kind, id);
+  const read = others.filter(n => rb.includes(n));
+  const unread = others.filter(n => !rb.includes(n));
+  const row = n => `<div class="mrow"><div class="av">${esc((n||'?')[0])}</div><div class="inf"><b>${esc(n)}</b></div></div>`;
+  $('#sheet').innerHTML = `<h2>Кто прочитал</h2>
+    <div class="card"><b style="color:var(--ok)">✓ Прочитали (${read.length})</b>${read.map(row).join('') || '<p class="mut">Пока никто.</p>'}</div>
+    <div class="card"><b style="color:var(--bad)">✗ Не прочитали (${unread.length})</b>${unread.map(row).join('') || '<p class="mut">Все прочитали.</p>'}</div>
+    <button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
 }
 let presenceCh = null;
 function initPresence(){
