@@ -110,7 +110,7 @@ const store = {
 const CHANNELS = ['Общий','Технические вопросы','Отчётность'];
 let me = store.get('user', null);
 let team = store.get('team', null);
-let view = 'chat', chan = store.get('chan', 'Общий');
+let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
 let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
 
@@ -143,17 +143,78 @@ async function loadTeamMembers(){
   const r = await sb.from('team_members').select('*').eq('team_id', team.id).order('created_at');
   TEAM_MEMBERS = r.error ? [] : r.data;
 }
+function dmKey(a,b){ return [a,b].sort().join('||'); }
 async function loadChan(){
   if(!SYNC) return;
-  rMsgs = (await sbList('messages', [['team_id', tid()], ['channel', chan]])).map(rowToMsg);
+  if(dmWith){
+    rMsgs = (await sbList('messages', [['dm', dmKey(me.name, dmWith)]])).map(rowToMsg);
+  } else {
+    rMsgs = (await sbList('messages', [['team_id', tid()], ['channel', chan]])).map(rowToMsg);
+  }
+  await loadReads('msg', rMsgs.filter(m=>m.id).map(m=>m.id));
+  markRead('msg', rMsgs);
   if(view==='chat') render();
+}
+async function loadReads(kind, ids){
+  if(!SYNC || !ids || !ids.length) return;
+  const {data, error} = await sb.from('reads').select('*').eq('kind',kind).in('ref_id', ids);
+  if(error) return;
+  const known = new Set(READS.map(r=>r.kind+':'+r.ref_id+':'+r.member));
+  (data||[]).forEach(r => { const k=r.kind+':'+r.ref_id+':'+r.member; if(!known.has(k)) READS.push(r); });
+}
+async function markRead(kind, items){
+  if(!SYNC || !me) return;
+  const known = new Set(READS.map(r=>r.kind+':'+r.ref_id+':'+r.member));
+  const rows = [];
+  items.forEach(m => {
+    const author = m.n || m.author;
+    if(m.id && author && author!==me.name && !known.has(kind+':'+m.id+':'+me.name))
+      rows.push({kind, ref_id:m.id, member:me.name});
+  });
+  if(!rows.length) return;
+  rows.forEach(r => READS.push(r));
+  await sb.from('reads').upsert(rows, {onConflict:'kind,ref_id,member'});
+}
+function readBy(kind, id){ return READS.filter(r=>r.kind===kind && r.ref_id===id).map(r=>r.member); }
+function readReceipt(kind, id){
+  const others = TEAM_MEMBERS.map(t=>t.member).filter(n => n && n!==me.name);
+  if(!others.length) return '';
+  const rb = readBy(kind, id).filter(n => others.includes(n));
+  const names = rb.map(n => n.split(' ')[0]).join(', ');
+  return rb.length === others.length
+    ? ` · ✓✓ все (${rb.length}/${others.length})`
+    : rb.length ? ` · ✓ ${names} (${rb.length}/${others.length})` : ' · ✓ не прочитано';
+}
+let presenceCh = null;
+function initPresence(){
+  if(!SYNC || !me || presenceCh) return;
+  presenceCh = sb.channel('online', {config:{presence:{key: me.name}}});
+  presenceCh.on('presence', {event:'sync'}, () => {
+    const st = presenceCh.presenceState();
+    ONLINE = {};
+    Object.keys(st).forEach(k => ONLINE[k] = true);
+    updateOnlineUI();
+  }).subscribe(async (status) => {
+    if(status === 'SUBSCRIBED'){ try{ await presenceCh.track({name: me.name, at: Date.now()}); }catch(e){} }
+  });
+  const hb = setInterval(() => { if(presenceCh) presenceCh.track({name: me.name, at: Date.now()}).catch(()=>{}); else clearInterval(hb); }, 25000);
+}
+function updateOnlineUI(){
+  const n = Object.keys(ONLINE).length;
+  $('#who').textContent = (me ? me.name.split(' ')[0] : '') + (SYNC && n ? ' · '+n+' в сети' : '');
 }
 function rowToMsg(m){
   return { id:m.id, n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at), edited:m.edited,
     f:m.file_url||null, fn:m.file_name||'', img:m.file_url && /\.(png|jpe?g|gif|webp)$/i.test(m.file_url||'') };
 }
 async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); if(view==='tasks') render(); }
-async function loadNews(){ if(!SYNC) return; rNews = (await sbList('announcements', [['team_id', tid()]])).reverse(); if(view==='news') render(); }
+async function loadNews(){
+  if(!SYNC) return;
+  rNews = (await sbList('announcements', [['team_id', tid()]])).reverse();
+  await loadReads('ann', rNews.filter(n=>n.id).map(n=>n.id));
+  markRead('ann', rNews);
+  if(view==='news') render();
+}
 async function loadDocs(){ if(!SYNC) return; rDocs = (await sbList('documents', [['team_id', tid()]])).reverse(); if(view==='files') render(); }
 async function loadStages(){
   if(!SYNC) return;
@@ -176,6 +237,7 @@ async function init(){
 }
 function start(){
   syncBadge();
+  initPresence();
   $('#teamBtn').classList.remove('hidden');
   render(); loadTeamMembers();
   if(SYNC){
@@ -316,7 +378,7 @@ function msgHTML(m){
   return `<div class="msg ${m.n===me.name?'me':''}">
     <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span>${mine?` <span style="cursor:pointer" title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}<div>${esc(m.x)}</div>
     ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
-    <div class="t">${m.t}${m.edited?' · изменено':''}</div></div>`;
+    <div class="t">${m.t}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div></div>`;
 }
 async function editMsg(id){
   const m = rMsgs.find(x=>x.id===id); if(!m) return;
@@ -326,9 +388,13 @@ async function editMsg(id){
   if(error) alert(error.message);
 }
 function renderChat(v){
-  v.innerHTML = `<div class="chans">${CHANNELS.map(c =>
-    `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
-    <div class="ch" id="msgs"></div>`;
+  if(dmWith){
+    v.innerHTML = `<div class="row" style="margin-bottom:10px"><button class="sec" style="padding:6px 12px" onclick="dmWith=null;loadChan()">← Каналы</button><b>💬 Личное: ${esc(dmWith)}</b></div><div class="ch" id="msgs"></div>`;
+  } else {
+    v.innerHTML = `<div class="chans">${CHANNELS.map(c =>
+      `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
+      <div class="ch" id="msgs"></div>`;
+  }
   const msgs = SYNC ? rMsgs : store.get('chat_'+chan, []);
   $('#msgs').innerHTML = msgs.map(msgHTML).join('') || `<p class="mut">${SYNC?'Сообщений нет — начните обсуждение.':'Локальный режим.'}</p>`;
   scrollDown();
@@ -338,7 +404,9 @@ async function sendMsg(){
   const inp = $('#mText'), txt = inp.value.trim(); if(!txt) return;
   inp.value='';
   if(SYNC){
-    const row = {team_id:tid(), channel:chan, author:me.name, role:me.role, body:txt, client_id:cid};
+    const row = dmWith
+      ? {dm: dmKey(me.name, dmWith), author:me.name, role:me.role, body:txt, client_id:cid}
+      : {team_id:tid(), channel:chan, author:me.name, role:me.role, body:txt, client_id:cid};
     rMsgs.push({n:me.name, r:me.role, x:txt, t:now()}); render();
     const {error} = await sb.from('messages').insert(row);
     if(error) alert('Не отправлено: '+error.message);
@@ -449,7 +517,7 @@ function renderNews(v){
   v.innerHTML = `<h2 class="pt">Объявления</h2>
   <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
   <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addNews()">Опубликовать</button></div>
-  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3><p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p>
+  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3><p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p><p class="mut" style="margin-top:2px">👁 Прочтение${readReceipt('ann', n.id)}</p>
   <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
 }
 async function addNews(){
@@ -506,7 +574,7 @@ function renderMisc(v){
   <div class="card"><h3>Участник</h3><p class="mut" style="margin:4px 0 10px">${esc(me.name)} · ${esc(me.role||'')}</p>
     <button class="sec" style="width:100%" onclick="switchUser()">👤 Сменить участника</button></div>
   <div class="card"><h3>Состав команды «${esc(team?team.name:'—')}»</h3>
-    ${TEAM_MEMBERS.map(m => `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av">${esc((m.member||'?')[0])}</div>
+    ${TEAM_MEMBERS.map(m => `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av" style="${ONLINE[m.member]?'box-shadow:0 0 0 2px var(--ok);':''}">${esc((m.member||'?')[0])}</div>
       <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc((MEMBERS.find(x=>x.name===m.member)||{}).phone||'')}</span></div>
       ${isOwner && m.member!==me.name ? `<button class="dng" style="padding:6px 10px" onclick="removeMember('${esc(m.member)}')">✖</button>`:''}
     </div>`).join('') || '<p class="mut">Нет участников.</p>'}
@@ -664,7 +732,20 @@ async function moveMember(name){
 function subscribeAll(){
   sb.channel('niokr-v4')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, p => {
-      if(p.new.team_id===tid() && p.new.channel===chan && p.new.client_id!==cid){ rMsgs.push(rowToMsg(p.new)); if(view==='chat') render(); }
+      const m = p.new;
+      if(m.dm){
+        const pair = m.dm.split('||');
+        if(pair.includes(me.name) && m.client_id!==cid && dmWith && pair.includes(dmWith)){
+          rMsgs.push(rowToMsg(m)); if(view==='chat') render();
+        }
+      } else if(m.team_id===tid() && m.channel===chan && m.client_id!==cid){
+        rMsgs.push(rowToMsg(m)); if(view==='chat') render();
+      }
+    })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'reads'}, p => {
+      const r = p.new; const k = r.kind+':'+r.ref_id+':'+r.member;
+      if(!READS.some(x => (x.kind+':'+x.ref_id+':'+x.member)===k)) READS.push(r);
+      if(view==='chat' || view==='news') render();
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, p => { if(!p.new || p.new.team_id===tid() || p.old?.team_id===tid()) loadTasks(); })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages'}, p => {
