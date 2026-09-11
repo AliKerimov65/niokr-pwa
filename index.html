@@ -299,19 +299,19 @@ function onboarding2(){
 }
 function selectTeam(id){
   team = MYTEAMS.find(t => t.id === id); store.set('team', team);
-  $('#overlay').style.display='none'; start();
+  $('#overlay').style.display='none'; dmWith = null; reloadAll();
 }
 function mkCode(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<6;i++) c+=a[Math.floor(Math.random()*a.length)]; return c; }
 async function createTeam(){
   const name = $('#newTeamName').value.trim(); if(!name) return alert('Введите название');
-  if(!SYNC){ team = {id:'local', name, is_owner:true}; store.set('team', team); $('#overlay').style.display='none'; start(); return; }
+  if(!SYNC){ team = {id:'local'+Date.now(), name, is_owner:true}; store.set('team', team); $('#overlay').style.display='none'; dmWith = null; reloadAll(); return; }
   const code = mkCode();
   const {data, error} = await sb.from('teams').insert({name, owner:me.name, invite_code:code}).select().single();
   if(error) return alert(error.message);
   await sb.from('team_members').insert({team_id:data.id, member:me.name, is_owner:true});
   MYTEAMS = await fetchMyTeams();
   team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
-  $('#overlay').style.display='none'; start();
+  $('#overlay').style.display='none'; dmWith = null; reloadAll();
 }
 async function joinTeam(){
   const code = $('#joinCode').value.trim().toUpperCase(); if(code.length!==6) return alert('Введите код из 6 символов');
@@ -322,7 +322,7 @@ async function joinTeam(){
   await sb.from('members').upsert({name:me.name, role:me.role||''}, {ignoreDuplicates:false, onConflict:'name'});
   MYTEAMS = await fetchMyTeams();
   team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
-  $('#overlay').style.display='none'; start();
+  $('#overlay').style.display='none'; dmWith = null; reloadAll();
 }
 
 /* ---------- панель команды (шапка) ---------- */
@@ -340,7 +340,7 @@ async function teamSheet(){
   $('#overlay').style.display = 'flex';
 }
 function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
-function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; start(); }
+function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; start(); }
 $('#teamBtn').onclick = () => { if(SYNC) teamSheet(); };
 
 /* ---------- навигация ---------- */
@@ -395,11 +395,11 @@ function renderChat(v){
       `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
       <div class="ch" id="msgs"></div>`;
   }
-  const msgs = SYNC ? rMsgs : store.get('chat_'+chan, []);
+  const msgs = SYNC ? rMsgs : store.get('chat_'+(team?team.id:'x')+'_'+chan, []);
   $('#msgs').innerHTML = msgs.map(msgHTML).join('') || `<p class="mut">${SYNC?'Сообщений нет — начните обсуждение.':'Локальный режим.'}</p>`;
   scrollDown();
 }
-function pushLocal(m){ const arr = store.get('chat_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); if(!SYNC) render(); }
+function pushLocal(m){ const arr = store.get('chat_'+(team?team.id:'x')+'_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); if(!SYNC) render(); }
 async function sendMsg(){
   const inp = $('#mText'), txt = inp.value.trim(); if(!txt) return;
   inp.value='';
@@ -485,7 +485,7 @@ async function setStageNote(id){ const val = $('#note_'+id).value; await sb.from
 
 /* ---------- ЗАДАЧИ ---------- */
 function renderTasks(v){
-  const ts = SYNC ? (rTasks||[]) : store.get('tasks', []);
+  const ts = SYNC ? (rTasks||[]) : store.get('tasks_'+(team?team.id:'x'), []);
   v.innerHTML = `<h2 class="pt">Задачи</h2>
   <div class="card"><input id="tt" placeholder="Новая задача…" style="margin-bottom:8px">
     <div class="row"><select id="ta" style="flex:1">${teamIds().map(a=>`<option>${esc(a)}</option>`).join('')||'<option>—</option>'}</select>
@@ -506,14 +506,14 @@ function taskList(ts){
 async function addTask(){
   const t = $('#tt').value.trim(); if(!t) return;
   if(SYNC){ await sb.from('tasks').insert({team_id:tid(), title:t, assignee:$('#ta').value, deadline:$('#td').value||null, status:'Новая', author:me.name}); loadTasks(); }
-  else { const ts = store.get('tasks', []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks', ts); render(); }
+  else { const ts = store.get('tasks_'+(team?team.id:'x'), []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks_'+(team?team.id:'x'), ts); render(); }
 }
 async function setTask(id,s){ if(SYNC){ await sb.from('tasks').update({status:s}).eq('id',id); loadTasks(); } else { const ts=store.get('tasks',[]); const t=ts.find(x=>x.id===id); if(t){t.status=s; store.set('tasks',ts); render();} } }
-async function delTask(id){ if(SYNC){ await sb.from('tasks').delete().eq('id',id); loadTasks(); } else { store.set('tasks', store.get('tasks',[]).filter(x=>x.id!==id)); render(); } }
+async function delTask(id){ if(SYNC){ await sb.from('tasks').delete().eq('id',id); loadTasks(); } else { store.set('tasks_'+(team?team.id:'x'), store.get('tasks_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); } }
 
 /* ---------- ОБЪЯВЛЕНИЯ ---------- */
 function renderNews(v){
-  const ns = SYNC ? (rNews||[]) : store.get('news', []);
+  const ns = SYNC ? (rNews||[]) : store.get('news_'+(team?team.id:'x'), []);
   v.innerHTML = `<h2 class="pt">Объявления</h2>
   <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
   <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addNews()">Опубликовать</button></div>
@@ -523,7 +523,7 @@ function renderNews(v){
 async function addNews(){
   const t = $('#nt').value.trim(); if(!t) return;
   if(SYNC){ await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name}); loadNews(); }
-  else { const ns = store.get('news', []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news', ns); render(); }
+  else { const ns = store.get('news_'+(team?team.id:'x'), []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news_'+(team?team.id:'x'), ns); render(); }
 }
 async function editNews(id){
   const n = (rNews||[]).find(x=>x.id===id); if(!n) return;
@@ -532,11 +532,11 @@ async function editNews(id){
   const {error} = await sb.from('announcements').update({body, edited:true}).eq('id',id);
   if(error) alert(error.message);
 }
-async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news', store.get('news',[]).filter(x=>x.id!==id)); render(); } }
+async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news_'+(team?team.id:'x'), store.get('news_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); } }
 
 /* ---------- ФАЙЛЫ ---------- */
 function renderFiles(v){
-  const fs = SYNC ? (rDocs||[]) : store.get('files', []);
+  const fs = SYNC ? (rDocs||[]) : store.get('files_'+(team?team.id:'x'), []);
   v.innerHTML = `<h2 class="pt">Документы команды</h2>
   <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
   <button class="pri" style="width:100%" onclick="addFile()">Загрузить</button></div>
@@ -557,13 +557,13 @@ async function addFile(){
     }catch(err){ alert('Ошибка загрузки: '+err.message); }
   } else {
     const r = new FileReader();
-    r.onload = () => { const fs = store.get('files', []); fs.unshift({id:Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', created_at:new Date().toISOString(), d:r.result}); store.set('files', fs); render(); };
+    r.onload = () => { const fs = store.get('files_'+(team?team.id:'x'), []); fs.unshift({id:Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', created_at:new Date().toISOString(), d:r.result}); store.set('files_'+(team?team.id:'x'), fs); render(); };
     r.readAsDataURL(f);
   }
 }
 async function delFile(id){
   if(SYNC){ await sb.from('documents').delete().eq('id',id); loadDocs(); }
-  else { store.set('files', store.get('files',[]).filter(x=>x.id!==id)); render(); }
+  else { store.set('files_'+(team?team.id:'x'), store.get('files_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); }
 }
 
 /* ---------- РАЗНОЕ ---------- */
