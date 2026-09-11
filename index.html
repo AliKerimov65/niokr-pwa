@@ -581,12 +581,12 @@ function autoSet(){
   b.style.borderColor = AUTO ? 'var(--acc)' : 'var(--brd2)';
   b.style.color = AUTO ? 'var(--acc)' : 'var(--mut)';
   b.style.background = AUTO ? '#7a541014' : 'none';
-  b.title = 'Автообновление: ' + (AUTO ? 'вкл (30 с)' : 'выкл — нажмите для включения');
+  b.title = 'Автообновление: ' + (AUTO ? 'вкл (каждые 5 мин)' : 'выкл — нажмите для включения');
   clearInterval(autoTimer); autoTimer = null;
   if(AUTO && SYNC){
     autoTimer = setInterval(async () => {
       await Promise.all([loadChan(), loadTasks(), loadNews(), loadDocs(), loadStages(), loadMembers(), loadTeamMembers(), loadTabs(), loadDmPartners()]);
-    }, 30000);
+    }, 300000);
   }
 }
 $('#autoBtn').onclick = () => { AUTO = !AUTO; store.set('auto', AUTO); autoSet(); };
