@@ -549,6 +549,7 @@ const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const isInStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 if(isIOS && !isInStandalone && me){
   setTimeout(()=>{
+    if($('#overlay').style.display === 'flex') return; // окно приветствия важнее
     $('#sheet').innerHTML = `<h2>Установка на iPhone</h2><ol>
       <li>Нажмите <b>«Поделиться»</b> в Safari.</li>
       <li>Выберите <b>«На экран "Домой"»</b> → <b>«Добавить»</b>.</li></ol>
