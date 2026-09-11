@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#9a6a1f">
+<meta name="theme-color" content="#7a5410">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="НИОКР">
@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>НИОКР Команда</title>
 <style>
-:root{--bg:#f5f1e8;--card:#ffffff;--card2:#f1ebdb;--txt:#221c12;--mut:#7a6f5a;--acc:#9a6a1f;--ok:#2e7d4f;--warn:#b07708;--bad:#b3372c;--brd:#e2d9c4;--brd2:#d3c7a8;}
+:root{--bg:#f3eee1;--card:#ffffff;--card2:#ece3cb;--txt:#1f190e;--mut:#756947;--acc:#7a5410;--ok:#2e7d4f;--warn:#a06d05;--bad:#a83427;--brd:#ddd2b8;--brd2:#cabf9e;}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column}
@@ -40,11 +40,11 @@ button.sec{background:var(--card2);border:1px solid var(--brd2);color:var(--txt)
 button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
 .ch{display:flex;flex-direction:column;gap:8px}
 .msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid var(--brd)}
-.msg.me{align-self:flex-end;background:#f3e5c8;border-color:#e0c98f}
-.msg b{font-size:12.5px;color:#7c5310}
+.msg.me{align-self:flex-end;background:#eeddb2;border-color:#d6ba76}
+.msg b{font-size:12.5px;color:#5f3f0a}
 .msg .t{font-size:11px;color:var(--mut);margin-top:3px}
 .msg img{max-width:100%;border-radius:8px;margin-top:6px}
-.msg a{color:#9a6a1f}
+.msg a{color:#7a5410}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--mut)}
 .badge.ok{background:#e6f4ec;color:#1e7a43} .badge.warn{background:#fdf2df;color:#a06a00} .badge.bad{background:#fbe7e5;color:#b3261e}
 .composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid var(--brd)}
@@ -81,7 +81,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 .mrow .inf{flex:1;min-width:0}
 .mrow .inf b{font-size:14px}
 .pill{font-size:10px;background:var(--acc);color:#fff;border-radius:8px;padding:1px 6px;font-weight:700}
-.code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #9a6a1f88;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
+.code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #7a541088;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
 </style>
 </head>
 <body>
@@ -755,7 +755,7 @@ function renderFiles(v){
   <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
   <button class="pri" style="width:100%" onclick="addFile()">Загрузить</button></div>
   ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
-  <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#9a6a1f;font-size:22px">⬇</a>
+  <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#7a5410;font-size:22px">⬇</a>
   <button class="dng" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
 async function addFile(){
@@ -831,9 +831,9 @@ function memberCard(name){
   $('#sheet').innerHTML = `<h2>${esc(name)}</h2>
    <div class="card">
      <p class="mut">${esc(m.role||'Участник')}</p>
-     ${m.phone?`<p style="margin-top:8px">📞 <a href="tel:${esc(m.phone)}" style="color:#9a6a1f">${esc(m.phone)}</a></p>`:''}
-     ${m.email?`<p style="margin-top:4px">✉️ <a href="mailto:${esc(m.email)}" style="color:#9a6a1f">${esc(m.email)}</a></p>`:''}
-     ${m.telegram?`<p style="margin-top:4px">✈️ <a href="https://t.me/${esc(tg)}" target="_blank" style="color:#9a6a1f">${esc(m.telegram)}</a></p>`:''}
+     ${m.phone?`<p style="margin-top:8px">📞 <a href="tel:${esc(m.phone)}" style="color:#7a5410">${esc(m.phone)}</a></p>`:''}
+     ${m.email?`<p style="margin-top:4px">✉️ <a href="mailto:${esc(m.email)}" style="color:#7a5410">${esc(m.email)}</a></p>`:''}
+     ${m.telegram?`<p style="margin-top:4px">✈️ <a href="https://t.me/${esc(tg)}" target="_blank" style="color:#7a5410">${esc(m.telegram)}</a></p>`:''}
      ${!m.phone&&!m.email&&!m.telegram?'<p class="mut" style="margin-top:8px">Контакты не заполнены'+(isSelf?' — нажмите «Редактировать»':'')+'.</p>':''}
      <div style="height:12px"></div>
      <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
