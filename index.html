@@ -268,8 +268,19 @@ function initPresence(){
   const hb = setInterval(() => { if(presenceCh) presenceCh.track({name: me.name, at: Date.now()}).catch(()=>{}); else clearInterval(hb); }, 25000);
 }
 function updateOnlineUI(){
-  const n = Object.keys(ONLINE).length;
-  $('#who').textContent = (me ? me.name.split(' ')[0] : '') + (SYNC && n ? ' · '+n+' в сети' : '');
+  const names = Object.keys(ONLINE);
+  const n = names.length;
+  $('#who').innerHTML = esc(me ? me.name.split(' ')[0] : '') +
+    (SYNC && n ? ` · <span style="color:var(--ok);font-weight:700">🟢 ${n} в сети</span>` : '');
+  $('#who').title = SYNC && n ? 'Кто в сети?' : '';
+  $('#who').style.cursor = SYNC && n ? 'pointer' : 'default';
+}
+function onlineSheet(){
+  const names = Object.keys(ONLINE);
+  $('#sheet').innerHTML = `<h2>🟢 Сейчас в сети (${names.length})</h2><p class="mut" style="margin-bottom:8px">Нажмите на участника — откроется карточка.</p>` +
+    names.map(n => `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(n)}')"><div class="av" style="box-shadow:0 0 0 2px var(--ok);">${esc((n||'?')[0])}</div><div class="inf"><b>${esc(n)}</b></div></div>`).join('') +
+    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
 }
 function rowToMsg(m){
   return { id:m.id, n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at), edited:m.edited,
@@ -576,6 +587,7 @@ function renderCustomTab(v){
 }
 $('#tabsBtn').onclick = () => manageTabs();
 $('#membersBtn').onclick = () => membersSheet();
+$('#who').onclick = () => { if(SYNC && Object.keys(ONLINE).length) onlineSheet(); };
 function autoSet(){
   const b = $('#autoBtn'); if(!b) return;
   b.style.borderColor = AUTO ? 'var(--acc)' : 'var(--brd2)';
