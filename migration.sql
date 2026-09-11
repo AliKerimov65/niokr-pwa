@@ -55,18 +55,36 @@ alter table members enable row level security;
 alter table teams enable row level security;
 alter table team_members enable row level security;
 alter table stages enable row level security;
-create policy if not exists "members all" on members for all to anon using (true) with check (true);
-create policy if not exists "teams all" on teams for all to anon using (true) with check (true);
-create policy if not exists "team_members all" on team_members for all to anon using (true) with check (true);
-create policy if not exists "stages all" on stages for all to anon using (true) with check (true);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='members' and policyname='members all') then
+    create policy "members all" on members for all to anon using (true) with check (true); end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='teams' and policyname='teams all') then
+    create policy "teams all" on teams for all to anon using (true) with check (true); end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='team_members' and policyname='team_members all') then
+    create policy "team_members all" on team_members for all to anon using (true) with check (true); end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='stages' and policyname='stages all') then
+    create policy "stages all" on stages for all to anon using (true) with check (true); end if;
+end $$;
 
 -- 7. Realtime для новых таблиц
-alter publication supabase_realtime add table members;
-alter publication supabase_realtime add table teams;
-alter publication supabase_realtime add table team_members;
-alter publication supabase_realtime add table stages;
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='members') then
+    alter publication supabase_realtime add table members; end if;
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='teams') then
+    alter publication supabase_realtime add table teams; end if;
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='team_members') then
+    alter publication supabase_realtime add table team_members; end if;
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='stages') then
+    alter publication supabase_realtime add table stages; end if;
+end $$;
 
 -- 8. Storage-бакет для файлов
 insert into storage.buckets (id, name, public) values ('files','files', true) on conflict (id) do nothing;
-create policy if not exists "files all" on storage.objects for all to anon
-using (bucket_id = 'files') with check (bucket_id = 'files');
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='files all') then
+    create policy "files all" on storage.objects for all to anon
+    using (bucket_id='files') with check (bucket_id='files'); end if;
+end $$;
