@@ -149,7 +149,7 @@ async function loadChan(){
   if(view==='chat') render();
 }
 function rowToMsg(m){
-  return { n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at),
+  return { id:m.id, n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at), edited:m.edited,
     f:m.file_url||null, fn:m.file_name||'', img:m.file_url && /\.(png|jpe?g|gif|webp)$/i.test(m.file_url||'') };
 }
 async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); if(view==='tasks') render(); }
@@ -311,10 +311,18 @@ const teamIds = () => TEAM_MEMBERS.map(m => m.member);
 
 /* ---------- ЧАТ ---------- */
 function msgHTML(m){
+  const mine = m.n===me.name && m.id;
   return `<div class="msg ${m.n===me.name?'me':''}">
-    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span><div>${esc(m.x)}</div>
+    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span>${mine?` <span style="cursor:pointer" title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}<div>${esc(m.x)}</div>
     ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
-    <div class="t">${m.t}</div></div>`;
+    <div class="t">${m.t}${m.edited?' · изменено':''}</div></div>`;
+}
+async function editMsg(id){
+  const m = rMsgs.find(x=>x.id===id); if(!m) return;
+  const t = prompt('Исправить сообщение:', m.x); if(t===null) return;
+  const body = t.trim(); if(!body || body===m.x) return;
+  const {error} = await sb.from('messages').update({body, edited:true}).eq('id',id);
+  if(error) alert(error.message);
 }
 function renderChat(v){
   v.innerHTML = `<div class="chans">${CHANNELS.map(c =>
@@ -440,13 +448,20 @@ function renderNews(v){
   v.innerHTML = `<h2 class="pt">Объявления</h2>
   <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
   <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addNews()">Опубликовать</button></div>
-  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3><p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}</p>
-  <div style="height:8px"></div><button class="dng" onclick="delNews(${n.id})">Удалить</button></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
+  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3><p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p>
+  <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
 }
 async function addNews(){
   const t = $('#nt').value.trim(); if(!t) return;
   if(SYNC){ await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name}); loadNews(); }
   else { const ns = store.get('news', []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news', ns); render(); }
+}
+async function editNews(id){
+  const n = (rNews||[]).find(x=>x.id===id); if(!n) return;
+  const t = prompt('Исправить объявление:', n.body); if(t===null) return;
+  const body = t.trim(); if(!body || body===n.body) return;
+  const {error} = await sb.from('announcements').update({body, edited:true}).eq('id',id);
+  if(error) alert(error.message);
 }
 async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news', store.get('news',[]).filter(x=>x.id!==id)); render(); } }
 
@@ -494,7 +509,9 @@ function renderMisc(v){
       <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc((MEMBERS.find(x=>x.name===m.member)||{}).phone||'')}</span></div>
       ${isOwner && m.member!==me.name ? `<button class="dng" style="padding:6px 10px" onclick="removeMember('${esc(m.member)}')">✖</button>`:''}
     </div>`).join('') || '<p class="mut">Нет участников.</p>'}
-    ${isOwner && others.length ? `<div style="height:8px"></div><div class="row"><select id="addM" style="flex:1">${others.map(m=>`<option>${esc(m.name)}</option>`).join('')}</select><button class="pri" onclick="addMember()">+ В команду</button></div>`:''}
+    ${isOwner ? `<div style="height:8px"></div>
+      ${others.length?`<div class="row"><select id="addM" style="flex:1">${others.map(m=>`<option>${esc(m.name)}</option>`).join('')}</select><button class="pri" onclick="addMember()">+ В команду</button></div>`:'<p class="mut">Все зарегистрированные участники уже в команде.</p>'}
+      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="newMemberForm()">＋ Создать нового участника</button>`:''}
   </div>
   ${isOwner ? `<div class="card"><p class="mut" style="margin-bottom:8px">Код приглашения:</p><div class="code">${esc(team.invite_code)}</div>
     <p class="mut">По этому коду можно вступить в команду (кнопка 👥 вверху → «Вступить по коду»).</p>
@@ -537,7 +554,7 @@ function memberCard(name){
      ${!m.phone&&!m.email&&!m.telegram?'<p class="mut" style="margin-top:8px">Контакты не заполнены'+(isSelf?' — нажмите «Редактировать»':'')+'.</p>':''}
      <div style="height:12px"></div>
      <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
-     ${isSelf?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard()">✏️ Редактировать мою карточку</button>`:''}
+     ${(isSelf || (team&&team.is_owner))?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard('${esc(name)}')">✏️ Редактировать карточку</button>`:''}
      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
    </div>`;
   $('#overlay').style.display='flex';
@@ -570,23 +587,54 @@ function viaSms(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) 
 function viaWa(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('Не указан телефон'); const t=msgText(); window.open('https://wa.me/'+m.phone.replace(/[^\d]/g,'')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
 function viaTg(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.telegram) return alert('Не указан Telegram'); const t=msgText(); window.open('https://t.me/'+m.telegram.replace('@','')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
 function viaMail(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.email) return alert('Не указан e-mail'); const t=msgText(); location.href='mailto:'+m.email+(t?'?body='+encodeURIComponent(t):''); }
-function editCard(){
-  const m = MEMBERS.find(x=>x.name===me.name) || {};
-  $('#sheet').innerHTML = `<h2>Моя карточка</h2>
+function editCard(name){
+  const m = MEMBERS.find(x=>x.name===name) || {};
+  const canDelete = team && team.is_owner && name!==me.name;
+  $('#sheet').innerHTML = `<h2>Карточка: ${esc(name)}</h2>
    <div class="card">
+    <input id="ec_r" placeholder="Роль" value="${esc(m.role||'')}"><div style="height:8px"></div>
     <input id="ec_p" placeholder="Телефон" value="${esc(m.phone||'')}"><div style="height:8px"></div>
     <input id="ec_e" placeholder="E-mail" value="${esc(m.email||'')}"><div style="height:8px"></div>
     <input id="ec_t" placeholder="Telegram, например @ivanov" value="${esc(m.telegram||'')}">
     <div style="height:12px"></div>
-    <button class="pri" style="width:100%" onclick="saveCard()">💾 Сохранить</button>
-    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(me.name)}')">← Назад</button>
+    <button class="pri" style="width:100%" onclick="saveCard('${esc(name)}')">💾 Сохранить</button>
+    ${canDelete?`<div style="height:8px"></div><button class="dng" style="width:100%" onclick="deleteMember('${esc(name)}')">🗑 Удалить участника из системы</button>`:''}
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(name)}')">← Назад</button>
    </div>`;
 }
-async function saveCard(){
-  const {error} = await sb.from('members').update({phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null}).eq('name', me.name);
+async function saveCard(name){
+  const {error} = await sb.from('members').update({role:$('#ec_r').value||null, phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null}).eq('name', name);
   if(error) return alert(error.message);
-  await loadMembers();
-  memberCard(me.name);
+  if(name===me.name){ me.role = $('#ec_r').value; store.set('user', me); }
+  await loadMembers(); render();
+  memberCard(name);
+}
+async function deleteMember(name){
+  if(!confirm('Удалить участника «'+name+'» из системы? Он будет исключён из всех команд; история сообщений сохранится.')) return;
+  await sb.from('team_members').delete().eq('member', name);
+  const {error} = await sb.from('members').delete().eq('name', name);
+  if(error) return alert(error.message);
+  await loadMembers(); await loadTeamMembers(); render();
+  $('#overlay').style.display='none';
+}
+function newMemberForm(){
+  $('#sheet').innerHTML = `<h2>Новый участник</h2><div class="card">
+   <input id="cn" placeholder="Фамилия И.О."><div style="height:8px"></div>
+   <input id="cr" placeholder="Роль"><div style="height:8px"></div>
+   <input id="cp" placeholder="Телефон"><div style="height:8px"></div>
+   <input id="ce" placeholder="E-mail"><div style="height:8px"></div>
+   <input id="ct" placeholder="Telegram (@username)">
+   <div style="height:12px"></div><button class="pri" style="width:100%" onclick="createMember()">💾 Создать и добавить в команду</button>
+   <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Отмена</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function createMember(){
+  const n = $('#cn').value.trim(); if(!n) return alert('Введите имя');
+  const {error} = await sb.from('members').insert({name:n, role:$('#cr').value||null, phone:$('#cp').value||null, email:$('#ce').value||null, telegram:$('#ct').value||null});
+  if(error){ if(error.code==='23505') return alert('Такой участник уже зарегистрирован'); return alert(error.message); }
+  await sb.from('team_members').insert({team_id:tid(), member:n, is_owner:false});
+  await loadMembers(); await loadTeamMembers(); render();
+  $('#overlay').style.display='none';
 }
 
 /* ---------- Realtime ---------- */
@@ -596,7 +644,13 @@ function subscribeAll(){
       if(p.new.team_id===tid() && p.new.channel===chan && p.new.client_id!==cid){ rMsgs.push(rowToMsg(p.new)); if(view==='chat') render(); }
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, p => { if(!p.new || p.new.team_id===tid() || p.old?.team_id===tid()) loadTasks(); })
-    .on('postgres_changes', {event:'INSERT', schema:'public', table:'announcements'}, p => { if(p.new.team_id===tid()) loadNews(); })
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages'}, p => {
+      const m = p.new;
+      const inView = m.dm ? (dmWith && m.dm===dmKey(me.name, dmWith)) : (!dmWith && m.team_id===tid() && m.channel===chan);
+      if(inView) loadChan();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'announcements'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadNews(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'documents'}, p => { if(p.new.team_id===tid()) loadDocs(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'stages'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadStages(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'team_members'}, () => { loadTeamMembers(); if(view==='misc') render(); })
