@@ -172,10 +172,7 @@ async function init(){
   await loadMembers();
   if(!me){ onboarding1(); return; }
   MYTEAMS = await fetchMyTeams();
-  if(!team || !MYTEAMS.find(t => t.id === team.id)){
-    if(MYTEAMS.length){ team = MYTEAMS[0]; store.set('team', team); start(); }
-    else onboarding2();
-  } else start();
+  onboarding2();
 }
 function start(){
   syncBadge();
@@ -213,8 +210,7 @@ async function pickExisting(){
   const rec = MEMBERS.find(m => m.name === name);
   me = {name, role: rec ? rec.role : ''}; store.set('user', me);
   $('#overlay').style.display='none';
-  if(SYNC){ MYTEAMS = await fetchMyTeams(); }
-  if(SYNC && !MYTEAMS.length) onboarding2(); else if(SYNC){ team = MYTEAMS[0]; store.set('team', team); start(); } else start();
+  if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
 }
 async function regNew(){
   const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
@@ -227,8 +223,8 @@ async function regNew(){
 
 /* ---------- ОНБОРДИНГ 2: выбор команды ---------- */
 function onboarding2(){
-  const list = MYTEAMS.map(t => `<button class="pri" style="width:100%;margin-bottom:8px" onclick="selectTeam('${t.id}')">👥 ${esc(t.name)}${t.is_owner?' · моя':''}</button>`).join('');
-  $('#sheet').innerHTML = `<h2>Ваши команды</h2>
+  const list = MYTEAMS.map(t => `<button class="pri" style="width:100%;margin-bottom:8px" onclick="selectTeam('${t.id}')">👥 ${esc(t.name)}${t.is_owner?' · моя':''}${team&&team.id===t.id?' ✓':''}</button>`).join('');
+  $('#sheet').innerHTML = `<h2>Выбор команды</h2><p class="mut" style="margin-bottom:10px">Выберите команду для работы:</p>
     ${list || '<p class="mut" style="margin-bottom:10px">Вы пока не состоите ни в одной команде.</p>'}
     <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Создать свою команду (видят только приглашённые):</p>
       <div class="row"><input id="newTeamName" placeholder="Название команды / проекта"><button class="pri" onclick="createTeam()">Создать</button></div></div>
