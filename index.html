@@ -201,6 +201,9 @@ function onboarding1(){
       <p class="mut" style="margin-bottom:10px">Новый участник:</p>
       <input id="nm" placeholder="Фамилия И.О."><div style="height:8px"></div>
       <select id="rl"><option>ГИП / руководитель</option><option>Главный инженер</option><option>Инженер-конструктор</option><option>Инженер-геотехник</option><option>Инженер ПТО</option><option>Сметчик</option><option>Лаборант</option><option>Другое</option></select>
+      <div style="height:8px"></div><input id="rc_p" placeholder="Телефон (необязательно)"><div style="height:8px"></div>
+      <input id="rc_e" placeholder="E-mail (необязательно)"><div style="height:8px"></div>
+      <input id="rc_t" placeholder="Telegram, например @ivanov (необязательно)">
       <div style="height:12px"></div><button class="sec" style="width:100%" onclick="regNew()">Зарегистрироваться</button>
     </div>`;
   $('#overlay').style.display = 'flex';
@@ -215,7 +218,7 @@ async function pickExisting(){
 async function regNew(){
   const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
   const role = $('#rl').value;
-  if(SYNC){ const {error} = await sb.from('members').insert({name:n, role}); if(error && error.code!=='23505') return alert(error.message); }
+  if(SYNC){ const {error} = await sb.from('members').insert({name:n, role, phone:$('#rc_p').value||null, email:$('#rc_e').value||null, telegram:$('#rc_t').value||null}); if(error && error.code!=='23505') return alert(error.message); }
   me = {name:n, role}; store.set('user', me);
   $('#overlay').style.display='none';
   if(SYNC){ MYTEAMS = []; onboarding2(); } else start();
@@ -487,8 +490,8 @@ function renderMisc(v){
   <div class="card"><h3>Участник</h3><p class="mut" style="margin:4px 0 10px">${esc(me.name)} · ${esc(me.role||'')}</p>
     <button class="sec" style="width:100%" onclick="switchUser()">👤 Сменить участника</button></div>
   <div class="card"><h3>Состав команды «${esc(team?team.name:'—')}»</h3>
-    ${TEAM_MEMBERS.map(m => `<div class="mrow"><div class="av">${esc((m.member||'?')[0])}</div>
-      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}</div>
+    ${TEAM_MEMBERS.map(m => `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av">${esc((m.member||'?')[0])}</div>
+      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc((MEMBERS.find(x=>x.name===m.member)||{}).phone||'')}</span></div>
       ${isOwner && m.member!==me.name ? `<button class="dng" style="padding:6px 10px" onclick="removeMember('${esc(m.member)}')">✖</button>`:''}
     </div>`).join('') || '<p class="mut">Нет участников.</p>'}
     ${isOwner && others.length ? `<div style="height:8px"></div><div class="row"><select id="addM" style="flex:1">${others.map(m=>`<option>${esc(m.name)}</option>`).join('')}</select><button class="pri" onclick="addMember()">+ В команду</button></div>`:''}
@@ -519,6 +522,72 @@ async function deleteTeam(){
   store.del('team'); team = null; reloadAll2();
 }
 async function reloadAll2(){ MYTEAMS = await fetchMyTeams(); if(MYTEAMS.length){ team=MYTEAMS[0]; store.set('team',team); reloadAll(); } else onboarding2(); }
+
+/* ---------- Карточки участников и отправка сообщений ---------- */
+function memberCard(name){
+  const m = MEMBERS.find(x=>x.name===name) || {name};
+  const isSelf = name===me.name;
+  const tg = (m.telegram||'').replace('@','');
+  $('#sheet').innerHTML = `<h2>${esc(name)}</h2>
+   <div class="card">
+     <p class="mut">${esc(m.role||'Участник')}</p>
+     ${m.phone?`<p style="margin-top:8px">📞 <a href="tel:${esc(m.phone)}" style="color:#9db8ff">${esc(m.phone)}</a></p>`:''}
+     ${m.email?`<p style="margin-top:4px">✉️ <a href="mailto:${esc(m.email)}" style="color:#9db8ff">${esc(m.email)}</a></p>`:''}
+     ${m.telegram?`<p style="margin-top:4px">✈️ <a href="https://t.me/${esc(tg)}" target="_blank" style="color:#9db8ff">${esc(m.telegram)}</a></p>`:''}
+     ${!m.phone&&!m.email&&!m.telegram?'<p class="mut" style="margin-top:8px">Контакты не заполнены'+(isSelf?' — нажмите «Редактировать»':'')+'.</p>':''}
+     <div style="height:12px"></div>
+     <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
+     ${isSelf?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard()">✏️ Редактировать мою карточку</button>`:''}
+     <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+function composeTo(name){
+  $('#sheet').innerHTML = `<h2>Сообщение для ${esc(name)}</h2>
+   <div class="card"><textarea id="cMsg" rows="4" placeholder="Текст сообщения…"></textarea>
+   <div style="height:10px"></div>
+   <button class="pri" style="width:100%;margin-bottom:8px" onclick="sendToChat('${esc(name)}')">💬 В чат приложения (мгновенно)</button>
+   <div class="row" style="flex-wrap:wrap">
+     <button class="sec" style="flex:1" onclick="viaSms('${esc(name)}')">📱 SMS</button>
+     <button class="sec" style="flex:1" onclick="viaWa('${esc(name)}')">🟢 WhatsApp</button>
+     <button class="sec" style="flex:1" onclick="viaTg('${esc(name)}')">✈️ Telegram</button>
+     <button class="sec" style="flex:1" onclick="viaMail('${esc(name)}')">✉️ Почта</button>
+   </div>
+   <p class="mut" style="margin-top:10px">SMS / WhatsApp / Telegram / Почта откроют штатное приложение устройства с готовым текстом — в одно касание. «В чат» — полностью внутри этого приложения, без сторонних программ.</p></div>`;
+  $('#overlay').style.display='flex';
+}
+function sendToChat(name){
+  const t = msgText();
+  $('#overlay').style.display='none';
+  dmWith = name;
+  view = 'chat';
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  loadChan();
+  setTimeout(() => { if(t && $('#mText')) $('#mText').value = t; }, 400);
+}
+function msgText(){ return ($('#cMsg') ? $('#cMsg').value : '').trim(); }
+function viaSms(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('У участника не указан телефон'); const t=msgText(); location.href='sms:'+m.phone.replace(/[^\d+]/g,'')+(t?'?body='+encodeURIComponent(t):''); }
+function viaWa(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('Не указан телефон'); const t=msgText(); window.open('https://wa.me/'+m.phone.replace(/[^\d]/g,'')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
+function viaTg(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.telegram) return alert('Не указан Telegram'); const t=msgText(); window.open('https://t.me/'+m.telegram.replace('@','')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
+function viaMail(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.email) return alert('Не указан e-mail'); const t=msgText(); location.href='mailto:'+m.email+(t?'?body='+encodeURIComponent(t):''); }
+function editCard(){
+  const m = MEMBERS.find(x=>x.name===me.name) || {};
+  $('#sheet').innerHTML = `<h2>Моя карточка</h2>
+   <div class="card">
+    <input id="ec_p" placeholder="Телефон" value="${esc(m.phone||'')}"><div style="height:8px"></div>
+    <input id="ec_e" placeholder="E-mail" value="${esc(m.email||'')}"><div style="height:8px"></div>
+    <input id="ec_t" placeholder="Telegram, например @ivanov" value="${esc(m.telegram||'')}">
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="saveCard()">💾 Сохранить</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(me.name)}')">← Назад</button>
+   </div>`;
+}
+async function saveCard(){
+  const {error} = await sb.from('members').update({phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null}).eq('name', me.name);
+  if(error) return alert(error.message);
+  await loadMembers();
+  memberCard(me.name);
+}
 
 /* ---------- Realtime ---------- */
 function subscribeAll(){
