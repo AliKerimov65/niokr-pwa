@@ -21,7 +21,7 @@ header .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:non
 header .dot.off{background:var(--bad)}
 header h1{font-size:16px;flex:none}
 #teamBtn{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:18px;padding:6px 12px;font-size:13px;font-weight:600;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#syncBadge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--card2);color:var(--mut);flex:none}
+#syncBadge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--card2);color:var(--mut);flex:none;cursor:pointer}
 #syncBadge.on{background:#e6f4ec;color:#1e7a43}
 header small{color:var(--mut);flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 header #installBtn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:600;flex:none}
@@ -97,7 +97,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
   <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
-  <span id="syncBadge">Локальный</span>
+  <span id="syncBadge" title="Обновить данные">Локальный</span>
   <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button>
 </header>
@@ -573,6 +573,15 @@ function renderCustomTab(v){
 }
 $('#tabsBtn').onclick = () => manageTabs();
 $('#membersBtn').onclick = () => membersSheet();
+$('#syncBadge').onclick = async () => {
+  const b = $('#syncBadge');
+  if(!SYNC){ location.reload(); return; }
+  b.textContent = '⟳ …';
+  await Promise.all([loadChan(), loadTasks(), loadNews(), loadDocs(), loadStages(), loadMembers(), loadTeamMembers(), loadTabs(), loadDmPartners()]);
+  render();
+  b.textContent = 'Синхрон'; b.classList.add('on');
+  setTimeout(() => syncBadge(), 1500);
+};
 $('#exitBtn').onclick = () => {
   if(!confirm('Выйти из приложения?\nПотребуется повторный выбор участника.')) return;
   store.del('user'); store.del('team'); me = null; team = null;
