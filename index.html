@@ -77,6 +77,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <span class="dot" id="net"></span>
   <h1>НИОКР</h1>
   <button id="teamBtn" class="hidden">👥 Команда</button>
+  <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <span id="syncBadge">Локальный</span>
   <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button>
@@ -95,6 +96,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button data-v="news"><span class="ic">📢</span>Объявл.</button>
   <button data-v="files"><span class="ic">📁</span>Файлы</button>
   <button data-v="misc"><span class="ic">🔧</span>Разное</button>
+  <span id="dynTabs" style="display:contents"></span>
 </nav>
 <div id="overlay"><div class="sheet" id="sheet"></div></div>
 
@@ -113,6 +115,7 @@ let team = store.get('team', null);
 let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
 let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
+let READS = [], ONLINE = {}, TABS = [];
 
 /* ---------- Supabase ---------- */
 let sb = null, SYNC = false;
@@ -239,7 +242,7 @@ function start(){
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
-  render(); loadTeamMembers();
+  render(); loadTeamMembers(); loadTabs();
   if(SYNC){
     subscribeAll();
     loadChan();
@@ -340,8 +343,147 @@ async function teamSheet(){
   $('#overlay').style.display = 'flex';
 }
 function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
-function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; start(); }
+function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; start(); }
 $('#teamBtn').onclick = () => { if(SYNC) teamSheet(); };
+
+/* ---------- динамические вкладки (владелец) ---------- */
+document.querySelector('.tabbar').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if(b && b.dataset.tid){
+    view = 'tab:' + b.dataset.tid;
+    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
+    render();
+  }
+});
+async function loadTabs(){
+  if(!SYNC || !team) return;
+  TABS = await sbList('tabs', [['team_id', tid()]]);
+  if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
+  renderTabbar();
+  if(view.startsWith('tab:')) render();
+}
+function renderTabbar(){
+  const c = $('#dynTabs'); if(!c) return;
+  c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
+  if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
+}
+function curTab(){ return TABS.find(t => 'tab:'+t.id === view); }
+function manageTabs(){
+  if(!(team && team.is_owner)) return;
+  $('#sheet').innerHTML = `<h2>Вкладки команды</h2>
+    ${TABS.map(t=>`<div class="card row"><span style="font-size:20px">${t.icon}</span><div style="flex:1"><b>${esc(t.name)}</b><p class="mut">${({link:'внешняя ссылка',text:'текстовая страница',list:'чек-лист',feed:'лента записей'})[t.kind]||t.kind}</p></div>
+      <button class="sec" style="padding:8px 10px" onclick="tabForm(${t.id})">✏️</button>
+      <button class="dng" style="padding:8px 10px" onclick="delTab(${t.id})">🗑</button></div>`).join('') || '<p class="mut">Своих вкладок пока нет.</p>'}
+    <div style="height:10px"></div><button class="pri" style="width:100%" onclick="tabForm()">＋ Создать вкладку</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
+}
+function tabForm(id){
+  const t = id ? TABS.find(x=>x.id===id) : null;
+  const cfg = t ? t.config : {};
+  $('#sheet').innerHTML = `<h2>${t?'Правка':'Новая'} вкладка</h2><div class="card">
+    <input id="tbN" placeholder="Название" value="${esc(t?t.name:'')}"><div style="height:8px"></div>
+    <div class="row"><select id="tbI" style="flex:1">${['📄','🔗','📝','☑','📰','📊','🧪','📐','⚠️','📅'].map(e=>`<option ${t&&t.icon===e?'selected':''}>${e}</option>`).join('')}</select>
+    <select id="tbK" style="flex:1" onchange="tabKindFill({})">
+      <option value="text" ${t&&t.kind==='text'?'selected':''}>📝 Текст</option>
+      <option value="link" ${t&&t.kind==='link'?'selected':''}>🔗 Ссылка</option>
+      <option value="list" ${t&&t.kind==='list'?'selected':''}>☑ Список</option>
+      <option value="feed" ${t&&t.kind==='feed'?'selected':''}>📰 Лента</option>
+    </select></div>
+    <div id="tbX" style="margin-top:8px"></div>
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="saveTab(${t?t.id:'null'})">💾 Сохранить</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="manageTabs()">← Назад</button></div>`;
+  $('#overlay').style.display='flex';
+  tabKindFill(cfg);
+}
+function tabKindFill(cfg){
+  const k = $('#tbK').value;
+  $('#tbX').innerHTML = k==='link' ? `<input id="tbU" placeholder="https://…" value="${esc(cfg.url||'')}">`
+    : k==='text' ? `<textarea id="tbT" rows="6" placeholder="Текст страницы…">${esc(cfg.text||'')}</textarea>`
+    : k==='list' ? `<textarea id="tbL" rows="4" placeholder="Пункты чек-листа, каждый с новой строки…">${esc((cfg.items||[]).map(i=>i.text).join('\n'))}</textarea>`
+    : `<p class="mut">Лента: все участники команды смогут публиковать записи.</p>`;
+}
+async function saveTab(id){
+  const name = $('#tbN').value.trim(); if(!name) return alert('Введите название');
+  const kind = $('#tbK').value; const icon = $('#tbI').value;
+  let config = {};
+  if(kind==='link'){ config.url = ($('#tbU') ? $('#tbU').value : '').trim(); if(!config.url) return alert('Укажите ссылку'); }
+  if(kind==='text'){ config.text = $('#tbT') ? $('#tbT').value : ''; }
+  if(kind==='list'){ config.items = ($('#tbL') ? $('#tbL').value : '').split('\n').map(s=>s.trim()).filter(Boolean).map(x=>({text:x, done:false})); }
+  if(id){ await sb.from('tabs').update({name, icon, kind, config}).eq('id',id); }
+  else { await sb.from('tabs').insert({team_id:tid(), name, icon, kind, config, pos:TABS.length, created_by:me.name}); }
+  manageTabs();
+}
+async function delTab(id){
+  if(!confirm('Удалить вкладку?')) return;
+  await sb.from('tabs').delete().eq('id',id);
+  if(view==='tab:'+id) view='chat';
+  manageTabs();
+}
+function editTabText(id){
+  const t = TABS.find(x=>x.id===id);
+  $('#sheet').innerHTML = `<h2>${esc(t.name)}</h2><div class="card"><textarea id="tbT2" rows="10">${esc(t.config.text||'')}</textarea><div style="height:10px"></div><button class="pri" style="width:100%" onclick="saveTabText(${id})">💾 Сохранить</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function saveTabText(id){
+  const t = TABS.find(x=>x.id===id);
+  await sb.from('tabs').update({config:{...t.config, text:$('#tbT2').value}}).eq('id',id);
+  $('#overlay').style.display='none'; render();
+}
+async function updTabCfg(id, cfg){ await sb.from('tabs').update({config:cfg}).eq('id',id); }
+async function addItem(id){
+  const t = curTab(); const items = (t.config.items||[]).slice();
+  const txt = $('#newItem').value.trim(); if(!txt) return;
+  items.push({text:txt, done:false, by:me.name});
+  await updTabCfg(id, {...t.config, items});
+}
+async function toggleItem(id, i){
+  const t = curTab(); const items = (t.config.items||[]).slice();
+  items[i].done = !items[i].done; items[i].by = me.name;
+  await updTabCfg(id, {...t.config, items});
+}
+async function delItem(id, i){
+  const t = curTab(); const items = (t.config.items||[]).slice();
+  items.splice(i,1);
+  await updTabCfg(id, {...t.config, items});
+}
+async function loadPosts(tabId){
+  const {data} = await sb.from('posts').select('*').eq('tab_id',tabId).order('created_at');
+  const el = $('#posts'); if(!el) return;
+  el.innerHTML = (data||[]).slice().reverse().map(p=>`<div class="card"><p>${esc(p.body)}</p><p class="mut" style="margin-top:4px">${esc(p.author||'')} · ${fmtT(p.created_at)}</p></div>`).join('') || '<p class="mut">Записей нет.</p>';
+}
+async function addPost(tabId){
+  const b = $('#pText').value.trim(); if(!b) return;
+  await sb.from('posts').insert({tab_id:tabId, author:me.name, body:b});
+}
+function renderCustomTab(v){
+  const t = curTab(); if(!t){ view='chat'; render(); return; }
+  const isOwner = team && team.is_owner;
+  if(t.kind === 'link'){
+    const url = t.config.url || '';
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div class="card"><p class="mut" style="margin-bottom:10px;word-break:break-all">${esc(url)}</p>
+      <button class="pri" style="width:100%" onclick="window.open('${esc(url)}','_blank')">↗ Открыть</button></div>`;
+  }
+  if(t.kind === 'text'){
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div class="card">${esc(t.config.text||'Пусто.').replace(/\n/g,'<br>')}</div>
+      ${isOwner?`<button class="sec" style="width:100%" onclick="editTabText(${t.id})">✏️ Править текст</button>`:''}`;
+  }
+  if(t.kind === 'list'){
+    const items = t.config.items || [];
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2>
+      <div class="card">${items.map((it,i)=>`<div class="mrow"><input type="checkbox" ${it.done?'checked':''} onchange="toggleItem(${t.id},${i})" style="width:auto;flex:none">
+        <div class="inf" style="${it.done?'text-decoration:line-through;color:var(--mut)':''}">${esc(it.text)}</div>
+        ${isOwner?`<button class="dng" style="padding:6px 10px" onclick="delItem(${t.id},${i})">✖</button>`:''}</div>`).join('') || '<p class="mut">Пунктов нет.</p>'}
+      <div style="height:8px"></div><div class="row"><input id="newItem" placeholder="Новый пункт…"><button class="pri" onclick="addItem(${t.id})">＋</button></div></div>`;
+  }
+  if(t.kind === 'feed'){
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div id="posts"></div>
+      <div class="composer" style="border-radius:12px;border:1px solid var(--brd);margin-top:10px"><input id="pText" placeholder="Запись…" style="flex:1"><button onclick="addPost(${t.id})">➤</button></div>`;
+    loadPosts(t.id);
+  }
+}
+$('#tabsBtn').onclick = () => manageTabs();
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
@@ -360,7 +502,9 @@ function render(){
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
   $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
   $('#chatComposer').classList.toggle('hidden', view!=='chat');
+  renderTabbar();
   const v = $('#view'); v.innerHTML='';
+  if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='chat') renderChat(v);
   if(view==='stages') renderStages(v);
   if(view==='tasks') renderTasks(v);
@@ -755,6 +899,8 @@ function subscribeAll(){
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'announcements'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadNews(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'tabs'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadTabs(); })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'posts'}, p => { if(view==='tab:'+p.new.tab_id) loadPosts(p.new.tab_id); })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'documents'}, p => { if(p.new.team_id===tid()) loadDocs(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'stages'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadStages(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'team_members'}, () => { loadTeamMembers(); if(view==='misc') render(); })
