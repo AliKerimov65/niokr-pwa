@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2f6fed">
+<meta name="theme-color" content="#116dff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="НИОКР">
@@ -12,52 +12,52 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>НИОКР Команда</title>
 <style>
-:root{--bg:#0f1117;--card:#1a1d29;--card2:#22263a;--txt:#e8eaf2;--mut:#8b90a5;--acc:#2f6fed;--ok:#3ecf8e;--warn:#f5a623;--bad:#ef5350;}
+:root{--bg:#f2f4f7;--card:#ffffff;--card2:#eceff4;--txt:#181a1f;--mut:#6e6e76;--acc:#116dff;--ok:#2e9e5b;--warn:#e8930c;--bad:#d33f34;--brd:#e3e6ea;--brd2:#d5dae2;}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column}
-header{padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:var(--card);display:flex;align-items:center;gap:8px;border-bottom:1px solid #262a3d;position:sticky;top:0;z-index:5}
+header{padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:var(--card);display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:5}
 header .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
 header .dot.off{background:var(--bad)}
 header h1{font-size:16px;flex:none}
-#teamBtn{background:var(--card2);border:1px solid #30344d;color:var(--txt);border-radius:18px;padding:6px 12px;font-size:13px;font-weight:600;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#teamBtn{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:18px;padding:6px 12px;font-size:13px;font-weight:600;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #syncBadge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--card2);color:var(--mut);flex:none}
-#syncBadge.on{background:#12362a;color:var(--ok)}
+#syncBadge.on{background:#e6f4ec;color:#1e7a43}
 header small{color:var(--mut);flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 header #installBtn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:600;flex:none}
 main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
-.tabbar{display:flex;background:var(--card);border-top:1px solid #262a3d;padding-bottom:env(safe-area-inset-bottom)}
+.tabbar{display:flex;background:var(--card);border-top:1px solid var(--brd);padding-bottom:env(safe-area-inset-bottom)}
 .tabbar button{flex:1;background:none;border:0;color:var(--mut);padding:8px 1px 10px;font-size:10.5px;cursor:pointer}
 .tabbar button .ic{display:block;font-size:20px;margin-bottom:2px}
 .tabbar button.on{color:var(--acc);font-weight:700}
-.card{background:var(--card);border:1px solid #262a3d;border-radius:12px;padding:12px;margin-bottom:10px}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:12px;margin-bottom:10px}
 .card h3{font-size:15px;margin-bottom:4px;word-break:break-word}
 .mut{color:var(--mut);font-size:12.5px}
 .row{display:flex;gap:8px;align-items:center}
-input,textarea,select{background:var(--card2);border:1px solid #30344d;color:var(--txt);border-radius:10px;padding:10px;font:inherit;width:100%}
+input,textarea,select{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px;font:inherit;width:100%}
 button.pri{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
-button.sec{background:var(--card2);border:1px solid #30344d;color:var(--txt);border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
+button.sec{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
 button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
 .ch{display:flex;flex-direction:column;gap:8px}
-.msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid #262a3d}
-.msg.me{align-self:flex-end;background:#1d2b52;border-color:#2b3c6b}
-.msg b{font-size:12.5px;color:#9db8ff}
+.msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid var(--brd)}
+.msg.me{align-self:flex-end;background:#e3efff;border-color:#bcd7ff}
+.msg b{font-size:12.5px;color:#0d4fb3}
 .msg .t{font-size:11px;color:var(--mut);margin-top:3px}
 .msg img{max-width:100%;border-radius:8px;margin-top:6px}
-.msg a{color:#9db8ff}
+.msg a{color:#116dff}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--mut)}
-.badge.ok{background:#12362a;color:var(--ok)} .badge.warn{background:#3a2c10;color:var(--warn)} .badge.bad{background:#3a1515;color:var(--bad)}
-.composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid #262a3d}
+.badge.ok{background:#e6f4ec;color:#1e7a43} .badge.warn{background:#fdf2df;color:#a06a00} .badge.bad{background:#fbe7e5;color:#b3261e}
+.composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid var(--brd)}
 .composer input{flex:1}
 .composer button{background:var(--acc);color:#fff;border:0;border-radius:10px;width:46px;font-size:18px}
 .chans{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px}
-.chans button{flex:0 0 auto;background:var(--card2);border:1px solid #30344d;color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px}
+.chans button{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px}
 .chans button.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:none;align-items:flex-end}
 #overlay .sheet{background:var(--card);border-radius:18px 18px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-height:90vh;overflow-y:auto}
 #overlay h2{font-size:18px;margin-bottom:12px}
 ol{padding-left:20px} ol li{margin:8px 0}
-ul.subs{padding-left:18px;margin-top:6px} ul.subs li{margin:5px 0;font-size:13.5px;color:#c3c7d8}
+ul.subs{padding-left:18px;margin-top:6px} ul.subs li{margin:5px 0;font-size:13.5px;color:#3a3f4a}
 .hidden{display:none!important}
 h2.pt{font-size:16px;margin:4px 0 10px}
 .stage-head{display:flex;align-items:flex-start;gap:8px}
@@ -68,8 +68,8 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 .mrow .av{width:34px;height:34px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
 .mrow .inf{flex:1;min-width:0}
 .mrow .inf b{font-size:14px}
-.pill{font-size:10px;background:var(--warn);color:#201600;border-radius:8px;padding:1px 6px;font-weight:700}
-.code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #4a5070;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
+.pill{font-size:10px;background:var(--acc);color:#fff;border-radius:8px;padding:1px 6px;font-weight:700}
+.code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #116dff88;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
 </style>
 </head>
 <body>
@@ -541,7 +541,7 @@ function renderFiles(v){
   <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
   <button class="pri" style="width:100%" onclick="addFile()">Загрузить</button></div>
   ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
-  <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#9db8ff;font-size:22px">⬇</a>
+  <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#116dff;font-size:22px">⬇</a>
   <button class="dng" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
 async function addFile(){
@@ -617,9 +617,9 @@ function memberCard(name){
   $('#sheet').innerHTML = `<h2>${esc(name)}</h2>
    <div class="card">
      <p class="mut">${esc(m.role||'Участник')}</p>
-     ${m.phone?`<p style="margin-top:8px">📞 <a href="tel:${esc(m.phone)}" style="color:#9db8ff">${esc(m.phone)}</a></p>`:''}
-     ${m.email?`<p style="margin-top:4px">✉️ <a href="mailto:${esc(m.email)}" style="color:#9db8ff">${esc(m.email)}</a></p>`:''}
-     ${m.telegram?`<p style="margin-top:4px">✈️ <a href="https://t.me/${esc(tg)}" target="_blank" style="color:#9db8ff">${esc(m.telegram)}</a></p>`:''}
+     ${m.phone?`<p style="margin-top:8px">📞 <a href="tel:${esc(m.phone)}" style="color:#116dff">${esc(m.phone)}</a></p>`:''}
+     ${m.email?`<p style="margin-top:4px">✉️ <a href="mailto:${esc(m.email)}" style="color:#116dff">${esc(m.email)}</a></p>`:''}
+     ${m.telegram?`<p style="margin-top:4px">✈️ <a href="https://t.me/${esc(tg)}" target="_blank" style="color:#116dff">${esc(m.telegram)}</a></p>`:''}
      ${!m.phone&&!m.email&&!m.telegram?'<p class="mut" style="margin-top:8px">Контакты не заполнены'+(isSelf?' — нажмите «Редактировать»':'')+'.</p>':''}
      <div style="height:12px"></div>
      <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
