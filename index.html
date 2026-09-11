@@ -90,6 +90,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <h1>НИОКР</h1>
   <button id="teamBtn" class="hidden">👥 Команда</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
+  <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
   <span id="syncBadge">Локальный</span>
   <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button>
@@ -409,6 +410,16 @@ function renderTabbar(){
   const c = $('#dynTabs'); if(!c) return;
   c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
+  if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
+}
+function membersSheet(){
+  if(!team) return;
+  $('#sheet').innerHTML = `<h2>${esc(team.name)} · ${TEAM_MEMBERS.length} чел.</h2>` +
+    TEAM_MEMBERS.map(m => { const mm = MEMBERS.find(x=>x.name===m.member)||{}; const on = ONLINE[m.member];
+      return `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av" style="${on?'box-shadow:0 0 0 2px var(--ok);':''}">${esc((m.member||'?')[0])}</div>
+      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc(mm.role||'Участник')}${on?' · 🟢 онлайн':''}</span></div></div>`; }).join('') +
+    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
 }
 function curTab(){ return TABS.find(t => 'tab:'+t.id === view); }
 function manageTabs(){
@@ -527,6 +538,7 @@ function renderCustomTab(v){
   }
 }
 $('#tabsBtn').onclick = () => manageTabs();
+$('#membersBtn').onclick = () => membersSheet();
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
