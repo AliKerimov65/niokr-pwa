@@ -999,7 +999,7 @@ function memberCard(name){
      <div style="height:12px"></div>
      <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
      ${(isSelf || (team&&team.is_owner))?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard('${esc(name)}')">✏️ Редактировать карточку</button>`:''}
-     ${isSelf?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="window.open('https://max.ru/'+MAX_BOT_NAME+'?start=pair_'+encodeURIComponent(me.name),'_blank')">🔗 Подключить MAX (получать сообщения сюда)</button>`:''}
+     ${isSelf?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="waConnectSelf()">🔗 Подключить WhatsApp (приём шлюзом)</button><div style="height:8px"></div><button class="sec" style="width:100%" onclick="window.open('https://max.ru/'+MAX_BOT_NAME+'?start=pair_'+encodeURIComponent(me.name),'_blank')">🔗 Подключить MAX (получать сообщения сюда)</button>`:''}
      ${(team&&team.is_owner && !isSelf && MYTEAMS.filter(t=>t.id!==tid()).length)?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="moveMemberForm('${esc(name)}')">⇄ Переместить в другую мою команду</button>`:''}
      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
    </div>`;
@@ -1050,7 +1050,13 @@ function viaWa(name){
 }
 function viaTg(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.telegram) return alert('Не указан Telegram'); const t=msgText(); window.open('https://t.me/'+m.telegram.replace('@','')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
 const MAX_BOT_NAME = 'YOUR_MAX_BOT'; // имя бота-шлюза (подставлю после создания)
-async function viaMax(name){
+async async function waConnectSelf(){
+  const m = MEMBERS.find(x=>x.name===me.name);
+  if(!m || !m.phone) return alert('Сначала укажите телефон в карточке (Редактировать карточку)');
+  await sb.from('wa_chats').upsert({member:me.name, phone:m.phone.replace(/[^\d]/g,'')}, {onConflict:'member'});
+  alert('Телефон привязан к WhatsApp-шлюзу. Для гарантированной доставки ответьте один раз на сообщение бизнес-номера в WhatsApp — откроется 24-часовое окно переписки.');
+}
+function viaMax(name){
   const t = msgText() || ('Сообщение от ' + (me?me.name:'') + ' (НИОКР Команда)');
   // ШЛЮЗ: если участник подключил MAX — отправляем напрямую, без открытия приложения
   try{
@@ -1092,6 +1098,7 @@ function editCard(name){
 }
 async function saveCard(name){
   const {error} = await sb.from('members').update({role:$('#ec_r').value||null, phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null, max:$('#ec_m').value||null}).eq('name', name);
+  if($('#ec_p').value) await sb.from('wa_chats').upsert({member:name, phone:$('#ec_p').value.replace(/[^\d]/g,'')}, {onConflict:'member'});
   if(error) return alert(error.message);
   if(name===me.name){ me.role = $('#ec_r').value; store.set('user', me); }
   await loadMembers(); render();
