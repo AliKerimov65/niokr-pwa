@@ -555,6 +555,7 @@ function memberCard(name){
      <div style="height:12px"></div>
      <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
      ${(isSelf || (team&&team.is_owner))?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard('${esc(name)}')">✏️ Редактировать карточку</button>`:''}
+     ${(team&&team.is_owner && !isSelf && MYTEAMS.filter(t=>t.id!==tid()).length)?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="moveMemberForm('${esc(name)}')">⇄ Переместить в другую мою команду</button>`:''}
      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
    </div>`;
   $('#overlay').style.display='flex';
@@ -635,6 +636,27 @@ async function createMember(){
   await sb.from('team_members').insert({team_id:tid(), member:n, is_owner:false});
   await loadMembers(); await loadTeamMembers(); render();
   $('#overlay').style.display='none';
+}
+
+/* ---------- Перемещение участника между командами ---------- */
+function moveMemberForm(name){
+  const targets = MYTEAMS.filter(t => t.id !== tid());
+  $('#sheet').innerHTML = `<h2>Переместить: ${esc(name)}</h2><div class="card">
+   <p class="mut" style="margin-bottom:8px">Из команды «${esc(team.name)}» в:</p>
+   <select id="mvT" style="width:100%">${targets.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+   <div style="height:12px"></div><button class="pri" style="width:100%" onclick="moveMember('${esc(name)}')">⇄ Переместить</button>
+   <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(name)}')">← Назад</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function moveMember(name){
+  const target = $('#mvT').value;
+  const tname = (MYTEAMS.find(t=>t.id===target)||{}).name || '';
+  if(!confirm('Переместить «'+name+'» в команду «'+tname+'»?')) return;
+  await sb.from('team_members').delete().eq('team_id', tid()).eq('member', name);
+  const {error} = await sb.from('team_members').insert({team_id: target, member: name, is_owner:false});
+  if(error) return alert(error.message);
+  await loadTeamMembers(); render();
+  memberCard(name);
 }
 
 /* ---------- Realtime ---------- */
