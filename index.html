@@ -96,6 +96,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="teamBtn" class="hidden">👥 Команда</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
+  <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
   <span id="syncBadge">Локальный</span>
   <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button>
@@ -572,6 +573,15 @@ function renderCustomTab(v){
 }
 $('#tabsBtn').onclick = () => manageTabs();
 $('#membersBtn').onclick = () => membersSheet();
+$('#exitBtn').onclick = () => {
+  if(!confirm('Выйти из приложения?\nПотребуется повторный выбор участника.')) return;
+  store.del('user'); store.del('team'); me = null; team = null;
+  try{ window.close(); }catch(e){}
+  $('#sheet').innerHTML = `<h2>Выход выполнен</h2><div class="card">
+    <p class="mut">Сеанс завершён. Приложение можно закрыть (смахнуть из списка задач), либо войдите снова:</p>
+    <div style="height:12px"></div><button class="pri" style="width:100%" onclick="location.reload()">🔑 Войти снова</button></div>`;
+  $('#overlay').style.display='flex';
+};
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
