@@ -96,6 +96,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="teamBtn" class="hidden">👥 Команда</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
+  <button id="pushBtn" class="hidden" title="Пуш-уведомления" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🔔</button>
   <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
   <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
   <span id="syncBadge" title="Обновить данные">Локальный</span>
@@ -306,7 +307,7 @@ function start(){
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
-  render(); loadTeamMembers(); loadTabs(); loadDmPartners(); autoSet();
+  render(); loadTeamMembers(); loadTabs(); loadDmPartners(); autoSet(); pushSync();
   if(SYNC){
     subscribeAll();
     loadChan();
@@ -597,6 +598,37 @@ $('#syncBadge').onclick = async () => {
   render();
   b.textContent = 'Синхрон'; b.classList.add('on');
   setTimeout(() => syncBadge(), 1500);
+};
+const VAPID_PUBLIC = '${VAPID_PUBLIC}';
+function urlB64ToUint8(b){ const p = '='.repeat((4-b.length%4)%4); const s = (b+p).replace(/-/g,'+').replace(/_/g,'/'); const r = atob(s); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))); }
+async function pushSync(){
+  const b = $('#pushBtn'); if(!b) return;
+  if(!('Notification' in window) || !('serviceWorker' in window) || !('PushManager' in window)){ b.classList.add('hidden'); return; }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription().catch(()=>null);
+  b.classList.remove('hidden');
+  const denied = Notification.permission === 'denied';
+  b.textContent = '🔔';
+  b.style.color = sub ? 'var(--acc)' : (denied ? 'var(--bad)' : 'var(--mut)');
+  b.style.borderColor = sub ? 'var(--acc)' : 'var(--brd2)';
+  b.style.background = sub ? '#7a541014' : 'none';
+  b.title = denied ? 'Уведомления заблокированы в настройках браузера' : (sub ? 'Пуш-уведомления: вкл — нажмите для отключения' : 'Включить пуш-уведомления');
+}
+$('#pushBtn').onclick = async () => {
+  if(!('Notification' in window)) return alert('Уведомления не поддерживаются этим браузером');
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if(sub){
+    await sub.unsubscribe();
+    if(SYNC) await sb.from('push_subs').delete().eq('endpoint', sub.endpoint);
+  } else {
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ pushSync(); return alert('Разрешение на уведомления не получено'); }
+    sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)});
+    const j = sub.toJSON();
+    if(SYNC) await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
+  }
+  pushSync();
 };
 $('#exitBtn').onclick = () => {
   if(!confirm('Выйти из приложения?\nПотребуется повторный выбор участника.')) return;
