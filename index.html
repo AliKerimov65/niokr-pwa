@@ -127,7 +127,7 @@ let team = store.get('team', null);
 let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
 let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
-let READS = [], ONLINE = {}, TABS = [];
+let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = {};
 
 /* ---------- Supabase ---------- */
 let sb = null, SYNC = false;
@@ -158,6 +158,36 @@ async function loadTeamMembers(){
   const r = await sb.from('team_members').select('*').eq('team_id', team.id).order('created_at');
   TEAM_MEMBERS = r.error ? [] : r.data;
 }
+async function loadDmPartners(){
+  if(!SYNC || !me) return;
+  const {data} = await sb.from('messages').select('id,dm,author,body,created_at').not('dm','is',null)
+    .or('dm.ilike.'+me.name+'||%,dm.ilike.%||'+me.name)
+    .order('created_at',{ascending:false}).limit(200);
+  DM_PARTNERS = {};
+  (data||[]).forEach(m => {
+    const other = m.dm.split('||').find(x => x !== me.name);
+    if(!other) return;
+    if(!DM_PARTNERS[other] || m.created_at > DM_PARTNERS[other].created_at)
+      DM_PARTNERS[other] = {id:m.id, author:m.author, body:m.body, created_at:m.created_at};
+  });
+}
+function dmUnread(p){ return p && p.author!==me.name && !readBy('msg', p.id).includes(me.name); }
+function dmListSheet(){
+  const names = Object.keys(DM_PARTNERS).sort((x,y)=> String(DM_PARTNERS[y].created_at).localeCompare(String(DM_PARTNERS[x].created_at)));
+  $('#sheet').innerHTML = `<h2>💌 Личные сообщения</h2><p class="mut" style="margin-bottom:8px">Видно только вам.</p>` +
+    (names.map(n => { const p = DM_PARTNERS[n]; const un = dmUnread(p);
+      return `<div class="mrow" style="cursor:pointer" onclick="openDm('${esc(n)}')"><div class="av">${esc(n[0])}</div>
+      <div class="inf"><b>${esc(n)}</b>${un?' <span class="pill">новое</span>':''}<br><span class="mut" style="font-size:11.5px">${esc(((p.body||'')||'📎 файл').slice(0,42))} · ${fmtT(p.created_at)}</span></div></div>`; }).join('') || '<p class="mut">Личных переписок нет.</p>') +
+    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
+}
+function openDm(name){
+  $('#overlay').style.display='none';
+  dmWith = name;
+  view = 'chat';
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  loadChan();
+}
 function dmKey(a,b){ return [a,b].sort().join('||'); }
 async function loadChan(){
   if(!SYNC) return;
@@ -168,6 +198,7 @@ async function loadChan(){
   }
   await loadReads('msg', rMsgs.filter(m=>m.id).map(m=>m.id));
   markRead('msg', rMsgs);
+  loadDmPartners();
   if(view==='chat') render();
 }
 async function loadReads(kind, ids){
@@ -254,7 +285,7 @@ function start(){
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
-  render(); loadTeamMembers(); loadTabs();
+  render(); loadTeamMembers(); loadTabs(); loadDmPartners();
   if(SYNC){
     subscribeAll();
     loadChan();
@@ -547,8 +578,10 @@ function renderChat(v){
   if(dmWith){
     v.innerHTML = `<div class="row" style="margin-bottom:10px"><button class="sec" style="padding:6px 12px" onclick="dmWith=null;loadChan()">← Каналы</button><b>💬 Личное: ${esc(dmWith)}</b></div><div class="ch" id="msgs"></div>`;
   } else {
-    v.innerHTML = `<div class="chans">${CHANNELS.map(c =>
-      `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
+    const dmN = Object.keys(DM_PARTNERS).length;
+    const dmHasNew = Object.values(DM_PARTNERS).some(p => dmUnread(p));
+    v.innerHTML = `<div class="chans"><button onclick="dmListSheet()" style="${dmHasNew?'border-color:var(--acc);color:var(--acc);font-weight:700':''}">💌 ${dmN||''}</button>${CHANNELS.map(c =>
+      `<button class="${c===chan?'on':''}" onclick="dmWith=null;chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
       <div class="ch" id="msgs"></div>`;
   }
   const msgs = SYNC ? rMsgs : store.get('chat_'+(team?team.id:'x')+'_'+chan, []);
@@ -922,6 +955,7 @@ function subscribeAll(){
       } else if(m.team_id===tid() && m.channel===chan && m.client_id!==cid){
         rMsgs.push(rowToMsg(m)); if(view==='chat') render();
       }
+      if(m.dm && m.dm.split('||').includes(me.name)){ loadDmPartners(); if(view==='chat' && !dmWith) render(); }
     })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'reads'}, p => {
       const r = p.new; const k = r.kind+':'+r.ref_id+':'+r.member;
