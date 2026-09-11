@@ -98,6 +98,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="teamBtn" class="hidden">👥 Команда</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
+  <button id="setBtn" title="Настройки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⚙</button>
   <button id="pushBtn" class="hidden" title="Пуш-уведомления" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🔔</button>
   <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
   <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
@@ -629,6 +630,38 @@ async function pushSync(){
   b.style.background = sub ? '#7a541014' : 'none';
   b.title = denied ? 'Уведомления заблокированы в настройках браузера' : (sub ? 'Пуш-уведомления: вкл — нажмите для отключения' : 'Включить пуш-уведомления');
 }
+/* ---------- Настройки ---------- */
+function settingsSheet(){
+  const isOwner = team && team.is_owner;
+  const denied = ('Notification' in window) && Notification.permission === 'denied';
+  const sec = (icon, title, sub, fn) => `<div class="mrow" style="cursor:pointer" onclick="${fn}"><div class="av">${icon}</div><div class="inf"><b>${title}</b><br><span class="mut" style="font-size:11.5px">${sub}</span></div></div>`;
+  $('#sheet').innerHTML = `<h2>⚙ Настройки</h2>
+    ${sec('👤','Мой профиль', esc(me.name)+' · '+esc(me.role||'—'), 'editCard(\''+esc(me.name)+'\')')}
+    ${sec('👥','Текущая команда: '+esc(team?team.name:'—'), isOwner?'владелец · код '+esc(team.invite_code||''):(TEAM_MEMBERS.length+' участников'), 'teamSheet()')}
+    ${SYNC ? sec('🗂','Мои команды','переключение, создание, вступление по коду','teamSheet()') : ''}
+    ${SYNC ? sec('🔔','Push-уведомления', denied?'заблокированы в браузере — откройте настройки сайта':'сообщения, задачи, этапы, участники','settingsPush()') : ''}
+    ${SYNC ? sec('⟳','Автообновление', AUTO?'вкл · каждые 5 мин':'выкл · нажмите для вкл','settingsAuto()') : ''}
+    ${SYNC ? sec('💾','Ручная синхронизация','обновить все данные сейчас','syncBadge().click()') : ''}
+    ${isOwner ? sec('🧩','Вкладки команды','конструктор: текст, ссылки, чек-листы, ленты','manageTabs()') : ''}
+    ${sec('📲','Установка на рабочий стол','Android и iPhone','settingsInstall()')}
+    ${sec('🚪','Выход из приложения','завершить сеанс на устройстве','document.getElementById(\'exitBtn\').click()')}
+    <div style="height:10px"></div><p class="mut" style="text-align:center">НИОКР Команда · PWA v31 · Supabase</p>`;
+  $('#overlay').style.display='flex';
+}
+function settingsPush(){
+  $('#pushBtn').click();
+  $('#overlay').style.display='none';
+  setTimeout(() => { $('#pushBtn').click(); $('#overlay').style.display='none'; settingsSheet(); }, 700);
+}
+function settingsAuto(){ AUTO = !AUTO; store.set('auto', AUTO); autoSet(); settingsSheet(); }
+function settingsInstall(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const text = isIOS
+    ? 'iPhone (Safari):<br>1. Нажмите «Поделиться» (квадрат со стрелкой).<br>2. «На экран «Домой»» → «Добавить».<br>3. Открывайте приложение с иконки — оно работает полноэкранно и офлайн.'
+    : 'Android (Chrome):<br>1. Меню «⋮» (три точки).<br>2. «Установить приложение» / «Добавить на главный экран».<br>3. Или дождитесь баннера «Установить» внизу экрана.';
+  $('#sheet').innerHTML = `<h2>📲 Установка</h2><div class="card">${text}</div><button class="sec" style="width:100%" onclick="settingsSheet()">← Назад</button>`;
+}
+$('#setBtn').onclick = () => settingsSheet();
 $('#pushBtn').onclick = async () => {
   if(!('Notification' in window)) return alert('Уведомления не поддерживаются этим браузером');
   const reg = await navigator.serviceWorker.ready;
