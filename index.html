@@ -60,6 +60,11 @@ ol{padding-left:20px} ol li{margin:8px 0}
 ul.subs{padding-left:18px;margin-top:6px} ul.subs li{margin:5px 0;font-size:13.5px;color:#3a3f4a}
 .hidden{display:none!important}
 h2.pt{font-size:16px;margin:4px 0 10px}
+/* --- Выпадающее меню команд --- */
+.dropdown{position:absolute;top:calc(100% + 6px);left:8px;background:var(--card);border:1px solid var(--brd);border-radius:12px;box-shadow:0 10px 28px rgba(31,25,14,.22);z-index:60;min-width:230px;overflow:hidden}
+.dropdown .di{padding:12px 14px;cursor:pointer;display:flex;gap:8px;align-items:center;font-size:14px}
+.dropdown .di:hover{background:var(--card2)}
+.dropdown .di.on{font-weight:700;color:var(--acc)}
 /* --- Мобильная оптимизация --- */
 html,body{height:100%}
 body{height:100dvh}
@@ -400,7 +405,23 @@ async function teamSheet(){
 }
 function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
 function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; start(); }
-$('#teamBtn').onclick = () => { if(SYNC) teamSheet(); };
+async function teamMenuToggle(ev){
+  ev.stopPropagation();
+  if(!SYNC) return;
+  const old = document.getElementById('teamMenu');
+  if(old){ old.remove(); return; }
+  MYTEAMS = await fetchMyTeams();
+  const m = document.createElement('div');
+  m.id = 'teamMenu'; m.className = 'dropdown';
+  m.innerHTML = MYTEAMS.map(t => `<div class="di ${team&&team.id===t.id?'on':''}" onclick="document.getElementById('teamMenu').remove();switchTeam('${t.id}')">👥 ${esc(t.name)}${t.is_owner?' · моя':''}${team&&team.id===t.id?' ✓':''}</div>`).join('')
+    + `<div class="di" style="border-top:1px solid var(--brd);color:var(--acc)" onclick="document.getElementById('teamMenu').remove();teamSheet()">＋ Создать / вступить по коду…</div>`;
+  document.querySelector('header').appendChild(m);
+}
+$('#teamBtn').onclick = (ev) => teamMenuToggle(ev);
+document.addEventListener('click', e => {
+  const m = document.getElementById('teamMenu');
+  if(m && !e.target.closest('#teamMenu') && !e.target.closest('#teamBtn')) m.remove();
+});
 
 /* ---------- динамические вкладки (владелец) ---------- */
 document.querySelector('.tabbar').addEventListener('click', e => {
