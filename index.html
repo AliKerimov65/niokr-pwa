@@ -1201,10 +1201,22 @@ function renderDevBox(){
 async function devSend(id){
   const btn = document.getElementById('devSend_'+id);
   const body = (document.getElementById('dev_'+id) || {}).value || '';
-  if(btn){ btn.disabled = true; btn.textContent = '⏳ Отправка…'; }
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Принято…'; }
   await sb.from('dev_tasks').update({body, status: 'Отправлено', sent_at: new Date().toISOString()}).eq('id', id);
   await loadDevTasks(); renderDevBox();
-  alert('📨 Задача отправлена Kimi. Откройте чат с Kimi и скажите «выполни задачи из dev_tasks» — обновление будет опубликовано автоматически.');
+  // Авто-исполнение: разработка → проверка → публикация
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/dev-executor', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id: id, owner: me.name})
+    });
+    const j = await r.json().catch(()=>({}));
+    await loadDevTasks(); renderDevBox();
+    if(j && j.ok) alert('✅ Задача исполнена автоматически и опубликована (v' + j.version + '). Перезапустите приложение, чтобы увидеть изменение.');
+    else alert('⚠️ Авто-исполнение: ' + ((j && j.error) || 'ошибка') + '\nСтатус задачи обновлён — попробуйте «Отправить Kimi» ещё раз после правки ТЗ.');
+  }catch(e){
+    alert('📨 Задача принята. Авто-исполнение временно недоступно (' + e.message + ') — повторите отправку.');
+  }
 }
 async function devDel(id){
   if(!confirm('Удалить задачу?')) return;
