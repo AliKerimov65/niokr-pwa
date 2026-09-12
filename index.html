@@ -164,7 +164,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 <header><div class="hrow">
   <button id="menuBtn" title="Меню" style="background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:16px;font-weight:700;flex:none">☰</button>
   <span class="dot" id="net"></span>
-  <h1 style="margin:0 2px">НИОКР</h1>
+  <span id="teamIco" title="Команда" style="width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none">🏗</span>
   <button id="teamBtn" class="hidden" style="max-width:26vw">👥 Команда</button>
   <span style="flex:1"></span>
   <span id="hdrRight" style="display:flex;align-items:center;gap:5px;flex:none;max-width:58vw;overflow-x:auto;scrollbar-width:none">
@@ -587,6 +587,8 @@ function renderTabbar(){
   c.innerHTML = ''; // кастомные вкладки в нижнем меню отключены — доступ через ☰ Меню и верхнюю панель
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
+  const tico = document.getElementById('teamIco');
+  if(tico){ tico.textContent = team ? (team.name||'?').trim().charAt(0).toUpperCase() : '🏗'; tico.title = team ? team.name : 'Команда'; }
   if($('#agentBtn')){
     $('#agentBtn').classList.toggle('hidden', !(team && team.is_owner));
     if(team && team.is_owner && store.get('agentNotify')) $('#agentBtn').textContent = '🤖●';
@@ -1335,8 +1337,7 @@ function renderStructBar(){
   if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
   TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
   (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
-  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
-    || '<span class="mut" style="font-size:12px;padding:5px 2px">Структура команды появится здесь: журнал, задачи, вкладки</span>';
+  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('');
 }
 function openTabView(id){
   view = 'tab:'+id;
@@ -1770,6 +1771,11 @@ window.addEventListener('popstate', (e) => {
   const ov = document.getElementById('overlay');
   if(ov && ov.style.display === 'flex' && appStarted){
     ov.style.display = 'none'; window._taskSheetId = null;
+    navGuard = true; try{ history.pushState({view}, '', ''); }catch(_){}; navGuard = false;
+    return;
+  }
+  // 1b. Запись истории совпадает с текущим окном — просто восстанавливаем запись
+  if(e.state && e.state.view && e.state.view === view){
     navGuard = true; try{ history.pushState({view}, '', ''); }catch(_){}; navGuard = false;
     return;
   }
