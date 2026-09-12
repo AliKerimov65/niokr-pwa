@@ -1847,6 +1847,27 @@ window.addEventListener('error', (e) => {
   }catch(_){}
 });
 
+/* ---------- ДИАГНОСТИКА: журнал на устройстве ---------- */
+let dbgCount = 0;
+function dbg(msg){
+  try{
+    if(dbgCount++ > 80 || !SYNC) return;
+    fetch('https://lxgipzdybigdpdcmcnez.supabase.co/rest/v1/debug_log', {
+      method:'POST',
+      headers:{ 'apikey':'sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Authorization':'Bearer sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Content-Type':'application/json' },
+      body: JSON.stringify({ member: me ? me.name : '?', msg: String(msg).slice(0, 200) })
+    }).catch(()=>{});
+  }catch(e){}
+}
+window.addEventListener('error', e => dbg('ERROR: ' + e.message + ' @' + (e.filename||'').split('/').pop() + ':' + e.lineno));
+window.addEventListener('unhandledrejection', e => dbg('REJECTION: ' + (e.reason && e.reason.message || e.reason)));
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('button, .struct-chip, .tabbar button');
+  if(b) dbg('CLICK: ' + (b.id || b.dataset.v || b.dataset.tid || b.className || b.textContent || '?').toString().slice(0,60));
+}, true);
+dbg('BOOT v76 view=' + (typeof view !== 'undefined' ? view : '?'));
+setTimeout(() => dbg('ALIVE 5s, view=' + view + ', SYNC=' + SYNC + ', TABS=' + (typeof TABS !== 'undefined' ? TABS.length : '?')), 5000);
+
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
