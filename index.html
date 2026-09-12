@@ -1339,7 +1339,8 @@ function renderStructBar(){
   if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
   TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
   (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
-  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('');
+  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
+    + '<span id="verTag" style="margin-left:auto;flex:none;font-size:10px;color:var(--mut);padding:5px 4px;align-self:center">…</span>';
 }
 function openTabView(id){
   view = 'tab:'+id;
@@ -1865,7 +1866,13 @@ document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('button, .struct-chip, .tabbar button');
   if(b) dbg('CLICK: ' + (b.id || b.dataset.v || b.dataset.tid || b.className || b.textContent || '?').toString().slice(0,60));
 }, true);
-dbg('BOOT v76 view=' + (typeof view !== 'undefined' ? view : '?'));
+dbg('BOOT v77 view=' + (typeof view !== 'undefined' ? view : '?'));
+fetch('sw.js').then(r=>r.text()).then(t=>{
+  const v = (t.match(/niokr-pwa-v(\d+)/)||[])[1];
+  const el = document.getElementById('verTag');
+  if(el && v) el.textContent = 'v' + v;
+  dbg('SW version v' + v);
+}).catch(()=>{});
 setTimeout(() => dbg('ALIVE 5s, view=' + view + ', SYNC=' + SYNC + ', TABS=' + (typeof TABS !== 'undefined' ? TABS.length : '?')), 5000);
 
 /* ---------- навигация ---------- */
