@@ -1185,7 +1185,10 @@ function openTabView(id){
   render();
 }
 function taskSheet(id){
-  const t = (rTasks||[]).find(x=>x.id===id); if(!t) return;
+  const t = (rTasks||[]).find(x=>x.id===id);
+  if(!t){ window._taskSheetId = null; document.getElementById('overlay').style.display='none'; return; }
+  window._taskSheetId = id;
+  const isOwner = team && team.is_owner;
   $('#sheet').innerHTML = `<h2>✅ ${esc(t.title)}</h2><div class="card">
     <p><span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></p>
     <p class="mut" style="margin-top:8px">Исполнитель: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'}<br>Постановщик: ${esc(t.author||'—')}</p>
@@ -1193,9 +1196,38 @@ function taskSheet(id){
     <div class="row" style="flex-wrap:wrap">
       ${t.status!=='В работе'&&t.status!=='Выполнено'?`<button class="pri" onclick="setTask(${id},'В работе');taskSheet(${id})">▶ В работу</button>`:''}
       ${t.status!=='Выполнено'?`<button class="pri" style="background:var(--ok)" onclick="setTask(${id},'Выполнено');taskSheet(${id})">✔ Выполнено</button>`:''}
+      ${isOwner?`<button class="sec" onclick="taskEditForm(${id})">✏️ Править</button>`:''}
       <button class="dng" onclick="delTask(${id})">🗑 Удалить</button>
     </div></div>`;
   $('#overlay').style.display='flex';
+}
+function taskEditForm(id){
+  const t = (rTasks||[]).find(x=>x.id===id); if(!t) return;
+  window._taskSheetId = id;
+  $('#sheet').innerHTML = `<h2>✏️ Правка задачи</h2><div class="card">
+    <input id="teTitle" value="${esc(t.title)}" placeholder="Название задачи"><div style="height:8px"></div>
+    <select id="teAssignee">${TEAM_MEMBERS.map(m=>`<option ${m.member===t.assignee?'selected':''}>${esc(m.member)}</option>`).join('')}</select>
+    <div style="height:8px"></div>
+    <input type="date" id="teDeadline" value="${t.deadline||''}">
+    <div style="height:8px"></div>
+    <select id="teStatus">${['Новая','В работе','Выполнено'].map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select>
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="taskSave(${id})">💾 Сохранить</button>
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="taskSheet(${id})">← Назад</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+async function taskSave(id){
+  const patch = { title: $('#teTitle').value.trim(), assignee: $('#teAssignee').value, deadline: $('#teDeadline').value || null, status: $('#teStatus').value };
+  if(!patch.title) return alert('Введите название');
+  if(SYNC){ await sb.from('tasks').update(patch).eq('id', id); await loadTasks(); }
+  else {
+    const ts = store.get('tasks_'+(team?team.id:'x'),[]);
+    const t = ts.find(x=>x.id===id); if(t) Object.assign(t, patch);
+    store.set('tasks_'+(team?team.id:'x'), ts); render();
+  }
+  taskSheet(id);
 }
 
 /* ---------- Умный агент «Управление командой» (владелец) ---------- */
@@ -1702,8 +1734,23 @@ async function addTask(){
   if(SYNC){ await sb.from('tasks').insert({team_id:tid(), title:t, assignee:$('#ta').value, deadline:$('#td').value||null, status:'Новая', author:me.name}); loadTasks(); }
   else { const ts = store.get('tasks_'+(team?team.id:'x'), []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks_'+(team?team.id:'x'), ts); render(); }
 }
-async function setTask(id,s){ if(SYNC){ await sb.from('tasks').update({status:s}).eq('id',id); loadTasks(); } else { const ts=store.get('tasks',[]); const t=ts.find(x=>x.id===id); if(t){t.status=s; store.set('tasks',ts); render();} } }
-async function delTask(id){ if(SYNC){ await sb.from('tasks').delete().eq('id',id); loadTasks(); } else { store.set('tasks_'+(team?team.id:'x'), store.get('tasks_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); } }
+async function setTask(id,s){
+  if(SYNC){
+    await sb.from('tasks').update({status:s}).eq('id',id);
+    await loadTasks();
+    if(window._taskSheetId === id) taskSheet(id);
+  } else {
+    const ts = store.get('tasks_'+(team?team.id:'x'),[]);
+    const t = ts.find(x=>x.id===id);
+    if(t){ t.status=s; store.set('tasks_'+(team?team.id:'x'), ts); render(); if(window._taskSheetId === id) taskSheet(id); }
+  }
+}
+async function delTask(id){
+  if(!confirm('Удалить задачу?')) return;
+  if(SYNC){ await sb.from('tasks').delete().eq('id',id); await loadTasks(); }
+  else { store.set('tasks_'+(team?team.id:'x'), store.get('tasks_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); }
+  if(window._taskSheetId === id){ window._taskSheetId = null; document.getElementById('overlay').style.display='none'; }
+}
 
 /* ---------- ОБЪЯВЛЕНИЯ ---------- */
 function renderNews(v){
@@ -2143,7 +2190,7 @@ new MutationObserver(() => {
   if(s.innerHTML.indexOf('existSel') > -1 || s.innerHTML.indexOf('newTeamName') > -1 || s.innerHTML.indexOf('pickExisting') > -1) return;
   const c = document.createElement('span');
   c.id = 'sheetClose'; c.textContent = '✕'; c.title = 'Закрыть (отмена)';
-  c.onclick = (e) => { e.stopPropagation(); if(!appStarted) return; document.getElementById('overlay').style.display='none'; };
+  c.onclick = (e) => { e.stopPropagation(); if(!appStarted) return; window._taskSheetId = null; document.getElementById('overlay').style.display='none'; };
   s.appendChild(c);
 }).observe(document.getElementById('sheet'), {childList:true});
 document.getElementById('overlay').addEventListener('click', (e) => {
