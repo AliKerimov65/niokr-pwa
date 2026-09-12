@@ -129,6 +129,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button data-v="tasks"><span class="ic">✅</span>Задачи</button>
   <button data-v="news"><span class="ic">📢</span>Объявл.</button>
   <button data-v="files"><span class="ic">📁</span>Файлы</button>
+  <button data-v="plan"><span class="ic">🗺</span>План</button>
   <button data-v="misc"><span class="ic">🔧</span>Разное</button>
   <span id="dynTabs" style="display:contents"></span>
 </nav>
@@ -640,6 +641,24 @@ function renderCustomTab(v){
   if(t.kind === 'plan') renderPlan(v, t);
   if(!['link','text','list','feed','az','plan'].includes(t.kind))
     v.innerHTML = `<h2 class="pt">${t.icon||'📄'} ${esc(t.name)}</h2><p class="mut">Тип вкладки «${esc(t.kind)}» не поддерживается этой версией приложения. Обновите приложение: закройте полностью и откройте заново.</p>`;
+}
+
+/* ---------- Технический план: встроенная вкладда ---------- */
+const DEFAULT_PLAN = {"items":[
+ {"n":1,"title":"Подготовительный этап","dur":"2 нед","works":["Составление ППР на укрепление грунтов","Ограждение зоны работ, организация бытового городка","Геодезическая съёмка и закрепление контрольных точек на трубе и вокруг","Вводный инструктаж, допуски к работам"],"docs":"Проект (раздел «Общие положения»), СП 48.13330.2019"},
+ {"n":2,"title":"Бурение инъекционных скважин","dur":"по графику","works":["Разбивка скважин по проектной схеме","Бурение скважин заданного диаметра и глубины","Установка обсадных труб (при необходимости)","Регистрация фактических координат и глубин"],"docs":"Проект (раздел конструктивных решений), СП 45.13330.2017"},
+ {"n":3,"title":"Приготовление инъекционных смесей","dur":"постоянно","works":["Приёмка и входной контроль цемента (сертификаты, паспорта)","Приготовление смесей по проектным параметрам (водоцементное отношение)","Лабораторный контроль консистенции и сроков схватывания"],"docs":"Проект (раздел технологии работ), СП 70.13330.2012"},
+ {"n":4,"title":"Инъектирование (укрепление грунтов)","dur":"по графику","works":["Инъектирование по режимам проекта (давление, расход, объёмы)","Поэтапный контроль показателей (давление, расход смеси)","Ведение журнала инъектирования по скважинам","Анализ фактических объёмов против проектных"],"docs":"Проект (ключевой раздел), СП 45.13330.2017 п. 11"},
+ {"n":5,"title":"Контроль качества и испытания","dur":"по мере работ","works":["Контрольные скважины/опытные участки по проекту","Оценка фактической прочности укреплённого массива","АОСР на скрытые работы до закрытия","Оформление исполнительной документации"],"docs":"Проект, СП 70.13330.2012 п. 4.5 (АОСР)"},
+ {"n":6,"title":"Мониторинг дымовой трубы","dur":"весь период + эксплуатация","works":["Регулярные геодезические наблюдения за креном/осадками","Сравнение с проектными допусками","Учёт температурного режима грунтов","Отчёты по результатам циклов наблюдений"],"docs":"Проект (раздел мониторинга), журнал АН"},
+ {"n":7,"title":"Авторский надзор и приёмка","dur":"весь период","works":["Регулярные обходы с записями в журнале авторского надзора","Предписания по несоответствиям с контролем исполнения","Участие в освидетельствовании скрытых работ","Заключение о соответствии выполненных работ проекту"],"docs":"СП 246.1325800.2023, ГрК РФ ст. 55.24, ПП РФ № 963"}
+]};
+async function ensurePlanTab(){
+  let t = TABS.find(x => x.kind==='plan');
+  if(t) return t;
+  const {data} = await sb.from('tabs').insert({team_id: tid(), name:'Технический план реализации', icon:'🗺', kind:'plan', config: DEFAULT_PLAN, pos: 5, created_by:'Система'}).select().single();
+  if(data){ TABS.push(data); renderTabbar(); renderStructBar(); }
+  return data;
 }
 
 /* ---------- Технический план реализации (интерактивный + консультации) ---------- */
@@ -1279,6 +1298,7 @@ document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
   if(SYNC && team){
     if(view==='tasks'&&rTasks===null) loadTasks();
+    if(view==='plan') ensurePlanTab();
     if(view==='news'&&rNews===null) loadNews();
     if(view==='files'&&rDocs===null) loadDocs();
     if(view==='stages'&&STAGES===null) loadStages();
@@ -1300,6 +1320,7 @@ function render(){
     azb.innerHTML = `<b>📋 Журнал авторского надзора</b><span style="opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(c.object||'')}</span><span style="opacity:.7;flex:none">СП 246.1325800.2023</span>`;
   } else azb.classList.add('hidden');
   const v = $('#view'); v.innerHTML='';
+  if(view === 'plan'){ v.innerHTML = '<p class="mut" style="padding:20px">Загрузка плана…</p>'; ensurePlanTab().then(pt => { if(pt && view==='plan'){ v.innerHTML=''; renderPlan(v, pt); } }); return; }
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='chat') renderChat(v);
   if(view==='stages') renderStages(v);
