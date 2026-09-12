@@ -86,6 +86,25 @@ header h1{font-size:15px}
 #teamBtn{max-width:30vw}
 .sheet input,.sheet select,.sheet textarea{font-size:16px}
 @media (max-width:380px){.tabbar button{min-width:50px;font-size:10px}.card{padding:10px}}
+/* ==== Компактация панелей (высота смартфона) ==== */
+.hrow{gap:5px;padding:calc(8px + env(safe-area-inset-top)) 8px 4px}
+.hrow h1{font-size:14px}
+#menuBtn{padding:7px 9px !important;font-size:15px !important}
+#teamBtn{font-size:12px;padding:5px 9px !important}
+#hdrRight{gap:4px;max-width:60vw}
+#hdrRight button{padding:5px 7px !important;font-size:13px !important}
+#syncBadge{font-size:9.5px;padding:2px 6px}
+#who{font-size:11px}
+#structBar{padding:0 8px 6px !important;gap:5px !important}
+.struct-chip{padding:4px 10px !important;font-size:11.5px !important;border-radius:14px}
+.tabbar button{min-width:46px;padding:5px 2px 7px !important;font-size:9.5px}
+.tabbar button .ic{font-size:17px !important;margin-bottom:1px}
+.composer{padding:6px 8px calc(6px + env(safe-area-inset-bottom)) !important}
+.composer input,.composer button{min-height:40px}
+.composer button{width:42px}
+main{padding:8px 8px 10px}
+.card{margin-bottom:8px;padding:10px}
+.chans button{padding:5px 12px;font-size:12px}
 /* ==== ИНСПЕКЦИЯ: автоадаптация окон под смартфон ==== */
 html,body{overflow-x:clip} /* clip не ломает sticky, в отличие от hidden */
 main{overflow-x:hidden;padding:10px 10px 12px}
@@ -97,6 +116,11 @@ input[type=date],input[type=time]{min-height:44px}
 #overlay .sheet{max-height:94dvh;overscroll-behavior:contain}
 .dropdown{max-width:calc(100vw - 16px);left:4px}
 select{appearance:auto}
+@media (max-height:700px){
+  .hrow{padding-top:calc(6px + env(safe-area-inset-top))}
+  .tabbar button .ic{font-size:15px}
+  #structBar{padding-bottom:4px !important}
+}
 /* Узкие экраны: компактная шапка и кнопки */
 @media (max-width:420px){
   .hrow{gap:5px;padding-left:8px;padding-right:8px}
@@ -145,7 +169,6 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <span style="flex:1"></span>
   <span id="hdrRight" style="display:flex;align-items:center;gap:5px;flex:none;max-width:58vw;overflow-x:auto;scrollbar-width:none">
     <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
-    <button id="tabsBtn" class="hidden" title="Вкладки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🧩</button>
     <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
     <span id="syncBadge" title="Обновить данные">Локальный</span>
     <small id="who"></small>
