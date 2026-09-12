@@ -1610,7 +1610,12 @@ function renderAgentChat(msgs){
      <button class="sec" style="padding:6px 10px" onclick="agentVoiceToggle()" id="agentVBtn">🔊 ${agentVoice?'вкл':'выкл'}</button>
    </div>
    <div id="agentLog" style="max-height:42vh;overflow-y:auto;margin-bottom:8px">
-     ${msgs.map(m=>`<div class="msg ${m.role==='user'?'me':''}" style="max-width:100%;margin-top:8px"><b>${m.role==='user'?'Вы':'🤖 Агент'}</b>${m.role==='assistant' ? (m.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>') : ''}<div style="white-space:pre-wrap">${esc(m.text)}</div></div>`).join('')}
+     ${msgs.map(m=>{
+       if(m.role === 'tool'){
+         return `<div class="mut" style="font-size:11.5px;margin:6px 0 0 14px;padding-left:10px;border-left:2px solid var(--brd2)">${m.mode==='step' ? '⏳' : '⚙️'} ${esc(m.text)}</div>`;
+       }
+       return `<div class="msg ${m.role==='user'?'me':''}" style="max-width:100%;margin-top:8px"><b>${m.role==='user'?'Вы':'🤖 Агент'}</b>${m.role==='assistant' ? (m.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>') : ''}<div style="white-space:pre-wrap">${esc(m.text)}</div></div>`;
+     }).join('')}
      ${pendingWork ? '<div class="msg" style="max-width:100%;margin-top:8px" id="agentPending"><b>🤖 Агент</b> <span class="badge warn">⏳ работает…</span><div>Задача выполняется в фоне. Можете закрыть окно — ответ сохранится в истории, вы получите уведомление.</div></div>' : ''}
    </div>
    <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
@@ -2273,9 +2278,13 @@ function subscribeAll(){
         const log = document.getElementById('agentLog');
         const pend = document.getElementById('agentPending');
         if(pend) pend.remove();
-        log.insertAdjacentHTML('beforeend', `<div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b>${p.new.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>'}<div style="white-space:pre-wrap">${esc(p.new.text)}</div></div>`);
+        if(p.new.role === 'tool'){
+          log.insertAdjacentHTML('beforeend', `<div class="mut" style="font-size:11.5px;margin:6px 0 0 14px;padding-left:10px;border-left:2px solid var(--brd2)">${p.new.mode==='step' ? '⏳' : '⚙️'} ${esc(p.new.text)}</div>`);
+        } else {
+          log.insertAdjacentHTML('beforeend', `<div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b>${p.new.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>'}<div style="white-space:pre-wrap">${esc(p.new.text)}</div></div>`);
+          agentSpeak(p.new.text);
+        }
         log.scrollTop = log.scrollHeight;
-        agentSpeak(p.new.text);
       } else {
         const b = document.getElementById('agentBtn');
         if(b){ b.textContent = '🤖●'; b.title = 'Агент ответил — откройте, чтобы прочитать'; }
