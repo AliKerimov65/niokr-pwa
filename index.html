@@ -138,6 +138,8 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 <script src="supabase-config.js?v=4"></script>
 <script>
 const $ = s => document.querySelector(s);
+addEventListener('error', e => { try{ syncBadge && syncBadge(); }catch(_){}
+  if(e.message && !/Script error/.test(e.message)) console.error('APP ERROR:', e.message); });
 const store = {
   get(k, d){ try{ const v = JSON.parse(localStorage.getItem('niokr_'+k)); return v==null?d:v }catch(e){ return d } },
   set(k, v){ localStorage.setItem('niokr_'+k, JSON.stringify(v)) },
@@ -635,6 +637,8 @@ function renderCustomTab(v){
   }
   if(t.kind === 'az') renderAz(v, t);
   if(t.kind === 'plan') renderPlan(v, t);
+  if(!['link','text','list','feed','az','plan'].includes(t.kind))
+    v.innerHTML = `<h2 class="pt">${t.icon||'📄'} ${esc(t.name)}</h2><p class="mut">Тип вкладки «${esc(t.kind)}» не поддерживается этой версией приложения. Обновите приложение: закройте полностью и откройте заново.</p>`;
 }
 
 /* ---------- Технический план реализации (интерактивный + консультации) ---------- */
@@ -682,8 +686,10 @@ async function renderPlan(v, t){
    <p class="mut" style="text-align:center">Пунктов выполнено: ${done.length}/${(c.items||[]).length}</p>`;
 }
 async function loadPlanRows(tabId){
-  const {data} = await sb.from('plan_works').select('*').eq('tab_id', tabId);
-  PLAN_ROWS = data || [];
+  try{
+    const {data, error} = await sb.from('plan_works').select('*').eq('tab_id', tabId);
+    if(!error) PLAN_ROWS = data || [];
+  }catch(e){ /* оставляем прежнее */ }
 }
 function planRowKey(tabId, n, work){ return PLAN_ROWS.find(r => r.tab_id===tabId && r.item_n===n && r.work===work); }
 async function planWorkUpsert(tabId, n, work, patch){
