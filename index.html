@@ -668,7 +668,7 @@ function planToggle(tabId, i){
 function planConsultSheet(i){
   const t = curTab(); const it = (t.config.items||[])[i]; if(!it) return;
   $('#sheet').innerHTML = `<h2>❓ Пункт ${it.n}: ${esc(it.title)}</h2>
-   <p class="mut" style="margin-bottom:8px">Консультация строго по проекту Ф-2024-НОК-ДТ-0424-КР и нормативным документам (без домыслов), со ссылками на источники.</p>
+   <p class="mut" style="margin-bottom:8px">Ответ формируется строго по этому пункту: сначала анализ вопроса, затем поиск по проекту и нормативке, затем ответ со ссылками на источники. Без домыслов.</p>
    <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
      ${['Что проверять на этом этапе?','Какие документы оформить?','Типичные нарушения и как их избежать','Как контролируется качество?'].map(x=>`<span class="struct-chip" onclick="planAsk(${i},'${x}')">${x}</span>`).join('')}
    </div>
@@ -689,16 +689,23 @@ async function planAsk(i, preset){
   log.innerHTML += `<div class="msg" style="max-width:100%;margin-top:8px"><b>Вы</b><div>${esc(qText)}</div></div>`;
   const pend = document.createElement('div');
   pend.className = 'msg me'; pend.style.maxWidth='100%'; pend.style.marginTop='8px';
-  pend.innerHTML = '<b>🤖 Консультант</b><div>⏳ …</div>';
+  pend.innerHTML = '<b>🤖 Консультант</b><div>🔍 Этап 1/3. Анализ вопроса…</div>';
   log.appendChild(pend); log.scrollTop = log.scrollHeight;
+  const div = pend.querySelector('div');
   try{
     const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/consult', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({team_id: tid(), question: 'Пункт плана «' + it.title + '» (' + (it.docs||'') + '). ' + qText})
+      body: JSON.stringify({team_id: tid(), question: qText,
+        item: {n: it.n, title: it.title, works: it.works || [], docs: it.docs || ''}})
     });
     const j = await r.json().catch(()=>({}));
-    pend.querySelector('div').innerHTML = esc(j.text || ('Ошибка: ' + (j.error||r.status))) + ((j.sources&&j.sources.length) ? '<br><br><span class="mut" style="font-size:11px">Источники: ' + esc(j.sources.join('; ')) + '</span>' : '');
-  }catch(e){ pend.querySelector('div').textContent = 'Нет связи: ' + e.message; }
+    if(!(r.ok && j.ok)){
+      div.textContent = 'Ошибка: ' + ((j && j.error) || r.status);
+    } else {
+      div.innerHTML = '<div style="white-space:pre-wrap">' + esc(j.text) + '</div>'
+        + (j.sources && j.sources.length ? '<div class="mut" style="font-size:11px;margin-top:8px">Источники: ' + esc(j.sources.join(' · ')) + '</div>' : '');
+    }
+  }catch(e){ div.textContent = 'Нет связи: ' + e.message; }
   log.scrollTop = log.scrollHeight;
 }
 
