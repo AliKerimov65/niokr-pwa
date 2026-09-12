@@ -561,8 +561,7 @@ async function loadTabs(){
 }
 function renderTabbar(){
   const c = $('#dynTabs'); if(!c) return;
-  const az = TABS.find(t => t.kind === 'az');
-  c.innerHTML = az ? `<button data-tid="${az.id}" class="${view==='tab:'+az.id?'on':''}"><span class="ic">📋</span>Журнал АН</button>` : '';
+  c.innerHTML = ''; // кастомные вкладки в нижнем меню отключены — доступ через ☰ Меню и верхнюю панель
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
   if($('#agentBtn')){
