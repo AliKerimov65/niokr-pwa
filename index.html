@@ -22,14 +22,16 @@ body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
 header{flex:none;background:var(--card);border-bottom:1px solid var(--brd);z-index:5}
 .hrow{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 8px 4px;width:100%}
 main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
-.tabbar{flex:none;z-index:6;background:#221b10;border-top:1px solid #3a2f1c}
-.tabbar button{color:#b8a888}
-.tabbar button.on{color:#f5c96b}
-#structBar{background:#221b10;margin:0;padding:6px 8px !important;border-bottom:1px solid #3a2f1c}
-#structBar .struct-chip{background:#322818;border-color:#4a3c22;color:#e8dcc2}
-#structBar .struct-chip.on{background:#8a5f16;border-color:#8a5f16;color:#fff}
-#structBar .struct-chip.done{opacity:.5;text-decoration:line-through}
-#structBar #verTag{color:#8a7a5c !important}
+/* ==== Меню в академическом стиле: тёмный орех + золото ==== */
+.tabbar{flex:none;z-index:6;background:#241a0e;border-top:1px solid #4a3a1f}
+.tabbar button{color:#c9b78f;font-weight:600;letter-spacing:.2px}
+.tabbar button.on{color:#e9c46a}
+.tabbar button.on .ic{transform:translateY(-1px)}
+#structBar{background:#241a0e;margin:0;padding:7px 8px !important;border-bottom:1px solid #4a3a1f}
+#structBar .struct-chip{background:transparent;border:1px solid #5a4a2a;color:#e6d9bd;border-radius:3px;font-family:Georgia,'Times New Roman',serif}
+#structBar .struct-chip.on{background:#b98a2f;border-color:#b98a2f;color:#1c1408;font-weight:700}
+#structBar .struct-chip.done{opacity:.45;text-decoration:line-through}
+#structBar #verTag{color:#8a7a5c !important;font-family:monospace}
 #structBar::-webkit-scrollbar{display:none}
 .struct-chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:16px;padding:5px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer}
 .struct-chip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
@@ -500,7 +502,13 @@ function onboarding2(){
     <div class="av" style="width:40px;height:40px;background:var(--acc)">👥</div>
     <div style="flex:1"><b style="font-size:15px">${esc(t.name)}</b><br><span class="mut">${t.is_owner?'вы владелец':'участник'}</span></div>
     ${team&&team.id===t.id?'<span style="color:var(--ok);font-size:20px">✓</span>':''}</div>`).join('');
+  fetch('sw.js').then(r=>r.text()).then(t=>{
+    const v=(t.match(/niokr-pwa-v(\d+)/)||[])[1];
+    const el=document.getElementById('welcomeVer');
+    if(el&&v) el.textContent='Версия приложения: v'+v;
+  }).catch(()=>{});
   $('#sheet').innerHTML = `<h2>Ваши команды</h2><p class="mut" style="margin-bottom:10px">Вы вошли как: <b style="color:var(--txt)">${esc(me.name)}</b>. Выберите команду для работы:</p>
+  <p id="welcomeVer" class="mut" style="font-size:11px;margin:-4px 0 10px 0;font-family:monospace;color:var(--mut)">Версия приложения: …</p>
     ${list || `<div class="card" style="border-color:var(--warn);margin-bottom:10px">
       <p>⚠️ Под именем <b>${esc(me.name)}</b> команд не найдено.</p>
       <p class="mut" style="margin-top:6px">Если вы раньше создавали команды — вы вошли под другим написанием имени. Вернитесь и выберите себя точно (<b>Керимов А.Г</b> — без точки в конце).</p>
