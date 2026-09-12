@@ -331,7 +331,9 @@ function start(){
 
 /* ---------- ОНБОРДИНГ 1: кто вы ---------- */
 function onboarding1(){
-  const opts = MEMBERS.map(m => `<option value="${esc(m.name)}">${esc(m.name)} — ${esc(m.role||'')}</option>`).join('');
+  const seen = new Set();
+  const uniq = MEMBERS.filter(m => { const k = surnameKey(m.name); if(seen.has(k)) return false; seen.add(k); return true; });
+  const opts = uniq.map(m => `<option value="${esc(m.name)}">${esc(m.name)} — ${esc(m.role||'')}</option>`).join('');
   $('#sheet').innerHTML = `<h2>Кто вы?</h2>
     <div class="card">
       <p class="mut" style="margin-bottom:10px">Выберите себя из списка участников:</p>
@@ -361,13 +363,20 @@ async function pickExisting(){
   $('#overlay').style.display='none';
   if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
 }
-function nameVariants(n){
-  const v = new Set([n]);
-  v.add(n.replace(/\.+$/,''));       // без точки в конце
-  v.add(n.replace(/\.(?![^.]*$)/g,'')) // без промежуточных точек... нет: вариант убрать все точки кроме последней
-  return [...v];
+// Идентификация участника с приоритетом ФАМИЛИИ: «Керимов А.Г» = «Керимов А.Г.» = «Керимов»
+function surnameKey(n){
+  const first = String(n||'').trim().split(/[\s]+/)[0] || '';
+  return first.toLowerCase().replace(/[^\p{L}]/gu, '');
 }
-function findMemberCase(n){ return MEMBERS.find(m => nameVariants(m.name).some(x => x===n || nameVariants(n).includes(m.name))); }
+function findMemberCase(n){
+  const k = surnameKey(n);
+  if(!k) return null;
+  // точное совпадение полного имени — в приоритете
+  const exact = MEMBERS.find(m => (m.name||'') === n);
+  if(exact) return exact;
+  // иначе совпадение по фамилии
+  return MEMBERS.find(m => surnameKey(m.name) === k) || null;
+}
 async function regNew(){
   const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
   const role = $('#rl').value;
