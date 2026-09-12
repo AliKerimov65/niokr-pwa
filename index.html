@@ -154,7 +154,7 @@ let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
 let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = [];
 let AUTO = store.get('auto', true), autoTimer = null;
-let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null;
+let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [];
 
 /* ---------- Supabase ---------- */
 let sb = null, SYNC = false;
@@ -1171,8 +1171,45 @@ function taskSheet(id){
 let agentRec = null, agentVoice = store.get('agentVoice', true);
 async function agentSheet(){
   curThread = null;
-  await loadAgentThreads();
+  await Promise.all([loadAgentThreads(), loadDevTasks()]);
   renderAgentMenu();
+}
+async function loadDevTasks(){
+  if(!SYNC) return;
+  const {data} = await sb.from('dev_tasks').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(30);
+  DEV_TASKS = data || [];
+}
+function renderDevBox(){
+  const box = document.getElementById('devBox'); if(!box) return;
+  const draft = DEV_TASKS.filter(t=>t.status==='Черновик');
+  const sent = DEV_TASKS.filter(t=>t.status!=='Черновик');
+  box.innerHTML = (draft.length || sent.length) ? `<div class="card" style="background:var(--card2)">
+    <b>🛠 Задачи для Kimi (интерфейс/функционал)</b>
+    ${draft.map(t=>`<div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+      <b style="font-size:13.5px">📋 ${esc(t.title)}</b> <span class="badge warn">на согласовании</span>
+      <textarea id="dev_${t.id}" rows="4" style="margin-top:6px;font-size:13px">${esc(t.body)}</textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="pri" style="flex:1" id="devSend_${t.id}" onclick="devSend(${t.id})">📨 Отправить Kimi</button>
+        <button class="dng" onclick="devDel(${t.id})">🗑</button>
+      </div></div>`).join('')}
+    ${sent.map(t=>`<div class="row" style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+      <div style="flex:1"><b style="font-size:13px">📨 ${esc(t.title)}</b><br><span class="mut" style="font-size:11px">${fmtT(t.sent_at || t.created_at)}</span></div>
+      <span class="badge ${t.status==='Готово'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span>
+    </div>`).join('')}
+  </div>` : '';
+}
+async function devSend(id){
+  const btn = document.getElementById('devSend_'+id);
+  const body = (document.getElementById('dev_'+id) || {}).value || '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Отправка…'; }
+  await sb.from('dev_tasks').update({body, status: 'Отправлено', sent_at: new Date().toISOString()}).eq('id', id);
+  await loadDevTasks(); renderDevBox();
+  alert('📨 Задача отправлена Kimi. Откройте чат с Kimi и скажите «выполни задачи из dev_tasks» — обновление будет опубликовано автоматически.');
+}
+async function devDel(id){
+  if(!confirm('Удалить задачу?')) return;
+  await sb.from('dev_tasks').delete().eq('id', id);
+  await loadDevTasks(); renderDevBox();
 }
 async function loadAgentThreads(){
   if(!SYNC) return;
@@ -1184,12 +1221,15 @@ function renderAgentMenu(){
   menu.innerHTML = `<h2>🤖 Управление командой</h2>
    <p class="mut" style="margin-bottom:8px">Агент владельца: полное управление командой голосом и текстом. История обсуждений сохраняется — возвращайтесь и продолжайте.</p>
    <button class="pri" style="width:100%;margin-bottom:10px" onclick="agentNewThread()">＋ Новое обсуждение</button>
+   <div id="devBox"></div>
    <p class="mut" style="margin-bottom:6px">История (${AGENT_THREADS.length}):</p>
-   ${AGENT_THREADS.map(t=>`<div class="mrow" style="cursor:pointer" onclick="agentOpenThread(${t.id})">
+   ${''}
+  ${AGENT_THREADS.map(t=>`<div class="mrow" style="cursor:pointer" onclick="agentOpenThread(${t.id})">
      <div class="av" style="background:var(--acc)">🤖</div>
      <div class="inf"><b>${esc(t.title)}</b><br><span class="mut" style="font-size:11.5px">${fmtT(t.created_at)}</span></div>
      <button class="dng" style="padding:6px 10px" onclick="event.stopPropagation();agentDelThread(${t.id})">🗑</button>
    </div>`).join('') || '<p class="mut">Обсуждений пока нет — начните новое.</p>'}`;
+  renderDevBox();
   $('#overlay').style.display='flex';
 }
 function agentNewThread(){ curThread = null; renderAgentChat([]); }
@@ -1830,6 +1870,7 @@ function subscribeAll(){
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'tabs'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadTabs(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'plan_works'}, () => { if(view.startsWith('tab:') && curTab() && curTab().kind==='plan'){ loadPlanRows(curTab().id).then(render); } })
+    .on('postgres_changes', {event:'*', schema:'public', table:'dev_tasks'}, () => { if(document.getElementById('devBox')) loadDevTasks().then(renderDevBox); })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'agent_messages'}, p => {
       if(curThread && p.new.thread_id===curThread){
         const log = document.getElementById('agentLog');
