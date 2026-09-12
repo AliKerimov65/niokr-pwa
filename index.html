@@ -87,7 +87,7 @@ header h1{font-size:15px}
 .sheet input,.sheet select,.sheet textarea{font-size:16px}
 @media (max-width:380px){.tabbar button{min-width:50px;font-size:10px}.card{padding:10px}}
 /* ==== ИНСПЕКЦИЯ: автоадаптация окон под смартфон ==== */
-html,body{overflow-x:hidden}
+html,body{overflow-x:clip} /* clip не ломает sticky, в отличие от hidden */
 main{overflow-x:hidden;padding:10px 10px 12px}
 .card, .mrow, .msg, .inf{overflow-wrap:anywhere;min-width:0}
 .msg div{overflow-wrap:anywhere;word-break:break-word}
@@ -1305,6 +1305,7 @@ $('#exitBtn').onclick = () => {
 function renderStructBar(){
   const bar = document.getElementById('structBar'); if(!bar) return;
   if(!team){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
+  bar.style.display = 'flex';
   bar.classList.remove('hidden');
   const items = [];
   const azTab = TABS.find(t=>t.kind==='az');
