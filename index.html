@@ -103,6 +103,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <span class="dot" id="net"></span>
   <h1>НИОКР</h1>
   <button id="teamBtn" class="hidden">👥 Команда</button>
+  <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
   <button id="setBtn" title="Настройки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⚙</button>
@@ -505,6 +506,7 @@ function renderTabbar(){
   c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
+  if($('#agentBtn')) $('#agentBtn').classList.toggle('hidden', !(team && team.is_owner));
 }
 function membersSheet(){
   if(!team) return;
@@ -898,6 +900,86 @@ function taskSheet(id){
     </div></div>`;
   $('#overlay').style.display='flex';
 }
+
+/* ---------- Умный агент «Управление командой» (владелец) ---------- */
+let agentRec = null, agentVoice = store.get('agentVoice', true);
+function agentSheet(){
+  $('#sheet').innerHTML = `<h2>🤖 Управление командой</h2>
+   <p class="mut" style="margin-bottom:8px">Агент владельца: голосовое и текстовое управление, ответы по данным команды. Говорите или пишите команду.</p>
+   <div id="agentLog" style="max-height:38vh;overflow-y:auto;margin-bottom:8px"></div>
+   <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
+     <span class="struct-chip" onclick="agentAsk('Статус по этапам')">📊 Статус этапов</span>
+     <span class="struct-chip" onclick="agentAsk('Список задач')">✅ Задачи</span>
+     <span class="struct-chip" onclick="agentAsk('Состав команды')">👥 Состав</span>
+     <span class="struct-chip" onclick="agentAsk('Итоги работы')">📈 Сводка</span>
+   </div>
+   <div class="row">
+     <button class="sec" style="flex:none;padding:10px 12px" id="agentMic" onclick="agentToggleMic()" title="Голосовой ввод">🎙</button>
+     <input id="agentInp" placeholder="Команда или вопрос…" style="flex:1" onkeydown="if(event.key==='Enter')agentSend()">
+     <button class="pri" onclick="agentSend()">➤</button>
+   </div>
+   <div class="row" style="margin-top:8px">
+     <button class="sec" style="flex:1" onclick="agentVoiceToggle()" id="agentVBtn">🔊 Голос ответов: ${agentVoice?'вкл':'выкл'}</button>
+     <span class="mut" style="flex:2;font-size:11px">Примеры: «Создай задачу: съёмка крена трубы», «Какие задачи не выполнены?», «Что в документах проекта?»</span>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+function agentLogAdd(role, text){
+  const log = document.getElementById('agentLog'); if(!log) return;
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role==='me'?'me':'');
+  d.style.maxWidth = '100%'; d.style.marginTop = '8px';
+  d.innerHTML = `<b>${role==='me'?'Вы':'🤖 Агент'}</b><div style="white-space:pre-wrap">${esc(text)}</div>`;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+function agentSpeak(text){
+  if(!agentVoice || !('speechSynthesis' in window)) return;
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/[✅📊👥📈•*_#]/g,''));
+    u.lang = 'ru-RU'; u.rate = 1.05;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+function agentVoiceToggle(){ agentVoice = !agentVoice; store.set('agentVoice', agentVoice); const b=document.getElementById('agentVBtn'); if(b) b.textContent = '🔊 Голос ответов: ' + (agentVoice?'вкл':'выкл'); }
+async function agentSend(text){
+  const inp = document.getElementById('agentInp');
+  const q = (text || (inp ? inp.value : '')).trim(); if(!q) return;
+  if(inp) inp.value = '';
+  agentLogAdd('me', q);
+  agentLogAdd('bot', '⏳ …');
+  const log = document.getElementById('agentLog');
+  const pending = log.lastChild;
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/agent', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({team_id: tid(), owner: me.name, text: q})
+    });
+    const j = await r.json().catch(()=>({}));
+    const ans = (j && j.text) ? j.text : ('Ошибка: ' + ((j && j.error) || r.status));
+    pending.querySelector('div').textContent = ans;
+    agentSpeak(ans);
+    if(view) { loadTasks(); }
+  }catch(e){
+    pending.querySelector('div').textContent = 'Нет связи с агентом: ' + e.message;
+  }
+  log.scrollTop = log.scrollHeight;
+}
+function agentAsk(q){ agentSend(q); }
+function agentToggleMic(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById('agentMic');
+  if(!SR){ alert('Голосовой ввод не поддерживается этим браузером (используйте Chrome)'); return; }
+  if(agentRec){ try{ agentRec.stop(); }catch(e){} agentRec = null; if(btn) btn.textContent='🎙'; return; }
+  agentRec = new SR();
+  agentRec.lang = 'ru-RU'; agentRec.interimResults = false; agentRec.maxAlternatives = 1;
+  agentRec.onresult = (e) => { const t = e.results[0][0].transcript; if(btn) btn.textContent='🎙'; agentRec=null; agentSend(t); };
+  agentRec.onerror = () => { if(btn) btn.textContent='🎙'; agentRec=null; };
+  agentRec.onend = () => { if(btn) btn.textContent='🎙'; agentRec=null; };
+  agentRec.start();
+  if(btn) btn.textContent = '🔴';
+}
+$('#agentBtn').onclick = () => agentSheet();
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
