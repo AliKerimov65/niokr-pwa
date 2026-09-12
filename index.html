@@ -1172,6 +1172,10 @@ function taskSheet(id){
 let agentRec = null, agentVoice = store.get('agentVoice', true);
 async function agentSheet(){
   if(!team || !team.is_owner){ return; }
+  if(SYNC){
+    const { data: { session } } = await sb.auth.getSession();
+    if(!session){ renderAgentLogin(); return; }
+  }
   curThread = null;
   await Promise.all([loadAgentThreads(), loadDevTasks(), loadQa()]);
   renderAgentMenu();
@@ -1278,6 +1282,39 @@ async function devDel(id){
   await sb.from('dev_tasks').delete().eq('id', id);
   await loadDevTasks(); renderDevBox();
 }
+function renderAgentLogin(){
+  $('#sheet').innerHTML = `<h2>🔒 Защищённый режим владельца</h2>
+   <p class="mut" style="margin-bottom:8px">Данные агента защищены. Войдите, чтобы получить доступ. Первый вход — регистрация по email.</p>
+   <div class="card">
+     <input id="alEmail" type="email" placeholder="Email" autocomplete="email"><div style="height:8px"></div>
+     <input id="alPass" type="password" placeholder="Пароль (минимум 6 символов)" autocomplete="current-password"><div style="height:12px"></div>
+     <button class="pri" style="width:100%" onclick="agentLogin(false)">🔓 Войти</button>
+     <div style="height:8px"></div>
+     <button class="sec" style="width:100%" onclick="agentLogin(true)">✨ Первый вход — создать защищённый доступ</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+async function agentLogin(isNew){
+  const email = $('#alEmail').value.trim(), pass = $('#alPass').value;
+  if(!email || pass.length < 6) return alert('Укажите email и пароль (от 6 символов)');
+  try{
+    let res;
+    if(isNew){
+      res = await sb.auth.signUp({ email, password: pass, options: { data: { member: me.name } } });
+      if(res.error) throw res.error;
+      await sb.from('agent_access').insert({ member: me.name });
+    } else {
+      res = await sb.auth.signInWithPassword({ email, password: pass });
+      if(res.error) throw res.error;
+    }
+    $('#overlay').style.display='none';
+    agentSheet();
+  }catch(e){ alert('Ошибка входа: ' + (e.message || e.error_description || e)); }
+}
+async function agentLogout(){
+  await sb.auth.signOut();
+  $('#overlay').style.display='none';
+}
 async function loadAgentThreads(){
   if(!SYNC) return;
   const {data} = await sb.from('agent_threads').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(50);
@@ -1287,7 +1324,10 @@ function renderAgentMenu(){
   const menu = $('#sheet');
   menu.innerHTML = `<h2>🤖 Управление командой</h2>
    <p class="mut" style="margin-bottom:8px">Агент владельца: полное управление командой голосом и текстом. История обсуждений сохраняется — возвращайтесь и продолжайте.</p>
-   <button class="pri" style="width:100%;margin-bottom:10px" onclick="agentNewThread()">＋ Новое обсуждение</button>
+   <div class="row" style="margin-bottom:10px">
+     <button class="pri" style="flex:1" onclick="agentNewThread()">＋ Новое обсуждение</button>
+     <button class="sec" style="padding:10px 12px" onclick="agentLogout()" title="Выйти из защищённого режима">🔒</button>
+   </div>
    <div id="qaBox"></div>
    <div id="devBox"></div>
    <p class="mut" style="margin-bottom:6px">История (${AGENT_THREADS.length}):</p>
