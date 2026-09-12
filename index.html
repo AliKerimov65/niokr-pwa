@@ -521,7 +521,7 @@ function curTab(){ return TABS.find(t => 'tab:'+t.id === view); }
 function manageTabs(){
   if(!(team && team.is_owner)) return;
   $('#sheet').innerHTML = `<h2>Вкладки команды</h2>
-    ${TABS.map(t=>`<div class="card row"><span style="font-size:20px">${t.icon}</span><div style="flex:1"><b>${esc(t.name)}</b><p class="mut">${({link:'внешняя ссылка',text:'текстовая страница',list:'чек-лист',feed:'лента записей',az:'журнал авторского надзора'})[t.kind]||t.kind}</p></div>
+    ${TABS.map(t=>`<div class="card row"><span style="font-size:20px">${t.icon}</span><div style="flex:1"><b>${esc(t.name)}</b><p class="mut">${({link:'внешняя ссылка',text:'текстовая страница',list:'чек-лист',feed:'лента записей',az:'журнал авторского надзора',plan:'технический план реализации'})[t.kind]||t.kind}</p></div>
       <button class="sec" style="padding:8px 10px" onclick="tabForm(${t.id})">✏️</button>
       <button class="dng" style="padding:8px 10px" onclick="delTab(${t.id})">🗑</button></div>`).join('') || '<p class="mut">Своих вкладок пока нет.</p>'}
     <div style="height:10px"></div><button class="pri" style="width:100%" onclick="tabForm()">＋ Создать вкладку</button>
@@ -634,6 +634,72 @@ function renderCustomTab(v){
     loadPosts(t.id);
   }
   if(t.kind === 'az') renderAz(v, t);
+  if(t.kind === 'plan') renderPlan(v, t);
+}
+
+/* ---------- Технический план реализации (интерактивный + консультации) ---------- */
+function renderPlan(v, t){
+  const c = t.config, isOwner = team && team.is_owner;
+  const done = store.get('plan_done_' + t.id, []);
+  v.innerHTML = `<h2 class="pt">🗺 ${esc(t.name)}</h2>
+   <p class="mut" style="margin-bottom:10px">План составлен на основе проекта Ф-2024-НОК-ДТ-0424-КР. Каждый пункт — интерактивен: отметьте готовность, получите консультацию со ссылками на проект и нормативку.</p>
+   ${(c.items||[]).map((it,i)=>`
+   <div class="card" style="${done.includes(i)?'opacity:.6':''}">
+     <div class="row" style="align-items:flex-start">
+       <div class="av" style="flex:none;${done.includes(i)?'background:var(--ok)':''}">${done.includes(i)?'✓':it.n}</div>
+       <div style="flex:1"><b>${esc(it.title)}</b> <span class="badge">${esc(it.dur||'')}</span></div>
+     </div>
+     <details style="margin-top:6px"><summary class="mut" style="cursor:pointer">Состав работ (${(it.works||[]).length})</summary>
+       <ul class="subs">${(it.works||[]).map(w=>`<li>${esc(w)}</li>`).join('')}</ul>
+       <p class="mut" style="margin-top:6px">📎 ${esc(it.docs||'')}</p></details>
+     <div class="row" style="margin-top:8px;flex-wrap:wrap">
+       <button class="sec" style="padding:7px 12px" onclick="planConsultSheet(${i})">❓ Консультация по пункту</button>
+       <button class="${done.includes(i)?'sec':'pri'}" style="padding:7px 12px" onclick="planToggle(${t.id},${i})">${done.includes(i)?'↩ Вернуть в работу':'✔ Пункт выполнен'}</button>
+     </div>
+   </div>`).join('')}
+   <p class="mut" style="text-align:center">Выполнено: ${done.length}/${(c.items||[]).length}</p>`;
+}
+function planToggle(tabId, i){
+  const k = 'plan_done_' + tabId;
+  let d = store.get(k, []);
+  d = d.includes(i) ? d.filter(x=>x!==i) : [...d, i];
+  store.set(k, d); render();
+}
+function planConsultSheet(i){
+  const t = curTab(); const it = (t.config.items||[])[i]; if(!it) return;
+  $('#sheet').innerHTML = `<h2>❓ Пункт ${it.n}: ${esc(it.title)}</h2>
+   <p class="mut" style="margin-bottom:8px">Консультация строго по проекту Ф-2024-НОК-ДТ-0424-КР и нормативным документам (без домыслов), со ссылками на источники.</p>
+   <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
+     ${['Что проверять на этом этапе?','Какие документы оформить?','Типичные нарушения и как их избежать','Как контролируется качество?'].map(x=>`<span class="struct-chip" onclick="planAsk(${i},'${x}')">${x}</span>`).join('')}
+   </div>
+   <div id="consLog" style="max-height:42vh;overflow-y:auto"></div>
+   <div class="row" style="margin-top:8px">
+     <input id="consInp" placeholder="Ваш вопрос по пункту…" style="flex:1" onkeydown="if(event.key==='Enter')planAsk(${i},null)">
+     <button class="pri" onclick="planAsk(${i},null)">➤</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+async function planAsk(i, preset){
+  const t = curTab(); const it = (t.config.items||[])[i];
+  const inp = document.getElementById('consInp');
+  const qText = preset || (inp ? inp.value : '').trim();
+  if(!qText) return;
+  if(inp) inp.value = '';
+  const log = document.getElementById('consLog');
+  log.innerHTML += `<div class="msg" style="max-width:100%;margin-top:8px"><b>Вы</b><div>${esc(qText)}</div></div>`;
+  const pend = document.createElement('div');
+  pend.className = 'msg me'; pend.style.maxWidth='100%'; pend.style.marginTop='8px';
+  pend.innerHTML = '<b>🤖 Консультант</b><div>⏳ …</div>';
+  log.appendChild(pend); log.scrollTop = log.scrollHeight;
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/consult', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({team_id: tid(), question: 'Пункт плана «' + it.title + '» (' + (it.docs||'') + '). ' + qText})
+    });
+    const j = await r.json().catch(()=>({}));
+    pend.querySelector('div').innerHTML = esc(j.text || ('Ошибка: ' + (j.error||r.status))) + ((j.sources&&j.sources.length) ? '<br><br><span class="mut" style="font-size:11px">Источники: ' + esc(j.sources.join('; ')) + '</span>' : '');
+  }catch(e){ pend.querySelector('div').textContent = 'Нет связи: ' + e.message; }
+  log.scrollTop = log.scrollHeight;
 }
 
 /* ---------- Журнал авторского надзора (СП 246.1325800.2023) ---------- */
