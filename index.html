@@ -106,6 +106,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button>
 </header>
+<div id="azBar" class="hidden" style="position:sticky;top:0;z-index:4;background:var(--acc);color:#fff;padding:8px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(31,25,14,.25)"></div>
 <main id="view"></main>
 <div id="chatComposer" class="composer hidden">
   <button onclick="document.getElementById('fileInp').click()" title="Прикрепить">📎</button>
@@ -139,7 +140,7 @@ let team = store.get('team', null);
 let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
 let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
-let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = {};
+let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = [];
 let AUTO = store.get('auto', true), autoTimer = null;
 
 /* ---------- Supabase ---------- */
@@ -423,7 +424,7 @@ async function teamSheet(){
   $('#overlay').style.display = 'flex';
 }
 function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
-function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; start(); }
+function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; AZ_ENTRIES=null; start(); }
 async function teamMenuToggle(ev){
   ev.stopPropagation();
   if(!SYNC) return;
@@ -477,7 +478,7 @@ function curTab(){ return TABS.find(t => 'tab:'+t.id === view); }
 function manageTabs(){
   if(!(team && team.is_owner)) return;
   $('#sheet').innerHTML = `<h2>Вкладки команды</h2>
-    ${TABS.map(t=>`<div class="card row"><span style="font-size:20px">${t.icon}</span><div style="flex:1"><b>${esc(t.name)}</b><p class="mut">${({link:'внешняя ссылка',text:'текстовая страница',list:'чек-лист',feed:'лента записей'})[t.kind]||t.kind}</p></div>
+    ${TABS.map(t=>`<div class="card row"><span style="font-size:20px">${t.icon}</span><div style="flex:1"><b>${esc(t.name)}</b><p class="mut">${({link:'внешняя ссылка',text:'текстовая страница',list:'чек-лист',feed:'лента записей',az:'журнал авторского надзора'})[t.kind]||t.kind}</p></div>
       <button class="sec" style="padding:8px 10px" onclick="tabForm(${t.id})">✏️</button>
       <button class="dng" style="padding:8px 10px" onclick="delTab(${t.id})">🗑</button></div>`).join('') || '<p class="mut">Своих вкладок пока нет.</p>'}
     <div style="height:10px"></div><button class="pri" style="width:100%" onclick="tabForm()">＋ Создать вкладку</button>
@@ -495,6 +496,7 @@ function tabForm(id){
       <option value="link" ${t&&t.kind==='link'?'selected':''}>🔗 Ссылка</option>
       <option value="list" ${t&&t.kind==='list'?'selected':''}>☑ Список</option>
       <option value="feed" ${t&&t.kind==='feed'?'selected':''}>📰 Лента</option>
+      <option value="az" ${t&&t.kind==='az'?'selected':''}>📋 Журнал авторского надзора</option>
     </select></div>
     <div id="tbX" style="margin-top:8px"></div>
     <div style="height:12px"></div>
@@ -588,6 +590,128 @@ function renderCustomTab(v){
       <div class="composer" style="border-radius:12px;border:1px solid var(--brd);margin-top:10px"><input id="pText" placeholder="Запись…" style="flex:1"><button onclick="addPost(${t.id})">➤</button></div>`;
     loadPosts(t.id);
   }
+  if(t.kind === 'az') renderAz(v, t);
+}
+
+/* ---------- Журнал авторского надзора (СП 246.1325800.2023) ---------- */
+let AZ_ENTRIES = [], azWeatherCache = null, azWTime = 0;
+async function loadAz(tabId){
+  const {data, error} = await sb.from('az_entries').select('*').eq('tab_id', tabId).order('entry_date').order('entry_time');
+  AZ_ENTRIES = error ? [] : data;
+}
+async function fetchWeather(cfg){
+  const now = Date.now();
+  if(azWeatherCache && now - azWTime < 1800000) return azWeatherCache;
+  try{
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${cfg.lat||69.35}&longitude=${cfg.lon||88.2}&current=temperature_2m,precipitation,weather_code&timezone=Asia%2FKrasnoyarsk`);
+    const j = await r.json();
+    const c = j.current || {};
+    const codes = {0:'ясно',1:'преим. ясно',2:'перем. облачность',3:'пасмурно',45:'туман',48:'изморозь',51:'морось',53:'морось',55:'морось',61:'дождь',63:'дождь',65:'сильный дождь',71:'снег',73:'снег',75:'сильный снег',77:'снег',80:'ливень',81:'ливень',82:'сильный ливень',85:'снегопад',86:'снегопад',95:'гроза',96:'гроза с градом',99:'гроза с градом'};
+    azWeatherCache = { temp: c.temperature_2m, precip: c.precipitation, desc: codes[c.weather_code]||'', manual:false };
+    azWTime = now;
+  }catch(e){ azWeatherCache = { temp:null, precip:null, desc:'нет данных', manual:true }; }
+  return azWeatherCache;
+}
+async function renderAz(v, t){
+  const c = t.config, isOwner = team && team.is_owner;
+  if(AZ_ENTRIES===null){ v.innerHTML='<p class="mut">Загрузка…</p>'; await loadAz(t.id); }
+  const w = await fetchWeather(c);
+  const today = new Date().toISOString().slice(0,10);
+  const nowT = new Date().toTimeString().slice(0,5);
+  v.innerHTML = `
+  <div class="card" style="background:var(--card2)">
+    <b>Титульные данные</b>
+    <p class="mut" style="margin-top:6px">Объект: <b style="color:var(--txt)">${esc(c.object||'—')}</b><br>
+    Застройщик: ${esc(c.customer||'—')} · Проектировщик: ${esc(c.designer||'—')}<br>
+    Шифр проекта: ${esc(c.project_code||'—')} · ГИП: ${esc(c.gip||'—')}<br>
+    Руководитель авторского надзора: ${esc(c.az_head||'—')} · ${esc(c.contract||'')}</p>
+    ${isOwner?`<div style="height:8px"></div><button class="sec" style="padding:6px 12px" onclick="azTitulForm(${t.id})">✏️ Править титульные данные</button>`:''}
+  </div>
+
+  <div class="card">
+    <b>Новая запись</b> <span class="mut">(лист учёта посещений — п. 6.6 СП 246.1325800.2023)</span>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <input type="date" id="azD" value="${today}" style="flex:1;min-width:120px">
+      <input type="time" id="azT" value="${nowT}" style="flex:1;min-width:100px">
+      <input id="azW" placeholder="Погода" value="${w.desc}${w.temp!==null&&w.temp!==undefined?', '+w.temp+'°C':''}${w.precip?' | осадки '+w.precip+' мм':''}" style="flex:2;min-width:150px" title="Автозаполнено по метеоданным (можно править)">
+    </div>
+    <div class="mut" style="margin-top:8px">Виды выполненных работ (по проекту ${esc(c.project_code||'')}):</div>
+    <div id="azWorks">${(c.works||[]).map((x,i)=>`<span class="badge" style="cursor:pointer;margin:3px 3px 0 0;padding:5px 10px" id="azw${i}" onclick="this.classList.toggle('on');this.style.background=this.classList.contains('on')?'var(--acc)':'';this.style.color=this.classList.contains('on')?'#fff':''">${esc(x)}</span>`).join('')}</div>
+    <textarea id="azWorksT" rows="2" placeholder="Или опишите работы вручную…" style="margin-top:8px"></textarea>
+    <div class="row" style="margin-top:8px">
+      <select id="azConf" style="flex:1"><option>Соответствует проектным решениям</option><option>Частично соответствует</option><option>Не соответствует</option></select>
+    </div>
+    <textarea id="azRem" rows="2" placeholder="Замечания (при наличии)…" style="margin-top:8px"></textarea>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <input id="azPres" placeholder="Предписание (при наличии)…" style="flex:2;min-width:150px">
+      <input type="date" id="azPresD" style="flex:1;min-width:120px" title="Срок исполнения предписания">
+    </div>
+    <div class="mut" style="margin-top:8px">Присутствовали (автор надзора подписывает запись автоматически):</div>
+    <div>${TEAM_MEMBERS.filter(m=>m.member!==me.name).map(m=>`<label style="display:inline-flex;gap:4px;align-items:center;margin:4px 10px 0 0;font-size:13px"><input type="checkbox" class="azPresChk" value="${esc(m.member)}" style="width:auto"> ${esc(m.member)}</label>`).join('')}</div>
+    <div style="height:10px"></div>
+    <button class="pri" style="width:100%" onclick="azAdd(${t.id})">✍️ Внести запись (от ${esc(me.name)})</button>
+  </div>
+
+  <h2 class="pt">Записи журнала (${AZ_ENTRIES.length})</h2>
+  ${AZ_ENTRIES.slice().reverse().map(e=>`
+  <div class="card">
+    <div class="row"><b style="flex:1">🗓 ${e.entry_date} · ${String(e.entry_time).slice(0,5)}</b>
+      <span class="badge ${e.conformity.indexOf('Не соотв')===0?'bad':e.conformity.indexOf('Частично')===0?'warn':'ok'}">${esc(e.conformity)}</span>
+      ${e.pres_status==='Исполнено'?'<span class="badge ok">предписание исполнено</span>':e.prescription?'<span class="badge warn">предписание открыто</span>':''}
+    </div>
+    <p class="mut" style="margin-top:4px">🌡 ${esc(e.weather||'—')} · Автор записи: ${esc(e.author||'—')} (${esc(e.author_role||'')})</p>
+    <p style="margin-top:6px">${esc(e.works)}</p>
+    ${e.remarks?`<p style="margin-top:4px">⚠ Замечания: ${esc(e.remarks)}</p>`:''}
+    ${e.prescription?`<p style="margin-top:4px">📌 Предписание: ${esc(e.prescription)} — срок ${e.pres_deadline||'—'} · статус:
+      <select onchange="azPresSet(${e.id}, this.value)" style="width:auto;display:inline-block;padding:4px 8px">
+        ${['Открыто','Исполнено','Просрочено'].map(s=>`<option ${s===e.pres_status?'selected':''}>${s}</option>`).join('')}
+      </select></p>`:''}
+    <p class="mut" style="margin-top:4px">Присутствовали: ${(e.present||[]).join(', ')||'—'}</p>
+  </div>`).join('') || '<p class="mut">Записей пока нет.</p>'}`;
+}
+async function azAdd(tabId){
+  const t = curTab();
+  const sel = [];
+  document.querySelectorAll('#azWorks .badge.on').forEach(x => sel.push(x.textContent));
+  const manual = $('#azWorksT').value.trim();
+  const works = [...sel, manual].filter(Boolean).join('; ');
+  if(!works) return alert('Укажите виды выполненных работ');
+  const present = [...document.querySelectorAll('.azPresChk:checked')].map(x=>x.value);
+  const row = {
+    tab_id: tabId,
+    entry_date: $('#azD').value, entry_time: $('#azT').value + ':00',
+    weather: $('#azW').value,
+    works, conformity: $('#azConf').value,
+    remarks: $('#azRem').value||null,
+    prescription: $('#azPres').value||null, pres_deadline: $('#azPresD').value||null,
+    pres_status: $('#azPres').value ? 'Открыто' : 'Нет',
+    author: me.name, author_role: me.role, present
+  };
+  const {error} = await sb.from('az_entries').insert(row);
+  if(error) return alert(error.message);
+  AZ_ENTRIES = null;
+  render();
+}
+async function azPresSet(id, val){
+  await sb.from('az_entries').update({pres_status: val}).eq('id', id);
+  AZ_ENTRIES = null; render();
+}
+function azTitulForm(tabId){
+  const t = curTab(); const c = t.config;
+  $('#sheet').innerHTML = `<h2>Титульные данные журнала</h2><div class="card">
+   <input id="azF1" placeholder="Объект" value="${esc(c.object||'')}"><div style="height:8px"></div>
+   <input id="azF2" placeholder="Адрес" value="${esc(c.address||'')}"><div style="height:8px"></div>
+   <div class="row"><input id="azF3" placeholder="Застройщик" value="${esc(c.customer||'')}"><input id="azF4" placeholder="Проектировщик" value="${esc(c.designer||'')}"></div><div style="height:8px"></div>
+   <div class="row"><input id="azF5" placeholder="Шифр проекта" value="${esc(c.project_code||'')}"><input id="azF6" placeholder="ГИП" value="${esc(c.gip||'')}"></div><div style="height:8px"></div>
+   <div class="row"><input id="azF7" placeholder="Руководитель авторского надзора" value="${esc(c.az_head||'')}"><input id="azF8" placeholder="Договор АН" value="${esc(c.contract||'')}"></div>
+   <div style="height:12px"></div>
+   <button class="pri" style="width:100%" onclick="azTitulSave(${tabId})">💾 Сохранить</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function azTitulSave(tabId){
+  const t = curTab();
+  await sb.from('tabs').update({config:{...t.config, object:$('#azF1').value, address:$('#azF2').value, customer:$('#azF3').value, designer:$('#azF4').value, project_code:$('#azF5').value, gip:$('#azF6').value, az_head:$('#azF7').value, contract:$('#azF8').value}}).eq('id',tabId);
+  $('#overlay').style.display='none';
 }
 $('#tabsBtn').onclick = () => manageTabs();
 $('#membersBtn').onclick = () => membersSheet();
@@ -711,6 +835,7 @@ document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
     if(view==='news'&&rNews===null) loadNews();
     if(view==='files'&&rDocs===null) loadDocs();
     if(view==='stages'&&STAGES===null) loadStages();
+    if(view.startsWith('tab:')){ const tt=curTab(); if(tt && tt.kind==='az' && AZ_ENTRIES===null) loadAz(tt.id); }
   }
   render();
 });
@@ -720,6 +845,13 @@ function render(){
   $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
   $('#chatComposer').classList.toggle('hidden', view!=='chat');
   renderTabbar();
+  const ct = view.startsWith('tab:') ? curTab() : null;
+  const azb = $('#azBar');
+  if(ct && ct.kind==='az'){
+    const c = ct.config;
+    azb.classList.remove('hidden');
+    azb.innerHTML = `<b>📋 Журнал авторского надзора</b><span style="opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(c.object||'')}</span><span style="opacity:.7;flex:none">СП 246.1325800.2023</span>`;
+  } else azb.classList.add('hidden');
   const v = $('#view'); v.innerHTML='';
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='chat') renderChat(v);
@@ -1088,13 +1220,13 @@ function viaWa(name){
 }
 function viaTg(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.telegram) return alert('Не указан Telegram'); const t=msgText(); window.open('https://t.me/'+m.telegram.replace('@','')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
 const MAX_BOT_NAME = 'YOUR_MAX_BOT'; // имя бота-шлюза (подставлю после создания)
-async async function waConnectSelf(){
+async function waConnectSelf(){
   const m = MEMBERS.find(x=>x.name===me.name);
   if(!m || !m.phone) return alert('Сначала укажите телефон в карточке (Редактировать карточку)');
   await sb.from('wa_chats').upsert({member:me.name, phone:m.phone.replace(/[^\d]/g,'')}, {onConflict:'member'});
   alert('Телефон привязан к WhatsApp-шлюзу. Для гарантированной доставки ответьте один раз на сообщение бизнес-номера в WhatsApp — откроется 24-часовое окно переписки.');
 }
-function viaMax(name){
+async function viaMax(name){
   const t = msgText() || ('Сообщение от ' + (me?me.name:'') + ' (НИОКР Команда)');
   // ШЛЮЗ: если участник подключил MAX — отправляем напрямую, без открытия приложения
   try{
