@@ -426,8 +426,13 @@ function onboarding2(){
     <div class="av" style="width:40px;height:40px;background:var(--acc)">👥</div>
     <div style="flex:1"><b style="font-size:15px">${esc(t.name)}</b><br><span class="mut">${t.is_owner?'вы владелец':'участник'}</span></div>
     ${team&&team.id===t.id?'<span style="color:var(--ok);font-size:20px">✓</span>':''}</div>`).join('');
-  $('#sheet').innerHTML = `<h2>Ваши команды</h2><p class="mut" style="margin-bottom:10px">Выберите команду для работы:</p>
-    ${list || '<p class="mut" style="margin-bottom:10px">Вы пока не состоите ни в одной команде.</p>'}
+  $('#sheet').innerHTML = `<h2>Ваши команды</h2><p class="mut" style="margin-bottom:10px">Вы вошли как: <b style="color:var(--txt)">${esc(me.name)}</b>. Выберите команду для работы:</p>
+    ${list || `<div class="card" style="border-color:var(--warn);margin-bottom:10px">
+      <p>⚠️ Под именем <b>${esc(me.name)}</b> команд не найдено.</p>
+      <p class="mut" style="margin-top:6px">Если вы раньше создавали команды — вы вошли под другим написанием имени. Вернитесь и выберите себя точно (<b>Керимов А.Г</b> — без точки в конце).</p>
+      <div style="height:10px"></div>
+      <button class="sec" style="width:100%" onclick="store.del('user'); store.del('team'); me=null; team=null; appStarted=false; loadMembers().then(onboarding1)">← Выбрать другого участника</button>
+    </div>`}
     <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Создать свою команду (видят только приглашённые):</p>
       <div class="row"><input id="newTeamName" placeholder="Название команды / проекта"><button class="pri" onclick="createTeam()">Создать</button></div></div>
     <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду приглашения:</p>
