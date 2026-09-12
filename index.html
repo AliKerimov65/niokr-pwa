@@ -361,9 +361,24 @@ async function pickExisting(){
   $('#overlay').style.display='none';
   if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
 }
+function nameVariants(n){
+  const v = new Set([n]);
+  v.add(n.replace(/\.+$/,''));       // без точки в конце
+  v.add(n.replace(/\.(?![^.]*$)/g,'')) // без промежуточных точек... нет: вариант убрать все точки кроме последней
+  return [...v];
+}
+function findMemberCase(n){ return MEMBERS.find(m => nameVariants(m.name).some(x => x===n || nameVariants(n).includes(m.name))); }
 async function regNew(){
   const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
   const role = $('#rl').value;
+  const existing = findMemberCase(n);
+  if(existing){
+    // Имя-дубликат (например, с точкой/без) — входим под существующим, не создаём новую запись
+    me = {name:existing.name, role:existing.role||role}; store.set('user', me);
+    $('#overlay').style.display='none';
+    if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
+    return;
+  }
   if(SYNC){ const {error} = await sb.from('members').insert({name:n, role, phone:$('#rc_p').value||null, email:$('#rc_e').value||null, telegram:$('#rc_t').value||null, max:$('#rc_m').value||null}); if(error && error.code!=='23505') return alert(error.message); }
   me = {name:n, role}; store.set('user', me);
   $('#overlay').style.display='none';
@@ -1296,6 +1311,8 @@ function newMemberForm(){
 }
 async function createMember(){
   const n = $('#cn').value.trim(); if(!n) return alert('Введите имя');
+  const exist2 = findMemberCase(n);
+  if(exist2){ await sb.from('team_members').insert({team_id:tid(), member:exist2.name, is_owner:false}); await loadTeamMembers(); render(); $('#overlay').style.display='none'; return; }
   const {error} = await sb.from('members').insert({name:n, role:$('#cr').value||null, phone:$('#cp').value||null, email:$('#ce').value||null, telegram:$('#ct').value||null, max:$('#cm').value||null});
   if(error){ if(error.code==='23505') return alert('Такой участник уже зарегистрирован'); return alert(error.message); }
   await sb.from('team_members').insert({team_id:tid(), member:n, is_owner:false});
