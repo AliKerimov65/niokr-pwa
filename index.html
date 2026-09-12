@@ -1196,25 +1196,76 @@ async function loadDevTasks(){
   const {data} = await sb.from('dev_tasks').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(30);
   DEV_TASKS = data || [];
 }
+const DEV_STATUS_META = {
+  'Черновик':      {icon:'📋', cls:'',     label:'на согласовании'},
+  'Отправлено':    {icon:'📨', cls:'warn', label:'в очереди'},
+  'В работе':      {icon:'⏳', cls:'warn', label:'исполняется…'},
+  'Готово':        {icon:'✅', cls:'ok',   label:'опубликовано'},
+  'Ошибка':        {icon:'⚠️', cls:'bad',  label:'ошибка'}
+};
+function devMeta(st){ return DEV_STATUS_META[st] || {icon:'•', cls:'', label: st}; }
 function renderDevBox(){
   if(!team || !team.is_owner){ const b=document.getElementById('devBox'); if(b) b.innerHTML=''; return; }
   const box = document.getElementById('devBox'); if(!box) return;
-  const draft = DEV_TASKS.filter(t=>t.status==='Черновик');
-  const sent = DEV_TASKS.filter(t=>t.status!=='Черновик');
-  box.innerHTML = (draft.length || sent.length) ? `<div class="card" style="background:var(--card2)">
-    <b>🛠 Задачи для Kimi (интерфейс/функционал)</b>
-    ${draft.map(t=>`<div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
-      <b style="font-size:13.5px">📋 ${esc(t.title)}</b> <span class="badge warn">на согласовании</span>
-      <textarea id="dev_${t.id}" rows="4" style="margin-top:6px;font-size:13px">${esc(t.body)}</textarea>
-      <div class="row" style="margin-top:6px">
-        <button class="pri" style="flex:1" id="devSend_${t.id}" onclick="devSend(${t.id})">📨 Отправить Kimi</button>
-        <button class="dng" onclick="devDel(${t.id})">🗑</button>
-      </div></div>`).join('')}
-    ${sent.map(t=>`<div class="row" style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
-      <div style="flex:1"><b style="font-size:13px">📨 ${esc(t.title)}</b><br><span class="mut" style="font-size:11px">${fmtT(t.sent_at || t.created_at)}</span></div>
-      <span class="badge ${t.status==='Готово'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span>
-    </div>`).join('')}
+  const ordered = [...DEV_TASKS].sort((a,b) => (a.status==='В работе'?0:1) - (b.status==='В работе'?0:1) || b.id - a.id);
+  box.innerHTML = ordered.length ? `<div class="card" style="background:var(--card2)">
+    <div class="row"><b style="flex:1">🛠 Задачи для Kimi</b>
+      <span class="mut" style="font-size:11px">${ordered.filter(t=>t.status==='В работе').length ? '⏳ идёт исполнение' : 'следит автоматически'}</span></div>
+    ${ordered.map(t=>{
+      const m = devMeta(t.status);
+      if(t.status === 'Черновик'){
+        return `<div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+          <div class="row" style="cursor:pointer" onclick="devDetail(${t.id})"><b style="flex:1;font-size:13.5px">📋 ${esc(t.title)}</b><span class="badge warn">${m.label}</span></div>
+          <textarea id="dev_${t.id}" rows="3" style="margin-top:6px;font-size:13px">${esc(t.body)}</textarea>
+          <div class="row" style="margin-top:6px">
+            <button class="pri" style="flex:1" id="devSend_${t.id}" onclick="devSend(${t.id})">📨 Отправить Kimi</button>
+            <button class="dng" onclick="devDel(${t.id})">🗑</button>
+          </div></div>`;
+      }
+      return `<div class="mrow" style="cursor:pointer" onclick="devDetail(${t.id})">
+        <div class="inf"><b style="font-size:13px">${m.icon} ${esc(t.title)}</b><br>
+          <span class="mut" style="font-size:11px">${fmtT(t.sent_at || t.created_at)}${t.agent_note ? ' · ' + esc(t.agent_note) : ''}</span></div>
+        <span class="badge ${m.cls}">${m.label}</span>
+      </div>`;
+    }).join('')}
   </div>` : '';
+}
+function devDetail(id){
+  const t = DEV_TASKS.find(x=>x.id===id); if(!t) return;
+  const m = devMeta(t.status);
+  const canRetry = (t.status==='Ошибка' || t.status==='Отправлено');
+  $('#sheet').innerHTML = `<h2>${m.icon} ${esc(t.title)}</h2><div class="card">
+    <p><span class="badge ${m.cls}">${esc(t.status)} — ${m.label}</span></p>
+    <p class="mut" style="margin-top:6px">Создана: ${fmtT(t.created_at)}${t.sent_at ? ' · Отправлена: ' + fmtT(t.sent_at) : ''}</p>
+    <p style="margin-top:8px;white-space:pre-wrap;background:var(--card2);border-radius:8px;padding:10px;font-size:13px">${esc(t.body)}</p>
+    ${t.agent_note ? `<p style="margin-top:8px;font-size:13px">📝 ${esc(t.agent_note)}</p>` : ''}
+    ${t.status==='В работе' ? `<p class="mut" style="margin-top:8px">⏳ Конвейер работает: Kimi готовит патч → проверка синтаксиса → публикация на GitHub. Обычно 1–3 минуты. Статус обновится автоматически.</p>` : ''}
+    <div style="height:12px"></div>
+    <div class="row" style="flex-wrap:wrap">
+      ${canRetry ? `<button class="pri" style="flex:1" onclick="devRetry(${t.id})">🔄 ${t.status==='Ошибка' ? 'Повторить исполнение' : 'Запустить исполнение'}</button>` : ''}
+      ${t.status==='Готово' ? `<button class="sec" style="flex:1" onclick="alert('Обновление уже опубликовано. Перезапустите приложение, чтобы увидеть изменение.')">📲 Как применить</button>` : ''}
+      <button class="dng" onclick="devDel(${t.id})">🗑 Удалить</button>
+    </div>
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="renderAgentMenu(); document.querySelector('#overlay').style.display='flex'">← К списку</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+async function devRetry(id){
+  await sb.from('dev_tasks').update({status:'Отправлено', sent_at: new Date().toISOString(), agent_note: null}).eq('id', id);
+  await loadDevTasks(); renderDevBox();
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/dev-executor', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id: id, owner: me.name})
+    });
+    const j = await r.json().catch(()=>({}));
+    await loadDevTasks(); renderDevBox();
+    if(document.getElementById('sheet')) devDetail(id);
+    if(j && j.ok) alert('✅ Исполнено и опубликовано (v' + j.version + ')');
+  }catch(e){
+    alert('⏳ Задача поставлена в очередь. Статус обновится автоматически.');
+  }
 }
 /* ---------- Ответы на вопросы (перехват обращений к владельцу) ---------- */
 let qaScanTimer = null;
