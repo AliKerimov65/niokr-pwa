@@ -1,5 +1,5 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v55';
+const CACHE = 'niokr-pwa-v56';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -40,4 +40,8 @@ self.addEventListener('notificationclick', (e) => {
     const c = cs.find(x => x.url.indexOf('niokr') > -1);
     return c ? c.focus() : clients.openWindow('./');
   }));
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
