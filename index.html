@@ -22,7 +22,14 @@ body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
 header{flex:none;background:var(--card);border-bottom:1px solid var(--brd);z-index:5}
 .hrow{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 8px 4px;width:100%}
 main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
-.tabbar{flex:none;z-index:6;background:var(--card);border-top:1px solid var(--brd)}
+.tabbar{flex:none;z-index:6;background:#221b10;border-top:1px solid #3a2f1c}
+.tabbar button{color:#b8a888}
+.tabbar button.on{color:#f5c96b}
+#structBar{background:#221b10;margin:0;padding:6px 8px !important;border-bottom:1px solid #3a2f1c}
+#structBar .struct-chip{background:#322818;border-color:#4a3c22;color:#e8dcc2}
+#structBar .struct-chip.on{background:#8a5f16;border-color:#8a5f16;color:#fff}
+#structBar .struct-chip.done{opacity:.5;text-decoration:line-through}
+#structBar #verTag{color:#8a7a5c !important}
 #structBar::-webkit-scrollbar{display:none}
 .struct-chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:16px;padding:5px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer}
 .struct-chip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
@@ -1781,6 +1788,41 @@ function backIntercept(){
   setTimeout(() => t.remove(), 2400);
 }
 window.addEventListener('popstate', backIntercept);
+
+/* ---------- ДИАГНОСТИКА + СТОРОЖ ВЕРСИЙ ---------- */
+let dbgCount = 0;
+function dbg(msg){
+  try{
+    if(dbgCount++ > 80 || !SYNC) return;
+    fetch('https://lxgipzdybigdpdcmcnez.supabase.co/rest/v1/debug_log', {
+      method:'POST',
+      headers:{ 'apikey':'sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Authorization':'Bearer sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Content-Type':'application/json' },
+      body: JSON.stringify({ member: me ? me.name : '?', msg: String(msg).slice(0, 200) })
+    }).catch(()=>{});
+  }catch(e){}
+}
+window.addEventListener('error', e => dbg('ERROR: ' + e.message + ' @' + (e.filename||'').split('/').pop() + ':' + e.lineno));
+window.addEventListener('unhandledrejection', e => dbg('REJECTION: ' + (e.reason && e.reason.message || e.reason)));
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('button, .struct-chip');
+  if(b) dbg('CLICK: ' + (b.id || b.dataset.v || b.dataset.tid || b.className || b.textContent || '?').toString().slice(0,60));
+}, true);
+dbg('BOOT v79 view=' + (typeof view !== 'undefined' ? view : '?'));
+setTimeout(() => dbg('ALIVE 5s view=' + view + ' SYNC=' + SYNC), 5000);
+(function(){
+  try{
+    const APP_VERSION = 'v79';
+    fetch('sw.js?v=' + Date.now(), {cache:'no-store'}).then(r => r.text()).then(t => {
+      const srv = (t.match(/niokr-pwa-v(\d+)/) || [0,'0'])[1];
+      dbg('WATCHDOG server=v' + srv + ' local=' + APP_VERSION);
+      if(parseInt(srv) > parseInt(APP_VERSION.replace('v',''))){
+        caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).finally(() => {
+          navigator.serviceWorker && navigator.serviceWorker.getRegistration().then(reg => reg && reg.unregister()).finally(() => location.reload());
+        });
+      }
+    }).catch(()=>{});
+  }catch(e){}
+})();
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
