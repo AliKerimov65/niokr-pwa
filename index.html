@@ -653,12 +653,22 @@ const DEFAULT_PLAN = {"items":[
  {"n":6,"title":"Мониторинг дымовой трубы","dur":"весь период + эксплуатация","works":["Регулярные геодезические наблюдения за креном/осадками","Сравнение с проектными допусками","Учёт температурного режима грунтов","Отчёты по результатам циклов наблюдений"],"docs":"Проект (раздел мониторинга), журнал АН"},
  {"n":7,"title":"Авторский надзор и приёмка","dur":"весь период","works":["Регулярные обходы с записями в журнале авторского надзора","Предписания по несоответствиям с контролем исполнения","Участие в освидетельствовании скрытых работ","Заключение о соответствии выполненных работ проекту"],"docs":"СП 246.1325800.2023, ГрК РФ ст. 55.24, ПП РФ № 963"}
 ]};
+let planTabLock = null;
 async function ensurePlanTab(){
   let t = TABS.find(x => x.kind==='plan');
   if(t) return t;
-  const {data} = await sb.from('tabs').insert({team_id: tid(), name:'Технический план реализации', icon:'🗺', kind:'plan', config: DEFAULT_PLAN, pos: 5, created_by:'Система'}).select().single();
-  if(data){ TABS.push(data); renderTabbar(); renderStructBar(); }
-  return data;
+  if(planTabLock) return planTabLock;
+  planTabLock = (async () => {
+    try{
+      const ins = await sb.from('tabs').insert({team_id: tid(), name:'Технический план реализации', icon:'🗺', kind:'plan', config: DEFAULT_PLAN, pos: 5, created_by:'Система'}).select().single();
+      if(ins.data){ TABS.push(ins.data); renderTabbar(); renderStructBar(); return ins.data; }
+      // конфликт уникального индекса — подхватываем существующую
+      const { data } = await sb.from('tabs').select('*').eq('team_id', tid()).eq('kind','plan').maybeSingle();
+      if(data && !TABS.find(x=>x.id===data.id)) TABS.push(data);
+      return data || null;
+    } finally { planTabLock = null; }
+  })();
+  return planTabLock;
 }
 
 /* ---------- Технический план реализации (интерактивный + консультации) ---------- */
