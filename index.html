@@ -319,6 +319,11 @@ async function loadStages(){
   if(view==='stages') render();
 }
 
+// Страховка пустого экрана: если приложение не стартовало (закрыто приветствие) — вернуть окно входа
+setTimeout(() => {
+  if(!appStarted && document.getElementById('overlay').style.display !== 'flex'){ init(); }
+}, 1500);
+
 /* ---------- старт ---------- */
 async function init(){
   syncBadge();
@@ -338,6 +343,7 @@ async function init(){
   onboarding2();
 }
 function start(){
+  appStarted = true;
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
@@ -653,7 +659,7 @@ const DEFAULT_PLAN = {"items":[
  {"n":6,"title":"Мониторинг дымовой трубы","dur":"весь период + эксплуатация","works":["Регулярные геодезические наблюдения за креном/осадками","Сравнение с проектными допусками","Учёт температурного режима грунтов","Отчёты по результатам циклов наблюдений"],"docs":"Проект (раздел мониторинга), журнал АН"},
  {"n":7,"title":"Авторский надзор и приёмка","dur":"весь период","works":["Регулярные обходы с записями в журнале авторского надзора","Предписания по несоответствиям с контролем исполнения","Участие в освидетельствовании скрытых работ","Заключение о соответствии выполненных работ проекту"],"docs":"СП 246.1325800.2023, ГрК РФ ст. 55.24, ПП РФ № 963"}
 ]};
-let planTabLock = null;
+let planTabLock = null, appStarted = false;
 async function ensurePlanTab(){
   let t = TABS.find(x => x.kind==='plan');
   if(t) return t;
@@ -1138,7 +1144,7 @@ $('#pushBtn').onclick = async () => {
 };
 $('#exitBtn').onclick = () => {
   if(!confirm('Выйти из приложения?\nПотребуется повторный выбор участника.')) return;
-  store.del('user'); store.del('team'); me = null; team = null;
+  store.del('user'); store.del('team'); me = null; team = null; appStarted = false;
   try{ window.close(); }catch(e){}
   $('#sheet').innerHTML = `<h2>Выход выполнен</h2><div class="card">
     <p class="mut">Сеанс завершён. Приложение можно закрыть (смахнуть из списка задач), либо войдите снова:</p>
@@ -1788,7 +1794,7 @@ function renderMisc(v){
 }
 function switchUser(){
   if(!confirm('Выйти и выбрать другого участника?')) return;
-  store.del('user'); store.del('team'); me = null; team = null; MEMBERS=[]; TEAM_MEMBERS=[];
+  store.del('user'); store.del('team'); me = null; team = null; appStarted = false; MEMBERS=[]; TEAM_MEMBERS=[];
   init();
 }
 async function addMember(){
@@ -2117,13 +2123,15 @@ new MutationObserver(() => {
   const s = document.getElementById('sheet');
   if(!s || document.getElementById('sheetClose')) return;
   if(document.getElementById('overlay').style.display !== 'flex') return;
+  // Приветственные окна не закрываются крестиком — иначе пустой экран без команды
+  if(s.innerHTML.indexOf('existSel') > -1 || s.innerHTML.indexOf('newTeamName') > -1 || s.innerHTML.indexOf('pickExisting') > -1) return;
   const c = document.createElement('span');
   c.id = 'sheetClose'; c.textContent = '✕'; c.title = 'Закрыть (отмена)';
-  c.onclick = (e) => { e.stopPropagation(); if(!team) return; document.getElementById('overlay').style.display='none'; };
+  c.onclick = (e) => { e.stopPropagation(); if(!appStarted) return; document.getElementById('overlay').style.display='none'; };
   s.appendChild(c);
 }).observe(document.getElementById('sheet'), {childList:true});
 document.getElementById('overlay').addEventListener('click', (e) => {
-  if(e.target === document.getElementById('overlay')){ if(!team) return; document.getElementById('overlay').style.display='none'; }
+  if(e.target === document.getElementById('overlay')){ if(!appStarted) return; document.getElementById('overlay').style.display='none'; }
 });
 
 init();
