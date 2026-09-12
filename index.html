@@ -1171,6 +1171,7 @@ function taskSheet(id){
 /* ---------- Умный агент «Управление командой» (владелец) ---------- */
 let agentRec = null, agentVoice = store.get('agentVoice', true);
 async function agentSheet(){
+  if(!team || !team.is_owner){ return; }
   curThread = null;
   await Promise.all([loadAgentThreads(), loadDevTasks(), loadQa()]);
   renderAgentMenu();
@@ -1182,6 +1183,7 @@ async function loadDevTasks(){
   DEV_TASKS = data || [];
 }
 function renderDevBox(){
+  if(!team || !team.is_owner){ const b=document.getElementById('devBox'); if(b) b.innerHTML=''; return; }
   const box = document.getElementById('devBox'); if(!box) return;
   const draft = DEV_TASKS.filter(t=>t.status==='Черновик');
   const sent = DEV_TASKS.filter(t=>t.status!=='Черновик');
@@ -1218,6 +1220,7 @@ async function qaScanNow(){
   await loadQa(); renderQaBox();
 }
 function renderQaBox(){
+  if(!team || !team.is_owner){ const b=document.getElementById('qaBox'); if(b) b.innerHTML=''; return; }
   const box = document.getElementById('qaBox'); if(!box) return;
   const pend = QA_ITEMS.filter(x=>x.status==='На согласовании');
   const done = QA_ITEMS.filter(x=>x.status!=='На согласовании');
@@ -1244,7 +1247,7 @@ async function qaReply(id){
   await sb.from('messages').insert({dm: dmKey(me.name, item.author), author: me.name, role: me.role, body: text, client_id: cid});
   await sb.from('qa_queue').update({status:'Отвечено', draft: text, answered_at: new Date().toISOString()}).eq('id', id);
   await loadQa(); renderQaBox();
-  alert('✅ Ответ отправлен ' + item.author + ' (личное сообщение + push)');
+  alert('✅ Ответ отправлен ' + item.author);
 }
 async function qaSkip(id){
   await sb.from('qa_queue').update({status:'Пропущено'}).eq('id', id);
@@ -1354,6 +1357,7 @@ function agentSpeak(text){
 }
 function agentVoiceToggle(){ agentVoice = !agentVoice; store.set('agentVoice', agentVoice); const b=document.getElementById('agentVBtn'); if(b) b.textContent = '🔊 Голос ответов: ' + (agentVoice?'вкл':'выкл'); }
 async function agentSend(text){
+  if(!team || !team.is_owner){ return; }
   const inp = document.getElementById('agentInp');
   const q = (text || (inp ? inp.value : '')).trim(); if(!q) return;
   if(inp) inp.value = '';
@@ -1383,6 +1387,7 @@ async function agentSend(text){
 }
 function agentAsk(q){ agentSend(q); }
 function agentToggleMic(){
+  if(!team || !team.is_owner){ return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const btn = document.getElementById('agentMic');
   if(!SR){ alert('Голосовой ввод не поддерживается этим браузером (используйте Chrome)'); return; }
