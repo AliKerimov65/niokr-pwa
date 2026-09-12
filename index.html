@@ -1805,6 +1805,46 @@ window.addEventListener('popstate', (e) => {
   }catch(_){}
 });
 
+/* Делегированный обработчик нижнего меню — не зависит от привязок */
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.tabbar button');
+  if(!b) return;
+  if(b.dataset.v){
+    view = b.dataset.v;
+    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x === b));
+    if(SYNC && team){
+      if(view==='tasks'&&rTasks===null) loadTasks();
+      if(view==='news'&&rNews===null) loadNews();
+      if(view==='files'&&rDocs===null) loadDocs();
+      if(view==='stages'&&STAGES===null) loadStages();
+      if(view==='plan') ensurePlanTab();
+      if(view.startsWith('tab:')){ const tt=curTab(); if(tt && tt.kind==='az' && AZ_ENTRIES===null) loadAz(tt.id); if(tt && tt.kind==='plan') loadPlanRows(tt.id); }
+    }
+    render();
+  } else if(b.dataset.tid){
+    view = 'tab:' + b.dataset.tid;
+    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x === b));
+    render();
+  }
+});
+
+/* Глобальный индикатор ошибок — видно пользователю */
+window.addEventListener('error', (e) => {
+  try{
+    if(!e.message) return;
+    let t = document.getElementById('errToast');
+    if(!t){
+      t = document.createElement('div'); t.id = 'errToast';
+      t.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 110px);left:50%;transform:translateX(-50%);background:#a83427;color:#fff;padding:8px 16px;border-radius:12px;font-size:12px;z-index:200;max-width:92vw;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+      document.body.appendChild(t);
+    }
+    t.textContent = '⚠️ ' + e.message.slice(0, 140);
+    t.style.display = 'block';
+    clearTimeout(t._tm);
+    t._tm = setTimeout(() => { t.style.display = 'none'; }, 5000);
+  }catch(_){}
+});
+
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
