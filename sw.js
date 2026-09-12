@@ -1,5 +1,5 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v52';
+const CACHE = 'niokr-pwa-v53';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
