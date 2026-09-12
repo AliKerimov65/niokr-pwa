@@ -154,7 +154,7 @@ let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
 let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = [];
 let AUTO = store.get('auto', true), autoTimer = null;
-let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [];
+let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [], QA_ITEMS = [];
 
 /* ---------- Supabase ---------- */
 let sb = null, SYNC = false;
@@ -1035,6 +1035,7 @@ function autoSet(){
   if(AUTO && SYNC){
     autoTimer = setInterval(async () => {
       await Promise.all([loadChan(), loadTasks(), loadNews(), loadDocs(), loadStages(), loadMembers(), loadTeamMembers(), loadTabs(), loadDmPartners()]);
+      if(team && team.is_owner) qaScanNow();
     }, 300000);
   }
 }
@@ -1171,8 +1172,9 @@ function taskSheet(id){
 let agentRec = null, agentVoice = store.get('agentVoice', true);
 async function agentSheet(){
   curThread = null;
-  await Promise.all([loadAgentThreads(), loadDevTasks()]);
+  await Promise.all([loadAgentThreads(), loadDevTasks(), loadQa()]);
   renderAgentMenu();
+  qaScanNow();
 }
 async function loadDevTasks(){
   if(!SYNC) return;
@@ -1197,6 +1199,56 @@ function renderDevBox(){
       <span class="badge ${t.status==='Готово'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span>
     </div>`).join('')}
   </div>` : '';
+}
+/* ---------- Ответы на вопросы (перехват обращений к владельцу) ---------- */
+let qaScanTimer = null;
+async function loadQa(){
+  if(!SYNC) return;
+  const {data} = await sb.from('qa_queue').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(30);
+  QA_ITEMS = data || [];
+}
+async function qaScanNow(){
+  if(!SYNC || !team || !team.is_owner) return;
+  try{
+    await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/qa-scan', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({team_id: tid(), owner: me.name})
+    });
+  }catch(e){}
+  await loadQa(); renderQaBox();
+}
+function renderQaBox(){
+  const box = document.getElementById('qaBox'); if(!box) return;
+  const pend = QA_ITEMS.filter(x=>x.status==='На согласовании');
+  const done = QA_ITEMS.filter(x=>x.status!=='На согласовании');
+  box.innerHTML = (pend.length || done.length) ? `<div class="card" style="background:#f7f2e4">
+    <div class="row"><b style="flex:1">❓ Ответы на вопросы</b><button class="sec" style="padding:5px 10px;font-size:12px" onclick="qaScanNow()">🔍 Проверить сейчас</button></div>
+    ${pend.map(t=>`<div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+      <b style="font-size:13px">${esc(t.author)}</b> <span class="badge ${t.is_dm?'':'warn'}">${t.is_dm?'личное':'в чате'}</span>
+      <p style="font-size:13px;margin-top:4px;background:var(--card2);border-radius:8px;padding:8px">${esc(t.question)}</p>
+      <textarea id="qa_${t.id}" rows="3" style="margin-top:6px;font-size:13px" placeholder="Черновик ответа…">${esc(t.draft||'')}</textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="pri" style="flex:1" onclick="qaReply(${t.id})">✉️ Ответить</button>
+        <button class="sec" onclick="qaSkip(${t.id})">⊘ Пропустить</button>
+      </div></div>`).join('')}
+    ${done.slice(0,5).map(t=>`<div class="row" style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+      <div style="flex:1"><span style="font-size:13px"><b>${esc(t.author)}</b>: ${esc(t.question.slice(0,50))}${t.question.length>50?'…':''}</span></div>
+      <span class="badge ${t.status==='Отвечено'?'ok':''}">${esc(t.status)}</span></div>`).join('')}
+  </div>` : '';
+}
+async function qaReply(id){
+  const text = (document.getElementById('qa_'+id) || {}).value.trim();
+  if(!text) return alert('Введите текст ответа');
+  const item = QA_ITEMS.find(x=>x.id===id); if(!item) return;
+  // Отправка автору вопроса: личное сообщение в приложении (push придёт автоматически)
+  await sb.from('messages').insert({dm: dmKey(me.name, item.author), author: me.name, role: me.role, body: text, client_id: cid});
+  await sb.from('qa_queue').update({status:'Отвечено', draft: text, answered_at: new Date().toISOString()}).eq('id', id);
+  await loadQa(); renderQaBox();
+  alert('✅ Ответ отправлен ' + item.author + ' (личное сообщение + push)');
+}
+async function qaSkip(id){
+  await sb.from('qa_queue').update({status:'Пропущено'}).eq('id', id);
+  await loadQa(); renderQaBox();
 }
 async function devSend(id){
   const btn = document.getElementById('devSend_'+id);
@@ -1233,6 +1285,7 @@ function renderAgentMenu(){
   menu.innerHTML = `<h2>🤖 Управление командой</h2>
    <p class="mut" style="margin-bottom:8px">Агент владельца: полное управление командой голосом и текстом. История обсуждений сохраняется — возвращайтесь и продолжайте.</p>
    <button class="pri" style="width:100%;margin-bottom:10px" onclick="agentNewThread()">＋ Новое обсуждение</button>
+   <div id="qaBox"></div>
    <div id="devBox"></div>
    <p class="mut" style="margin-bottom:6px">История (${AGENT_THREADS.length}):</p>
    ${''}
@@ -1241,7 +1294,7 @@ function renderAgentMenu(){
      <div class="inf"><b>${esc(t.title)}</b><br><span class="mut" style="font-size:11.5px">${fmtT(t.created_at)}</span></div>
      <button class="dng" style="padding:6px 10px" onclick="event.stopPropagation();agentDelThread(${t.id})">🗑</button>
    </div>`).join('') || '<p class="mut">Обсуждений пока нет — начните новое.</p>'}`;
-  renderDevBox();
+  renderDevBox(); renderQaBox();
   $('#overlay').style.display='flex';
 }
 function agentNewThread(){ curThread = null; renderAgentChat([]); }
@@ -1883,6 +1936,13 @@ function subscribeAll(){
     .on('postgres_changes', {event:'*', schema:'public', table:'tabs'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadTabs(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'plan_works'}, () => { if(view.startsWith('tab:') && curTab() && curTab().kind==='plan'){ loadPlanRows(curTab().id).then(render); } })
     .on('postgres_changes', {event:'*', schema:'public', table:'dev_tasks'}, () => { if(document.getElementById('devBox')) loadDevTasks().then(renderDevBox); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'qa_queue'}, () => { if(document.getElementById('qaBox')) loadQa().then(renderQaBox); })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, p => {
+      if(SYNC && team && team.is_owner && p.new.author !== me.name && !p.new.dm){
+        clearTimeout(qaScanTimer);
+        qaScanTimer = setTimeout(qaScanNow, 90000);
+      }
+    })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'agent_messages'}, p => {
       if(curThread && p.new.thread_id===curThread){
         const log = document.getElementById('agentLog');
