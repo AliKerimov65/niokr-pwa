@@ -138,20 +138,19 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 </head>
 <body>
 <header><div class="hrow">
+  <button id="menuBtn" title="Меню" style="background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:16px;font-weight:700;flex:none">☰</button>
   <span class="dot" id="net"></span>
-  <h1>НИОКР</h1>
-  <button id="teamBtn" class="hidden">👥 Команда</button>
-  <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
-  <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
-  <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
-  <button id="menuBtn" title="Меню" style="background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;flex:none">☰</button>
-  <button id="cacheBtn" class="hidden" title="Очистить кэш приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🧹</button>
-  <button id="setBtn" title="Настройки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⚙</button>
-  <button id="pushBtn" class="hidden" title="Пуш-уведомления" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🔔</button>
-  <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
-  <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
-  <span id="syncBadge" title="Обновить данные">Локальный</span>
-  <small id="who"></small>
+  <h1 style="margin:0 2px">НИОКР</h1>
+  <button id="teamBtn" class="hidden" style="max-width:26vw">👥 Команда</button>
+  <span style="flex:1"></span>
+  <span id="hdrRight" style="display:flex;align-items:center;gap:5px;flex:none;max-width:58vw;overflow-x:auto;scrollbar-width:none">
+    <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
+    <button id="tabsBtn" class="hidden" title="Вкладки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🧩</button>
+    <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
+    <span id="syncBadge" title="Обновить данные">Локальный</span>
+    <small id="who"></small>
+    <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
+  </span>
   <button id="installBtn" class="hidden">Установить</button></div>
 <div id="structBar" class="hidden" style="display:flex;gap:6px;overflow-x:auto;padding:0 10px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
 </header>
@@ -1199,7 +1198,7 @@ function autoSet(){
     }, 300000);
   }
 }
-$('#autoBtn').onclick = () => { AUTO = !AUTO; store.set('auto', AUTO); autoSet(); };
+if($('#autoBtn')) $('#autoBtn').onclick = () => { AUTO = !AUTO; store.set('auto', AUTO); autoSet(); };
 $('#syncBadge').onclick = async () => {
   const b = $('#syncBadge');
   if(!SYNC){ location.reload(); return; }
@@ -1269,15 +1268,15 @@ function settingsInstall(){
     : 'Android (Chrome):<br>1. Меню «⋮» (три точки).<br>2. «Установить приложение» / «Добавить на главный экран».<br>3. Или дождитесь баннера «Установить» внизу экрана.';
   $('#sheet').innerHTML = `<h2>📲 Установка</h2><div class="card">${text}</div><button class="sec" style="width:100%" onclick="settingsSheet()">← Назад</button>`;
 }
-$('#setBtn').onclick = () => settingsSheet();
-$('#cacheBtn').onclick = async () => {
+if($('#setBtn')) $('#setBtn').onclick = () => settingsSheet();
+async function clearAppCache(){
   if(!team || !team.is_owner) return;
   if(!confirm('🧹 Очистить кэш приложения?\n\nУдалятся закэшированные файлы (приложение загрузится заново с сервера). Данные входа и команды сохранятся.')) return;
   try{ const ks = await caches.keys(); for(const k of ks){ await caches.delete(k); } }catch(e){}
   try{ const r = await navigator.serviceWorker.getRegistration(); if(r) await r.unregister(); }catch(e){}
   location.reload();
-};
-$('#pushBtn').onclick = async () => {
+}
+if($('#pushBtn')) $('#pushBtn').onclick = async () => {
   if(!('Notification' in window)) return alert('Уведомления не поддерживаются этим браузером');
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
