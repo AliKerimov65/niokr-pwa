@@ -19,7 +19,7 @@ body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe U
 header{background:var(--card);border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:5}
 .hrow{display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 6px;width:100%}
 main{min-height:0}
-.tabbar{position:sticky;bottom:0}
+.tabbar{position:sticky;bottom:0;z-index:6;background:var(--card);flex:none}
 #structBar::-webkit-scrollbar{display:none}
 .struct-chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:16px;padding:5px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer}
 .struct-chip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
@@ -562,7 +562,8 @@ async function loadTabs(){
 }
 function renderTabbar(){
   const c = $('#dynTabs'); if(!c) return;
-  c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
+  const az = TABS.find(t => t.kind === 'az');
+  c.innerHTML = az ? `<button data-tid="${az.id}" class="${view==='tab:'+az.id?'on':''}"><span class="ic">📋</span>Журнал АН</button>` : '';
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
   if($('#agentBtn')){
