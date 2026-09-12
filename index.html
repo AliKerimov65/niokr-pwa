@@ -315,6 +315,12 @@ async function init(){
   }
   await loadMembers();
   if(!me){ onboarding1(); return; }
+  // Идентификация с приоритетом фамилии: подтягиваем каноническое имя, если на устройстве устаревшее написание
+  const canon = findMemberCase(me.name);
+  if(canon && canon.name !== me.name){
+    me = {name: canon.name, role: canon.role || me.role};
+    store.set('user', me);
+  }
   MYTEAMS = await fetchMyTeams();
   onboarding2();
 }
@@ -396,8 +402,11 @@ async function regNew(){
 
 /* ---------- ОНБОРДИНГ 2: выбор команды ---------- */
 function onboarding2(){
-  const list = MYTEAMS.map(t => `<button class="pri" style="width:100%;margin-bottom:8px" onclick="selectTeam('${t.id}')">👥 ${esc(t.name)}${t.is_owner?' · моя':''}${team&&team.id===t.id?' ✓':''}</button>`).join('');
-  $('#sheet').innerHTML = `<h2>Выбор команды</h2><p class="mut" style="margin-bottom:10px">Выберите команду для работы:</p>
+  const list = MYTEAMS.map(t => `<div class="card row" style="cursor:pointer;margin-bottom:8px;padding:14px" onclick="selectTeam('${t.id}')">
+    <div class="av" style="width:40px;height:40px;background:var(--acc)">👥</div>
+    <div style="flex:1"><b style="font-size:15px">${esc(t.name)}</b><br><span class="mut">${t.is_owner?'вы владелец':'участник'}</span></div>
+    ${team&&team.id===t.id?'<span style="color:var(--ok);font-size:20px">✓</span>':''}</div>`).join('');
+  $('#sheet').innerHTML = `<h2>Ваши команды</h2><p class="mut" style="margin-bottom:10px">Выберите команду для работы:</p>
     ${list || '<p class="mut" style="margin-bottom:10px">Вы пока не состоите ни в одной команде.</p>'}
     <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Создать свою команду (видят только приглашённые):</p>
       <div class="row"><input id="newTeamName" placeholder="Название команды / проекта"><button class="pri" onclick="createTeam()">Создать</button></div></div>
