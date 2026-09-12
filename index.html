@@ -1575,7 +1575,7 @@ function renderAgentMenu(){
    </div>
    <div id="qaBox"></div>
    <div id="devBox"></div>
-   <p class="mut" style="margin-bottom:6px">История (${AGENT_THREADS.length}):</p>
+   <p class="mut" style="margin-bottom:6px">История обсуждений (${AGENT_THREADS.length}) — все диалоги сохраняются:</p>
    ${''}
   ${AGENT_THREADS.map(t=>`<div class="mrow" style="cursor:pointer" onclick="agentOpenThread(${t.id})">
      <div class="av" style="background:var(--acc)">🤖</div>
@@ -1604,7 +1604,7 @@ function renderAgentChat(msgs){
      <button class="sec" style="padding:6px 10px" onclick="agentVoiceToggle()" id="agentVBtn">🔊 ${agentVoice?'вкл':'выкл'}</button>
    </div>
    <div id="agentLog" style="max-height:42vh;overflow-y:auto;margin-bottom:8px">
-     ${msgs.map(m=>`<div class="msg ${m.role==='user'?'me':''}" style="max-width:100%;margin-top:8px"><b>${m.role==='user'?'Вы':'🤖 Агент'}</b><div style="white-space:pre-wrap">${esc(m.text)}</div></div>`).join('')}
+     ${msgs.map(m=>`<div class="msg ${m.role==='user'?'me':''}" style="max-width:100%;margin-top:8px"><b>${m.role==='user'?'Вы':'🤖 Агент'}</b>${m.role==='assistant' ? (m.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>') : ''}<div style="white-space:pre-wrap">${esc(m.text)}</div></div>`).join('')}
    </div>
    <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
      <span class="struct-chip" onclick="agentAsk('Статус по этапам')">📊 Этапы</span>
@@ -2264,7 +2264,7 @@ function subscribeAll(){
         if(log && p.new.role==='assistant'){
           const last = log.lastElementChild;
           if(last && last.querySelector('div').textContent.indexOf('⏳')===0) return; // уже вставили из ответа
-          log.insertAdjacentHTML('beforeend', `<div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b><div style="white-space:pre-wrap">${esc(p.new.text)}</div></div>`);
+          log.insertAdjacentHTML('beforeend', `<div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b>${p.new.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>'}<div style="white-space:pre-wrap">${esc(p.new.text)}</div></div>`);
           log.scrollTop = log.scrollHeight;
           agentSpeak(p.new.text);
         }
