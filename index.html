@@ -144,6 +144,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
+  <button id="menuBtn" title="Меню" style="background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;flex:none">☰</button>
   <button id="cacheBtn" class="hidden" title="Очистить кэш приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🧹</button>
   <button id="setBtn" title="Настройки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⚙</button>
   <button id="pushBtn" class="hidden" title="Пуш-уведомления" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🔔</button>
@@ -1698,6 +1699,82 @@ function agentToggleMic(){
   if(btn) btn.textContent = '🔴';
 }
 $('#agentBtn').onclick = () => agentSheet();
+
+/* ---------- Меню в шапке ---------- */
+function mainMenuToggle(ev){
+  ev.stopPropagation();
+  const old = document.getElementById('mainMenu');
+  if(old){ old.remove(); return; }
+  const items = [];
+  items.push(['💬 Чат', "navGo('chat')"]);
+  items.push(['🗺 Технический план', "navGo('plan')"]);
+  items.push(['✅ Задачи', "navGo('tasks')"]);
+  items.push(['📢 Объявления', "navGo('news')"]);
+  items.push(['📁 Файлы', "navGo('files')"]);
+  items.push(['🔧 Разное', "navGo('misc')"]);
+  const azT = TABS.find(t=>t.kind==='az');
+  if(azT) items.push(['📋 ' + azT.name, `navGo('tab:${azT.id}')`]);
+  TABS.filter(t=>t.kind!=='az').forEach(t=>items.push([(t.icon||'📄')+' '+t.name, `navGo('tab:${t.id}')`]));
+  const m = document.createElement('div');
+  m.id = 'mainMenu'; m.className = 'dropdown';
+  m.style.left = 'auto'; m.style.right = '8px'; m.style.maxHeight = '60vh'; m.style.overflowY = 'auto';
+  m.innerHTML = items.map(x => `<div class="di" onclick="document.getElementById('mainMenu').remove();${x[1]}">${esc(x[0])}</div>`).join('');
+  document.querySelector('header').appendChild(m);
+}
+document.addEventListener('click', e => {
+  const m = document.getElementById('mainMenu');
+  if(m && !e.target.closest('#mainMenu') && !e.target.closest('#menuBtn')) m.remove();
+});
+$('#menuBtn').onclick = (ev) => mainMenuToggle(ev);
+
+/* ---------- Навигация «назад» (кнопка смартфона) ---------- */
+let navPushed = null, navGuard = false, lastExitPress = 0;
+function navGo(v){
+  view = v;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === v || (v.startsWith('tab:') && x.dataset.tid === v.slice(4))));
+  render();
+}
+// Трассируем смену раздела → запись в историю браузера
+const _render = render;
+render = function(){
+  if(view !== navPushed && !navGuard){
+    try{ history.pushState({view}, '', ''); navPushed = view; }catch(e){}
+  }
+  _render();
+};
+window.addEventListener('popstate', (e) => {
+  // 1. Открыто окно (sheet) — сначала закрываем его
+  const ov = document.getElementById('overlay');
+  if(ov && ov.style.display === 'flex' && appStarted){
+    ov.style.display = 'none'; window._taskSheetId = null;
+    navGuard = true; try{ history.pushState({view}, '', ''); }catch(_){}; navGuard = false;
+    return;
+  }
+  // 2. Есть куда возвращаться — возвращаемся
+  if(e.state && e.state.view && e.state.view !== view){
+    navGuard = true;
+    view = e.state.view;
+    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === view || (view.startsWith('tab:') && x.dataset.tid === view.slice(4))));
+    _render();
+    navPushed = view;
+    navGuard = false;
+    return;
+  }
+  // 3. Корень истории — двойное нажатие для выхода
+  const now = Date.now();
+  if(now - lastExitPress < 2500){
+    return; // разрешаем выход (по умолчанию)
+  }
+  lastExitPress = now;
+  try{ history.pushState({view}, '', ''); }catch(_){}
+  try{
+    const t = document.createElement('div');
+    t.textContent = '↩ Нажмите «Назад» ещё раз для выхода';
+    t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2400);
+  }catch(_){}
+});
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
