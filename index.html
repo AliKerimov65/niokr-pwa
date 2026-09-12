@@ -86,6 +86,44 @@ header h1{font-size:15px}
 #teamBtn{max-width:30vw}
 .sheet input,.sheet select,.sheet textarea{font-size:16px}
 @media (max-width:380px){.tabbar button{min-width:50px;font-size:10px}.card{padding:10px}}
+/* ==== ИНСПЕКЦИЯ: автоадаптация окон под смартфон ==== */
+html,body{overflow-x:hidden}
+main{overflow-x:hidden;padding:10px 10px 12px}
+.card, .mrow, .msg, .inf{overflow-wrap:anywhere;min-width:0}
+.msg div{overflow-wrap:anywhere;word-break:break-word}
+pre{overflow-x:auto;max-width:100%}
+img{max-width:100%;height:auto}
+input[type=date],input[type=time]{min-height:44px}
+#overlay .sheet{max-height:94dvh;overscroll-behavior:contain}
+.dropdown{max-width:calc(100vw - 16px);left:4px}
+select{appearance:auto}
+/* Узкие экраны: компактная шапка и кнопки */
+@media (max-width:420px){
+  .hrow{gap:5px;padding-left:8px;padding-right:8px}
+  .hrow h1{font-size:14px}
+  .hrow button{padding:5px 7px !important;font-size:13px !important}
+  #teamBtn{max-width:26vw;font-size:12px}
+  header small{font-size:11px}
+  .tabbar button{min-width:52px;font-size:10px;padding:7px 3px 9px}
+  .tabbar button .ic{font-size:19px}
+  h2.pt{font-size:15px}
+  .card{padding:10px}
+  .struct-chip{padding:4px 10px;font-size:12px}
+  button.pri,button.sec,button.dng{padding:9px 12px}
+  .composer input,.composer button{min-height:44px}
+  #sheetClose{top:8px;right:10px;width:34px;height:34px}
+}
+/* Средние экраны */
+@media (min-width:421px) and (max-width:600px){
+  .hrow button{padding:6px 8px !important}
+}
+/* Ландшафтная ориентация: окна не выше экрана */
+@media (max-height:500px){
+  #overlay .sheet{max-height:96dvh;padding-top:12px}
+  #agentLog,#consLog{max-height:30vh !important}
+}
+/* Безопасные зоны: нижняя панель и композер */
+.tabbar{padding-bottom:calc(6px + env(safe-area-inset-bottom))}
 .stage-head{display:flex;align-items:flex-start;gap:8px}
 .stage-head h3{flex:1}
 details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
