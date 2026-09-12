@@ -16,7 +16,14 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column}
-header{padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:var(--card);display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:5}
+header{background:var(--card);border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:5}
+.hrow{display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 6px;width:100%}
+main{min-height:0}
+.tabbar{position:sticky;bottom:0}
+#structBar::-webkit-scrollbar{display:none}
+.struct-chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:16px;padding:5px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer}
+.struct-chip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+.struct-chip.done{opacity:.55;text-decoration:line-through}
 header .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
 header .dot.off{background:var(--bad)}
 header h1{font-size:16px;flex:none}
@@ -92,7 +99,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 </style>
 </head>
 <body>
-<header>
+<header><div class="hrow">
   <span class="dot" id="net"></span>
   <h1>НИОКР</h1>
   <button id="teamBtn" class="hidden">👥 Команда</button>
@@ -104,9 +111,10 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
   <span id="syncBadge" title="Обновить данные">Локальный</span>
   <small id="who"></small>
-  <button id="installBtn" class="hidden">Установить</button>
+  <button id="installBtn" class="hidden">Установить</button></div>
+<div id="structBar" class="hidden" style="display:flex;gap:6px;overflow-x:auto;padding:0 10px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
 </header>
-<div id="azBar" class="hidden" style="position:sticky;top:0;z-index:4;background:var(--acc);color:#fff;padding:8px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(31,25,14,.25)"></div>
+<div id="azBar" class="hidden" style="background:var(--acc);color:#fff;padding:8px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(31,25,14,.25)"></div>
 <main id="view"></main>
 <div id="chatComposer" class="composer hidden">
   <button onclick="document.getElementById('fileInp').click()" title="Прикрепить">📎</button>
@@ -290,7 +298,7 @@ function rowToMsg(m){
   return { id:m.id, n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at), edited:m.edited,
     f:m.file_url||null, fn:m.file_name||'', img:m.file_url && /\.(png|jpe?g|gif|webp)$/i.test(m.file_url||'') };
 }
-async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); if(view==='tasks') render(); }
+async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); renderStructBar(); if(view==='tasks') render(); }
 async function loadNews(){
   if(!SYNC) return;
   rNews = (await sbList('announcements', [['team_id', tid()]])).reverse();
@@ -859,6 +867,38 @@ $('#exitBtn').onclick = () => {
   $('#overlay').style.display='flex';
 };
 
+/* ---------- Верхнее меню структуры команды (авто) ---------- */
+function renderStructBar(){
+  const bar = document.getElementById('structBar'); if(!bar) return;
+  if(!team){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
+  bar.classList.remove('hidden');
+  const items = [];
+  const azTab = TABS.find(t=>t.kind==='az');
+  if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
+  TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
+  (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
+  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
+    || '<span class="mut" style="font-size:12px;padding:5px 2px">Структура команды появится здесь: журнал, задачи, вкладки</span>';
+}
+function openTabView(id){
+  view = 'tab:'+id;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.tid==String(id)));
+  render();
+}
+function taskSheet(id){
+  const t = (rTasks||[]).find(x=>x.id===id); if(!t) return;
+  $('#sheet').innerHTML = `<h2>✅ ${esc(t.title)}</h2><div class="card">
+    <p><span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></p>
+    <p class="mut" style="margin-top:8px">Исполнитель: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'}<br>Постановщик: ${esc(t.author||'—')}</p>
+    <div style="height:12px"></div>
+    <div class="row" style="flex-wrap:wrap">
+      ${t.status!=='В работе'&&t.status!=='Выполнено'?`<button class="pri" onclick="setTask(${id},'В работе');taskSheet(${id})">▶ В работу</button>`:''}
+      ${t.status!=='Выполнено'?`<button class="pri" style="background:var(--ok)" onclick="setTask(${id},'Выполнено');taskSheet(${id})">✔ Выполнено</button>`:''}
+      <button class="dng" onclick="delTask(${id})">🗑 Удалить</button>
+    </div></div>`;
+  $('#overlay').style.display='flex';
+}
+
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
@@ -877,7 +917,7 @@ function render(){
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
   $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
   $('#chatComposer').classList.toggle('hidden', view!=='chat');
-  renderTabbar();
+  renderTabbar(); renderStructBar();
   const ct = view.startsWith('tab:') ? curTab() : null;
   const azb = $('#azBar');
   if(ct && ct.kind==='az'){
