@@ -638,26 +638,92 @@ function renderCustomTab(v){
 }
 
 /* ---------- Технический план реализации (интерактивный + консультации) ---------- */
-function renderPlan(v, t){
-  const c = t.config, isOwner = team && team.is_owner;
+async function renderPlan(v, t){
+  const c = t.config;
+  if(!PLAN_ROWS.length) await loadPlanRows(t.id);
   const done = store.get('plan_done_' + t.id, []);
-  v.innerHTML = `<h2 class="pt">🗺 ${esc(t.name)}</h2>
-   <p class="mut" style="margin-bottom:10px">План составлен на основе проекта Ф-2024-НОК-ДТ-0424-КР. Каждый пункт — интерактивен: отметьте готовность, получите консультацию со ссылками на проект и нормативку.</p>
-   ${(c.items||[]).map((it,i)=>`
-   <div class="card" style="${done.includes(i)?'opacity:.6':''}">
+  v.innerHTML = `<div class="row" style="margin-bottom:8px"><h2 class="pt" style="flex:1;margin:0">🗺 ${esc(t.name)}</h2>
+    ${canReport()?`<button class="pri" style="padding:7px 12px" onclick="reportForm('all')">📄 Сводный отчёт</button>`:''}</div>
+   <p class="mut" style="margin-bottom:10px">План по проекту Ф-2024-НОК-ДТ-0424-КР. Раскройте пункт до состава работ: каждая работа — статус, ответственный, документы и фотоотчёт.</p>
+   ${(c.items||[]).map((it,i)=>{
+     const works = it.works||[];
+     const rows = works.map(w => PLAN_ROWS.find(r => r.tab_id===t.id && r.item_n===it.n && r.work===w) || {status:'Не начат', responsible:null, files:[]});
+     const doneCnt = rows.filter(r=>r.status==='Выполнено').length;
+     return `<div class="card" style="${done.includes(i)?'opacity:.85':''}">
      <div class="row" style="align-items:flex-start">
        <div class="av" style="flex:none;${done.includes(i)?'background:var(--ok)':''}">${done.includes(i)?'✓':it.n}</div>
-       <div style="flex:1"><b>${esc(it.title)}</b> <span class="badge">${esc(it.dur||'')}</span></div>
+       <div style="flex:1"><b>${esc(it.title)}</b> <span class="badge">${esc(it.dur||'')}</span>
+         <div class="mut" style="font-size:11.5px;margin-top:2px">Готовность работ: ${doneCnt}/${works.length} · 📎 ${esc(it.docs||'')}</div></div>
      </div>
-     <details style="margin-top:6px"><summary class="mut" style="cursor:pointer">Состав работ (${(it.works||[]).length})</summary>
-       <ul class="subs">${(it.works||[]).map(w=>`<li>${esc(w)}</li>`).join('')}</ul>
-       <p class="mut" style="margin-top:6px">📎 ${esc(it.docs||'')}</p></details>
+     <details style="margin-top:8px" ${doneCnt>0?'open':''}><summary class="mut" style="cursor:pointer;font-size:13px">Состав работ — исполнение (${doneCnt}/${works.length})</summary>
+       ${works.map((w,j)=>{
+         const r = rows[j];
+         return `<div class="mrow" style="align-items:flex-start;border-bottom:1px solid var(--brd)">
+           <div style="flex:1;min-width:0">
+             <div class="row"><span style="flex:1;font-size:13.5px;${r.status==='Выполнено'?'text-decoration:line-through;color:var(--mut)':''}">${esc(w)}</span>
+               <span class="badge ${r.status==='Выполнено'?'ok':r.status==='В работе'?'warn':''}" style="cursor:pointer;flex:none" title="Нажмите — сменить статус" onclick="planWorkStatus(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">${r.status}</span></div>
+             <div class="row" style="margin-top:5px;flex-wrap:wrap">
+               <select onchange="planWorkResp(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}',this.value)" style="flex:1;min-width:120px;padding:6px 8px;font-size:13px">
+                 <option value="">Ответственный…</option>
+                 ${TEAM_MEMBERS.map(m=>`<option ${m.member===r.responsible?'selected':''}>${esc(m.member)}</option>`).join('')}
+               </select>
+               <button class="sec" style="padding:6px 10px" onclick="planWorkAttach(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">📎 Док/фото</button>
+             </div>
+             ${(r.files&&r.files.length)?`<div style="margin-top:5px">${r.files.map((f,k)=>f.img?`<img src="${f.url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;margin-right:4px" onclick="window.open('${f.url}','_blank')">`:`<a href="${f.url}" target="_blank" style="font-size:12px;color:var(--acc)">📄 ${esc(f.name)}</a>`).join(' ')}</div>`:''}
+           </div>
+         </div>`;}).join('')}
+     </details>
      <div class="row" style="margin-top:8px;flex-wrap:wrap">
-       <button class="sec" style="padding:7px 12px" onclick="planConsultSheet(${i})">❓ Консультация по пункту</button>
-       <button class="${done.includes(i)?'sec':'pri'}" style="padding:7px 12px" onclick="planToggle(${t.id},${i})">${done.includes(i)?'↩ Вернуть в работу':'✔ Пункт выполнен'}</button>
+       <button class="sec" style="padding:7px 12px" onclick="planConsultSheet(${i})">❓ Консультация</button>
+       ${canReport()?`<button class="sec" style="padding:7px 12px" onclick="reportForm(${it.n})">📄 Отчёт по этапу</button>`:''}
+       <button class="${done.includes(i)?'sec':'pri'}" style="padding:7px 12px" onclick="planToggle(${t.id},${i})">${done.includes(i)?'↩ В работу':'✔ Пункт выполнен'}</button>
      </div>
-   </div>`).join('')}
-   <p class="mut" style="text-align:center">Выполнено: ${done.length}/${(c.items||[]).length}</p>`;
+   </div>`;}).join('')}
+   <p class="mut" style="text-align:center">Пунктов выполнено: ${done.length}/${(c.items||[]).length}</p>`;
+}
+async function loadPlanRows(tabId){
+  const {data} = await sb.from('plan_works').select('*').eq('tab_id', tabId);
+  PLAN_ROWS = data || [];
+}
+function planRowKey(tabId, n, work){ return PLAN_ROWS.find(r => r.tab_id===tabId && r.item_n===n && r.work===work); }
+async function planWorkUpsert(tabId, n, work, patch){
+  const existing = planRowKey(tabId, n, work);
+  let row;
+  if(existing){
+    const {data} = await sb.from('plan_works').update(patch).eq('id', existing.id).select().single();
+    row = data;
+    Object.assign(existing, patch);
+  } else {
+    const {data} = await sb.from('plan_works').insert({tab_id: tabId, item_n: n, work, ...patch}).select().single();
+    row = data; if(row) PLAN_ROWS.push(row);
+  }
+  renderStructBar();
+  return row;
+}
+async function planWorkStatus(tabId, n, work){
+  const r = planRowKey(tabId, n, work);
+  const cur = r ? r.status : 'Не начат';
+  const next = cur==='Не начат' ? 'В работе' : cur==='В работе' ? 'Выполнено' : 'Не начат';
+  await planWorkUpsert(tabId, n, work, {status: next, done_at: next==='Выполнено' ? new Date().toISOString() : null});
+  render();
+}
+async function planWorkResp(tabId, n, work, member){
+  await planWorkUpsert(tabId, n, work, {responsible: member || null});
+}
+async function planWorkAttach(tabId, n, work){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if(!f) return;
+    const path = tid() + '/plan/' + tabId + '/' + n + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+    const up = await sb.storage.from('files').upload(path, f);
+    if(up.error) return alert(up.error.message);
+    const url = sb.storage.from('files').getPublicUrl(path).data.publicUrl;
+    const r = planRowKey(tabId, n, work);
+    const files = [...((r && r.files) || []), {name: f.name, url, img: f.type.startsWith('image/'), by: me.name, at: now()}];
+    await planWorkUpsert(tabId, n, work, {files});
+    render();
+  };
+  inp.click();
 }
 function planToggle(tabId, i){
   const k = 'plan_done_' + tabId;
@@ -707,6 +773,107 @@ async function planAsk(i, preset){
     }
   }catch(e){ div.textContent = 'Нет связи: ' + e.message; }
   log.scrollTop = log.scrollHeight;
+}
+
+/* ---------- Отчёты (владелец + делегированные) ---------- */
+function canReport(){
+  if(!team || !me) return false;
+  if(team.is_owner) return true;
+  const tm = TEAM_MEMBERS.find(x => x.member === me.name);
+  return !!(tm && tm.can_report);
+}
+function reportForm(scope){
+  if(!canReport()) return alert('Формирование отчётов доступно владельцу или делегированному члену команды.');
+  const t = curTab(); const c = t.config;
+  const secs = [
+    ['head','Реквизиты (объект, шифр, дата, составил)', true],
+    ['works','Состав работ со статусами и ответственными', true],
+    ['files','Документы и фотоотчёты', true],
+    ['az','Записи журнала авторского надзора', false],
+    ['tasks','Задачи команды', false],
+    ['stages','Этапы НИОКР', false],
+    ['sum','Выводы и готовность', true]
+  ];
+  $('#sheet').innerHTML = `<h2>📄 ${scope==='all' ? 'Сводный отчёт' : 'Отчёт по этапу'}</h2>
+   <div class="card"><p class="mut" style="margin-bottom:8px">Разделы отчёта (отметьте галочками):</p>
+   ${secs.map(s=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--brd)">
+     <input type="checkbox" id="rs_${s[0]}" ${s[2]?'checked':''} style="width:auto;flex:none"> <span style="flex:1">${s[1]}</span></label>`).join('')}
+   <div style="height:12px"></div>
+   <button class="pri" style="width:100%" onclick="reportBuild(${JSON.stringify(scope)})">⚙️ Сформировать отчёт</button></div>
+   <div id="repOut"></div>`;
+  $('#overlay').style.display='flex';
+}
+async function reportBuild(scope){
+  const t = curTab(); const c = t.config;
+  const azTab = TABS.find(x=>x.kind==='az');
+  if(azTab && !AZ_ENTRIES) await loadAz(azTab.id);
+  if(!rTasks && SYNC) await loadTasks();
+  if(STAGES===null && SYNC) await loadStages();
+  const g = id => { const el = document.getElementById('rs_'+id); return el && el.checked; };
+  const items = scope==='all' ? (c.items||[]) : (c.items||[]).filter(x=>x.n===scope);
+  let out = '';
+  if(g('head')){
+    out += 'ОТЧЁТ ' + (scope==='all' ? 'ПО РЕАЛИЗАЦИИ ПРОЕКТА' : 'ПО ЭТАПУ ' + scope) + '\n';
+    out += 'Объект: ' + (azTab ? (azTab.config.object||'') : (c.object||'')) + '\n';
+    out += 'Проект: Ф-2024-НОК-ДТ-0424-КР · Команда: ' + team.name + '\n';
+    out += 'Составил: ' + me.name + ' (' + (me.role||'') + ') · Дата: ' + new Date().toLocaleDateString('ru-RU') + '\n\n';
+  }
+  if(g('works')){
+    out += '1. СОСТАВ РАБОТ\n';
+    items.forEach(it => {
+      out += '\nЭтап ' + it.n + '. ' + it.title + ' (' + (it.dur||'') + ')\n';
+      (it.works||[]).forEach(w => {
+        const r = planRowKey(t.id, it.n, w);
+        const st = r ? r.status : 'Не начат';
+        out += '  [' + st + '] ' + w + (r && r.responsible ? ' — отв.: ' + r.responsible : '') + '\n';
+      });
+    });
+    out += '\n';
+  }
+  if(g('files')){
+    out += '2. ДОКУМЕНТЫ И ФОТООТЧЁТЫ\n';
+    let n = 0;
+    PLAN_ROWS.filter(r=>r.tab_id===t.id && items.some(it=>it.n===r.item_n) && r.files && r.files.length).forEach(r=>{
+      r.files.forEach(f=>{ n++; out += '  ' + n + '. ' + f.name + ' (' + (f.by||'') + ', ' + (f.at||'') + ') — ' + f.url + '\n'; });
+    });
+    out += (n ? '' : '  Нет вложений.\n') + '\n';
+  }
+  if(g('az')){
+    out += '3. ЖУРНАЛ АВТОРСКОГО НАДЗОРА (СП 246.1325800.2023)\n';
+    (AZ_ENTRIES||[]).forEach(e=>{ out += '  ' + e.entry_date + ' ' + String(e.entry_time).slice(0,5) + ' — ' + e.works + ' [' + e.conformity + ']' + (e.prescription ? ' Предписание: ' + e.prescription + ' (' + e.pres_status + ')' : '') + '\n'; });
+    out += '\n';
+  }
+  if(g('tasks')){
+    out += '4. ЗАДАЧИ КОМАНДЫ\n';
+    (rTasks||[]).slice().reverse().forEach(x=>{ out += '  [' + x.status + '] ' + x.title + (x.assignee ? ' → ' + x.assignee : '') + '\n'; });
+    out += '\n';
+  }
+  if(g('stages')){
+    out += '5. ЭТАПЫ НИОКР\n';
+    (STAGES||[]).forEach(s=>{ out += '  Этап ' + s.num + ' «' + s.title + '» — ' + s.status + (s.responsible ? ' (' + s.responsible + ')' : '') + '\n'; });
+    out += '\n';
+  }
+  if(g('sum')){
+    const all = [];
+    items.forEach(it => (it.works||[]).forEach(w => all.push({it: it.n, w, r: planRowKey(t.id, it.n, w)})));
+    const dn = all.filter(x=>x.r && x.r.status==='Выполнено').length;
+    out += '6. ВЫВОДЫ\n  Выполнено работ: ' + dn + ' из ' + all.length + ' (' + Math.round(dn/all.length*100) + '%).\n';
+    const open = all.filter(x=>!x.r || x.r.status!=='Выполнено');
+    if(open.length) out += '  Открыто: ' + open.map(x=>'этап ' + x.it + ' — ' + x.w).join('; ') + '.\n';
+    else out += '  Все работы пункта выполнены.\n';
+  }
+  document.getElementById('repOut').innerHTML = `<div class="card" style="margin-top:10px"><b>Готовый отчёт</b>
+    <pre style="white-space:pre-wrap;font:inherit;font-size:13px;margin-top:8px;max-height:35vh;overflow-y:auto">${esc(out)}</pre>
+    <div class="row" style="margin-top:8px">
+      <button class="sec" style="flex:1" onclick="navigator.clipboard.writeText(document.querySelector('#repOut pre').textContent).then(()=>alert('Скопировано'))">📋 Копировать</button>
+      <button class="pri" style="flex:1" onclick="reportPublish()">📢 В объявления</button>
+    </div></div>`;
+  window._reportText = out;
+}
+async function reportPublish(){
+  if(!window._reportText) return;
+  await sb.from('announcements').insert({team_id: tid(), body: window._reportText.slice(0, 4000), author: me.name});
+  alert('Опубликовано в объявлениях ✅');
 }
 
 /* ---------- Журнал авторского надзора (СП 246.1325800.2023) ---------- */
@@ -1063,7 +1230,7 @@ document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
     if(view==='news'&&rNews===null) loadNews();
     if(view==='files'&&rDocs===null) loadDocs();
     if(view==='stages'&&STAGES===null) loadStages();
-    if(view.startsWith('tab:')){ const tt=curTab(); if(tt && tt.kind==='az' && AZ_ENTRIES===null) loadAz(tt.id); }
+    if(view.startsWith('tab:')){ const tt=curTab(); if(tt && tt.kind==='az' && AZ_ENTRIES===null) loadAz(tt.id); if(tt && tt.kind==='plan') loadPlanRows(tt.id); }
   }
   render();
 });
@@ -1374,6 +1541,7 @@ function memberCard(name){
      <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
      ${(isSelf || (team&&team.is_owner))?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard('${esc(name)}')">✏️ Редактировать карточку</button>`:''}
      ${isSelf?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="waConnectSelf()">🔗 Подключить WhatsApp (приём шлюзом)</button><div style="height:8px"></div><button class="sec" style="width:100%" onclick="window.open('https://max.ru/'+MAX_BOT_NAME+'?start=pair_'+encodeURIComponent(me.name),'_blank')">🔗 Подключить MAX (получать сообщения сюда)</button>`:''}
+     ${(team&&team.is_owner && !isSelf)?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="toggleReportRole('${esc(name)}')">📄 Отчёты: ${(TEAM_MEMBERS.find(x=>x.member===name)||{}).can_report?'разрешено → запретить':'запрещено → разрешить'}</button>`:''}
      ${(team&&team.is_owner && !isSelf && MYTEAMS.filter(t=>t.id!==tid()).length)?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="moveMemberForm('${esc(name)}')">⇄ Переместить в другую мою команду</button>`:''}
      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
    </div>`;
@@ -1543,6 +1711,11 @@ function moveMemberForm(name){
    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(name)}')">← Назад</button></div>`;
   $('#overlay').style.display='flex';
 }
+async function toggleReportRole(name){
+  const tm = TEAM_MEMBERS.find(x=>x.member===name);
+  await sb.from('team_members').update({can_report: !(tm && tm.can_report)}).eq('team_id', tid()).eq('member', name);
+  await loadTeamMembers(); memberCard(name);
+}
 async function moveMember(name){
   const target = $('#mvT').value;
   const tname = (MYTEAMS.find(t=>t.id===target)||{}).name || '';
@@ -1583,6 +1756,7 @@ function subscribeAll(){
     .on('postgres_changes', {event:'*', schema:'public', table:'announcements'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadNews(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'tabs'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadTabs(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'plan_works'}, () => { if(view.startsWith('tab:') && curTab() && curTab().kind==='plan'){ loadPlanRows(curTab().id).then(render); } })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'posts'}, p => { if(view==='tab:'+p.new.tab_id) loadPosts(p.new.tab_id); })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'documents'}, p => { if(p.new.team_id===tid()) loadDocs(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'stages'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadStages(); })
