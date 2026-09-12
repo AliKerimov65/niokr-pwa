@@ -153,6 +153,7 @@ let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
 let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = [];
 let AUTO = store.get('auto', true), autoTimer = null;
+let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null;
 
 /* ---------- Supabase ---------- */
 let sb = null, SYNC = false;
@@ -1149,25 +1150,65 @@ function taskSheet(id){
 
 /* ---------- Умный агент «Управление командой» (владелец) ---------- */
 let agentRec = null, agentVoice = store.get('agentVoice', true);
-function agentSheet(){
-  $('#sheet').innerHTML = `<h2>🤖 Управление командой</h2>
-   <p class="mut" style="margin-bottom:8px">Агент владельца: голосовое и текстовое управление, ответы по данным команды. Говорите или пишите команду.</p>
-   <div id="agentLog" style="max-height:38vh;overflow-y:auto;margin-bottom:8px"></div>
+async function agentSheet(){
+  curThread = null;
+  await loadAgentThreads();
+  renderAgentMenu();
+}
+async function loadAgentThreads(){
+  if(!SYNC) return;
+  const {data} = await sb.from('agent_threads').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(50);
+  AGENT_THREADS = data || [];
+}
+function renderAgentMenu(){
+  const menu = $('#sheet');
+  menu.innerHTML = `<h2>🤖 Управление командой</h2>
+   <p class="mut" style="margin-bottom:8px">Агент владельца: полное управление командой голосом и текстом. История обсуждений сохраняется — возвращайтесь и продолжайте.</p>
+   <button class="pri" style="width:100%;margin-bottom:10px" onclick="agentNewThread()">＋ Новое обсуждение</button>
+   <p class="mut" style="margin-bottom:6px">История (${AGENT_THREADS.length}):</p>
+   ${AGENT_THREADS.map(t=>`<div class="mrow" style="cursor:pointer" onclick="agentOpenThread(${t.id})">
+     <div class="av" style="background:var(--acc)">🤖</div>
+     <div class="inf"><b>${esc(t.title)}</b><br><span class="mut" style="font-size:11.5px">${fmtT(t.created_at)}</span></div>
+     <button class="dng" style="padding:6px 10px" onclick="event.stopPropagation();agentDelThread(${t.id})">🗑</button>
+   </div>`).join('') || '<p class="mut">Обсуждений пока нет — начните новое.</p>'}`;
+  $('#overlay').style.display='flex';
+}
+function agentNewThread(){ curThread = null; renderAgentChat([]); }
+async function agentDelThread(id){
+  if(!confirm('Удалить обсуждение?')) return;
+  await sb.from('agent_threads').delete().eq('id', id);
+  await loadAgentThreads(); renderAgentMenu();
+}
+async function agentOpenThread(id){
+  curThread = id;
+  const {data} = await sb.from('agent_messages').select('*').eq('thread_id', id).order('created_at').limit(100);
+  AGENT_MSGS = data || [];
+  renderAgentChat(AGENT_MSGS);
+}
+function renderAgentChat(msgs){
+  $('#sheet').innerHTML = `<div class="row" style="margin-bottom:8px">
+     <button class="sec" style="padding:6px 12px" onclick="agentSheet()">← К меню</button>
+     <b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${curThread ? esc((AGENT_THREADS.find(t=>t.id===curThread)||{}).title || 'Обсуждение') : 'Новое обсуждение'}</b>
+     <button class="sec" style="padding:6px 10px" onclick="agentVoiceToggle()" id="agentVBtn">🔊 ${agentVoice?'вкл':'выкл'}</button>
+   </div>
+   <div id="agentLog" style="max-height:42vh;overflow-y:auto;margin-bottom:8px">
+     ${msgs.map(m=>`<div class="msg ${m.role==='user'?'me':''}" style="max-width:100%;margin-top:8px"><b>${m.role==='user'?'Вы':'🤖 Агент'}</b><div style="white-space:pre-wrap">${esc(m.text)}</div></div>`).join('')}
+   </div>
    <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
-     <span class="struct-chip" onclick="agentAsk('Статус по этапам')">📊 Статус этапов</span>
+     <span class="struct-chip" onclick="agentAsk('Статус по этапам')">📊 Этапы</span>
      <span class="struct-chip" onclick="agentAsk('Список задач')">✅ Задачи</span>
      <span class="struct-chip" onclick="agentAsk('Состав команды')">👥 Состав</span>
      <span class="struct-chip" onclick="agentAsk('Итоги работы')">📈 Сводка</span>
+     <span class="struct-chip" onclick="agentAsk('Создай задачу: ')" title="Допишите название">＋ Задача</span>
+     <span class="struct-chip" onclick="agentAsk('Опубликуй объявление: ')" title="Допишите текст">📢 Объявление</span>
    </div>
    <div class="row">
      <button class="sec" style="flex:none;padding:10px 12px" id="agentMic" onclick="agentToggleMic()" title="Голосовой ввод">🎙</button>
      <input id="agentInp" placeholder="Команда или вопрос…" style="flex:1" onkeydown="if(event.key==='Enter')agentSend()">
      <button class="pri" onclick="agentSend()">➤</button>
    </div>
-   <div class="row" style="margin-top:8px">
-     <button class="sec" style="flex:1" onclick="agentVoiceToggle()" id="agentVBtn">🔊 Голос ответов: ${agentVoice?'вкл':'выкл'}</button>
-     <span class="mut" style="flex:2;font-size:11px">Примеры: «Создай задачу: съёмка крена трубы», «Какие задачи не выполнены?», «Что в документах проекта?»</span>
-   </div>`;
+   <p class="mut" style="font-size:11px;margin-top:6px">Команды: «Создай задачу: …», «Назначь задачу … на …», «Этап 3 в работу», «Опубликуй объявление: …», «Добавь участника …», «Запиши в журнал: …»</p>`;
+  const log = document.getElementById('agentLog'); if(log) log.scrollTop = log.scrollHeight;
   $('#overlay').style.display='flex';
 }
 function agentLogAdd(role, text){
@@ -1192,22 +1233,27 @@ async function agentSend(text){
   const inp = document.getElementById('agentInp');
   const q = (text || (inp ? inp.value : '')).trim(); if(!q) return;
   if(inp) inp.value = '';
-  agentLogAdd('me', q);
-  agentLogAdd('bot', '⏳ …');
   const log = document.getElementById('agentLog');
-  const pending = log.lastChild;
+  if(!log) return;
+  log.insertAdjacentHTML('beforeend', `<div class="msg me" style="max-width:100%;margin-top:8px"><b>Вы</b><div>${esc(q)}</div></div><div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b><div>⏳ …</div></div>`);
+  log.scrollTop = log.scrollHeight;
+  const pending = log.lastElementChild.querySelector('div');
   try{
     const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/agent', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({team_id: tid(), owner: me.name, text: q})
+      body: JSON.stringify({team_id: tid(), owner: me.name, text: q, thread_id: curThread})
     });
     const j = await r.json().catch(()=>({}));
+    if(j && j.thread_id && !curThread){
+      curThread = j.thread_id;
+      if(!AGENT_THREADS.find(t=>t.id===curThread)) await loadAgentThreads();
+    }
     const ans = (j && j.text) ? j.text : ('Ошибка: ' + ((j && j.error) || r.status));
-    pending.querySelector('div').textContent = ans;
+    pending.textContent = ans;
     agentSpeak(ans);
-    if(view) { loadTasks(); }
+    loadTasks();
   }catch(e){
-    pending.querySelector('div').textContent = 'Нет связи с агентом: ' + e.message;
+    pending.textContent = 'Нет связи с агентом: ' + e.message;
   }
   log.scrollTop = log.scrollHeight;
 }
@@ -1763,6 +1809,18 @@ function subscribeAll(){
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'tabs'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadTabs(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'plan_works'}, () => { if(view.startsWith('tab:') && curTab() && curTab().kind==='plan'){ loadPlanRows(curTab().id).then(render); } })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'agent_messages'}, p => {
+      if(curThread && p.new.thread_id===curThread){
+        const log = document.getElementById('agentLog');
+        if(log && p.new.role==='assistant'){
+          const last = log.lastElementChild;
+          if(last && last.querySelector('div').textContent.indexOf('⏳')===0) return; // уже вставили из ответа
+          log.insertAdjacentHTML('beforeend', `<div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b><div style="white-space:pre-wrap">${esc(p.new.text)}</div></div>`);
+          log.scrollTop = log.scrollHeight;
+          agentSpeak(p.new.text);
+        }
+      }
+    })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'posts'}, p => { if(view==='tab:'+p.new.tab_id) loadPosts(p.new.tab_id); })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'documents'}, p => { if(p.new.team_id===tid()) loadDocs(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'stages'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadStages(); })
