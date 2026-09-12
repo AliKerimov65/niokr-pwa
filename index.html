@@ -1022,7 +1022,13 @@ async function renderAz(v, t){
     </div>
     <div class="mut" style="margin-top:8px">Виды выполненных работ (по проекту ${esc(c.project_code||'')}):</div>
     <div id="azWorks">${(c.works||[]).map((x,i)=>`<span class="badge" style="cursor:pointer;margin:3px 3px 0 0;padding:5px 10px" id="azw${i}" onclick="this.classList.toggle('on');this.style.background=this.classList.contains('on')?'var(--acc)':'';this.style.color=this.classList.contains('on')?'#fff':''">${esc(x)}</span>`).join('')}</div>
-    <textarea id="azWorksT" rows="2" placeholder="Или опишите работы вручную…" style="margin-top:8px"></textarea>
+    <div class="row" style="margin-top:8px">
+      <textarea id="azWorksT" rows="2" placeholder="Опишите работы вручную или диктуйте 🎙…" style="flex:1"></textarea>
+    </div>
+    <div class="row" style="margin-top:6px;flex-wrap:wrap">
+      <button class="sec" style="padding:7px 12px" id="azMicBtn" onclick="azVoice()">🎙 Диктовать</button>
+      <button class="sec" style="padding:7px 12px" onclick="azPolish()">✨ Интеллектуальная обработка</button>
+    </div>
     <div class="row" style="margin-top:8px">
       <select id="azConf" style="flex:1"><option>Соответствует проектным решениям</option><option>Частично соответствует</option><option>Не соответствует</option></select>
     </div>
@@ -1052,7 +1058,80 @@ async function renderAz(v, t){
         ${['Открыто','Исполнено','Просрочено'].map(s=>`<option ${s===e.pres_status?'selected':''}>${s}</option>`).join('')}
       </select></p>`:''}
     <p class="mut" style="margin-top:4px">Присутствовали: ${(e.present||[]).join(', ')||'—'}</p>
+    ${isOwner ? `<div class="row" style="margin-top:6px">
+      <button class="sec" style="padding:6px 10px" onclick="azEditForm(${e.id})">✏️ Править</button>
+      <button class="dng" style="padding:6px 10px" onclick="azDel(${e.id})">🗑 Удалить</button>
+    </div>` : ''}
   </div>`).join('') || '<p class="mut">Записей пока нет.</p>'}`;
+}
+let azRec = null;
+function azVoice(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById('azMicBtn');
+  if(!SR) return alert('Голосовой ввод не поддерживается браузером (используйте Chrome)');
+  if(azRec){ try{ azRec.stop(); }catch(e){} azRec = null; if(btn) btn.textContent='🎙 Диктовать'; return; }
+  azRec = new SR();
+  azRec.lang = 'ru-RU'; azRec.interimResults = false; azRec.maxAlternatives = 1;
+  azRec.onresult = (e) => {
+    const t = e.results[0][0].transcript;
+    const ta = document.getElementById('azWorksT');
+    if(ta) ta.value = (ta.value ? ta.value + ' ' : '') + t;
+    if(btn) btn.textContent = '🎙 Диктовать';
+    azRec = null;
+  };
+  azRec.onerror = () => { if(btn) btn.textContent='🎙 Диктовать'; azRec = null; };
+  azRec.onend = () => { if(btn) btn.textContent='🎙 Диктовать'; azRec = null; };
+  azRec.start();
+  if(btn) btn.textContent = '🔴 Слушаю… (тап — стоп)';
+}
+async function azPolish(){
+  const ta = document.getElementById('azWorksT');
+  const raw = (ta ? ta.value : '').trim();
+  if(!raw) return alert('Сначала продиктуйте или введите текст');
+  ta.value = '⏳ Обработка диктовки…';
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/az-polish', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: raw})
+    });
+    const j = await r.json().catch(()=>({}));
+    ta.value = (j && j.text) ? j.text : raw;
+  }catch(e){ ta.value = raw; alert('Обработка недоступна, оставлен исходный текст'); }
+}
+async function azEditForm(id){
+  const e = (AZ_ENTRIES||[]).find(x=>x.id===id); if(!e) return;
+  const c = curTab().config;
+  $('#sheet').innerHTML = `<h2>✏️ Правка записи ${e.entry_date}</h2><div class="card">
+    <div class="row"><input type="date" id="azE_d" value="${e.entry_date}" style="flex:1"><input type="time" id="azE_t" value="${String(e.entry_time).slice(0,5)}" style="flex:1"></div>
+    <div style="height:8px"></div><input id="azE_w" placeholder="Погода" value="${esc(e.weather||'')}">
+    <div style="height:8px"></div><textarea id="azE_x" rows="3">${esc(e.works)}</textarea>
+    <div style="height:8px"></div>
+    <select id="azE_c">${['Соответствует проектным решениям','Частично соответствует','Не соответствует'].map(s=>`<option ${s===e.conformity?'selected':''}>${s}</option>`).join('')}</select>
+    <div style="height:8px"></div><textarea id="azE_r" rows="2" placeholder="Замечания">${esc(e.remarks||'')}</textarea>
+    <div style="height:8px"></div><input id="azE_p" placeholder="Предписание" value="${esc(e.prescription||'')}">
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="azEditSave(${e.id})">💾 Сохранить</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Отмена</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+async function azEditSave(id){
+  const patch = {
+    entry_date: $('#azE_d').value, entry_time: $('#azE_t').value + ':00',
+    weather: $('#azE_w').value, works: $('#azE_x').value.trim(),
+    conformity: $('#azE_c').value, remarks: $('#azE_r').value || null,
+    prescription: $('#azE_p').value || null
+  };
+  if(!patch.works) return alert('Укажите содержание работ');
+  await sb.from('az_entries').update(patch).eq('id', id);
+  $('#overlay').style.display='none';
+  AZ_ENTRIES = null;
+  if(curTab()) loadAz(curTab().id);
+}
+async function azDel(id){
+  if(!confirm('Удалить запись журнала?')) return;
+  await sb.from('az_entries').delete().eq('id', id);
+  AZ_ENTRIES = null;
+  if(curTab()) loadAz(curTab().id);
 }
 async function azAdd(tabId){
   const t = curTab();
