@@ -348,7 +348,11 @@ function start(){
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
-  render(); loadTeamMembers(); loadTabs(); loadDmPartners(); autoSet(); pushSync();
+  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync();
+  loadTabs().then(() => {
+    const pt = TABS.find(x => x.kind === 'plan');
+    if(pt) loadPlanRows(pt.id);
+  });
   if(SYNC){
     subscribeAll();
     loadChan();
@@ -515,7 +519,7 @@ async function loadTabs(){
   TABS = await sbList('tabs', [['team_id', tid()]]);
   if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
   renderTabbar();
-  if(view.startsWith('tab:')) render();
+  if(view.startsWith('tab:') || view === 'plan') render();
 }
 function renderTabbar(){
   const c = $('#dynTabs'); if(!c) return;
@@ -1583,7 +1587,17 @@ function render(){
     azb.innerHTML = `<b>📋 Журнал авторского надзора</b><span style="opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(c.object||'')}</span><span style="opacity:.7;flex:none">СП 246.1325800.2023</span>`;
   } else azb.classList.add('hidden');
   const v = $('#view'); v.innerHTML='';
-  if(view === 'plan'){ v.innerHTML = '<p class="mut" style="padding:20px">Загрузка плана…</p>'; ensurePlanTab().then(pt => { if(pt && view==='plan'){ v.innerHTML=''; renderPlan(v, pt); } }); return; }
+  if(view === 'plan'){
+    const pt = TABS.find(x => x.kind === 'plan');
+    if(pt){
+      if(!PLAN_ROWS.length) loadPlanRows(pt.id).then(() => { if(view === 'plan') render(); });
+      renderPlan(v, pt);
+    } else {
+      v.innerHTML = '<p class="mut" style="padding:20px">Загрузка плана…</p>';
+      ensurePlanTab().then(() => { if(view === 'plan') render(); });
+    }
+    return;
+  }
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='chat') renderChat(v);
   if(view==='stages') renderStages(v);
