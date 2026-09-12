@@ -195,7 +195,6 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button data-v="files"><span class="ic">📁</span>Файлы</button>
   <button data-v="plan"><span class="ic">🗺</span>План</button>
   <button data-v="misc"><span class="ic">🔧</span>Разное</button>
-  <span id="dynTabs" style="display:contents"></span>
 </nav>
 <div id="overlay"><div class="sheet" id="sheet"></div></div>
 
@@ -408,6 +407,7 @@ async function init(){
 }
 function start(){
   appStarted = true;
+  if(!navReady){ navReady = true; try{ history.pushState({inApp:1}, ''); }catch(e){} }
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
@@ -585,26 +585,19 @@ async function loadTabs(){
   if(view.startsWith('tab:') || view === 'plan') render();
 }
 function renderTabbar(){
-  const c = $('#dynTabs'); if(!c) return;
-  c.innerHTML = ''; // кастомные вкладки в нижнем меню отключены — доступ через ☰ Меню и верхнюю панель
-  if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
-  if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
+  document.querySelectorAll('.tabbar button').forEach(x => {
+    const active = (x.dataset.v && x.dataset.v === view) || (x.dataset.tid && ('tab:' + x.dataset.tid) === view);
+    x.classList.toggle('on', !!active);
+  });
   const tico = document.getElementById('teamIco');
   if(tico){ tico.textContent = team ? (team.name||'?').trim().charAt(0).toUpperCase() : '🏗'; tico.title = team ? team.name : 'Команда'; }
   if($('#agentBtn')){
     $('#agentBtn').classList.toggle('hidden', !(team && team.is_owner));
     if(team && team.is_owner && store.get('agentNotify')) $('#agentBtn').textContent = '🤖●';
   }
+  if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
+  if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#cacheBtn')) $('#cacheBtn').classList.toggle('hidden', !(team && team.is_owner));
-}
-function membersSheet(){
-  if(!team) return;
-  $('#sheet').innerHTML = `<h2>${esc(team.name)} · ${TEAM_MEMBERS.length} чел.</h2>` +
-    TEAM_MEMBERS.map(m => { const mm = MEMBERS.find(x=>x.name===m.member)||{}; const on = ONLINE[m.member];
-      return `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av" style="${on?'box-shadow:0 0 0 2px var(--ok);':''}">${esc((m.member||'?')[0])}</div>
-      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc(mm.role||'Участник')}${on?' · 🟢 онлайн':''}</span></div></div>`; }).join('') +
-    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
-  $('#overlay').style.display='flex';
 }
 function curTab(){ return TABS.find(t => 'tab:'+t.id === view); }
 function manageTabs(){
@@ -1332,15 +1325,21 @@ $('#exitBtn').onclick = () => {
 function renderStructBar(){
   const bar = document.getElementById('structBar'); if(!bar) return;
   if(!team){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
-  bar.style.display = 'flex';
   bar.classList.remove('hidden');
   const items = [];
-  const azTab = TABS.find(t=>t.kind==='az');
-  if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
-  TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
-  (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
-  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
-    + '<span id="verTag" style="margin-left:auto;flex:none;font-size:10px;color:var(--mut);padding:5px 4px;align-self:center">…</span>';
+  const azTab = TABS.find(t => t.kind === 'az');
+  if(azTab) items.push(['📋', 'Журнал АН', 'openTabView(' + azTab.id + ')']);
+  items.push(['🗺', 'Технический план', "navGo('plan')"]);
+  TABS.filter(t => t.kind !== 'az' && t.kind !== 'plan').forEach(t => items.push([t.icon || '📄', t.name, 'openTabView(' + t.id + ')']));
+  (rTasks || []).slice().reverse().forEach(t => items.push(['✅', t.title, 'taskSheet(' + t.id + ')', t.status === 'Выполнено']));
+  bar.innerHTML = items.map(x =>
+    '<span class="struct-chip' + (x[3] ? ' done' : '') + '" onclick="' + x[2] + '">' + x[0] + ' ' + esc(x[1]) + '</span>'
+  ).join('') + '<span id="verTag" style="margin-left:auto;flex:none;font-size:10px;color:var(--mut);padding:5px 4px;align-self:center"></span>';
+  fetch('sw.js').then(r => r.text()).then(t => {
+    const v = (t.match(/niokr-pwa-v(\d+)/) || [])[1];
+    const el = document.getElementById('verTag');
+    if(el && v) el.textContent = 'v' + v;
+  }).catch(() => {});
 }
 function openTabView(id){
   view = 'tab:'+id;
@@ -1755,125 +1754,33 @@ document.addEventListener('click', e => {
 $('#menuBtn').onclick = (ev) => mainMenuToggle(ev);
 
 /* ---------- Навигация «назад» (кнопка смартфона) ---------- */
-let navPushed = null, navGuard = false, lastExitPress = 0;
+/* Навигация «назад»: простая и предсказуемая */
+let lastExitPress = 0, navReady = false;
 function navGo(v){
   view = v;
-  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === v || (v.startsWith('tab:') && x.dataset.tid === v.slice(4))));
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on',
+    (x.dataset.v && x.dataset.v === v) || (x.dataset.tid && ('tab:' + x.dataset.tid) === v)));
   render();
 }
-// Трассируем смену раздела → запись в историю браузера
-const _render = render;
-render = function(){
-  if(view !== navPushed && !navGuard){
-    try{ history.pushState({view}, '', ''); navPushed = view; }catch(e){}
-  }
-  _render();
-};
-window.addEventListener('popstate', (e) => {
-  // 1. Открыто окно (sheet) — сначала закрываем его
+function backIntercept(){
+  if(!navReady) return;
   const ov = document.getElementById('overlay');
   if(ov && ov.style.display === 'flex' && appStarted){
     ov.style.display = 'none'; window._taskSheetId = null;
-    navGuard = true; try{ history.pushState({view}, '', ''); }catch(_){}; navGuard = false;
+    history.pushState({inApp:1}, '');
     return;
   }
-  // 1b. Запись истории совпадает с текущим окном — просто восстанавливаем запись
-  if(e.state && e.state.view && e.state.view === view){
-    navGuard = true; try{ history.pushState({view}, '', ''); }catch(_){}; navGuard = false;
-    return;
-  }
-  // 2. Есть куда возвращаться — возвращаемся
-  if(e.state && e.state.view && e.state.view !== view){
-    navGuard = true;
-    view = e.state.view;
-    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === view || (view.startsWith('tab:') && x.dataset.tid === view.slice(4))));
-    _render();
-    navPushed = view;
-    navGuard = false;
-    return;
-  }
-  // 3. Корень истории — двойное нажатие для выхода
   const now = Date.now();
-  if(now - lastExitPress < 2500){
-    return; // разрешаем выход (по умолчанию)
-  }
+  if(now - lastExitPress < 2500){ return; } // второе нажатие — выход
   lastExitPress = now;
-  try{ history.pushState({view}, '', ''); }catch(_){}
-  try{
-    const t = document.createElement('div');
-    t.textContent = '↩ Нажмите «Назад» ещё раз для выхода';
-    t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 2400);
-  }catch(_){}
-});
-
-/* Делегированный обработчик нижнего меню — не зависит от привязок */
-document.addEventListener('click', (e) => {
-  const b = e.target.closest('.tabbar button');
-  if(!b) return;
-  if(b.dataset.v){
-    view = b.dataset.v;
-    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x === b));
-    if(SYNC && team){
-      if(view==='tasks'&&rTasks===null) loadTasks();
-      if(view==='news'&&rNews===null) loadNews();
-      if(view==='files'&&rDocs===null) loadDocs();
-      if(view==='stages'&&STAGES===null) loadStages();
-      if(view==='plan') ensurePlanTab();
-      if(view.startsWith('tab:')){ const tt=curTab(); if(tt && tt.kind==='az' && AZ_ENTRIES===null) loadAz(tt.id); if(tt && tt.kind==='plan') loadPlanRows(tt.id); }
-    }
-    render();
-  } else if(b.dataset.tid){
-    view = 'tab:' + b.dataset.tid;
-    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x === b));
-    render();
-  }
-});
-
-/* Глобальный индикатор ошибок — видно пользователю */
-window.addEventListener('error', (e) => {
-  try{
-    if(!e.message) return;
-    let t = document.getElementById('errToast');
-    if(!t){
-      t = document.createElement('div'); t.id = 'errToast';
-      t.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 110px);left:50%;transform:translateX(-50%);background:#a83427;color:#fff;padding:8px 16px;border-radius:12px;font-size:12px;z-index:200;max-width:92vw;box-shadow:0 4px 16px rgba(0,0,0,.35)';
-      document.body.appendChild(t);
-    }
-    t.textContent = '⚠️ ' + e.message.slice(0, 140);
-    t.style.display = 'block';
-    clearTimeout(t._tm);
-    t._tm = setTimeout(() => { t.style.display = 'none'; }, 5000);
-  }catch(_){}
-});
-
-/* ---------- ДИАГНОСТИКА: журнал на устройстве ---------- */
-let dbgCount = 0;
-function dbg(msg){
-  try{
-    if(dbgCount++ > 80 || !SYNC) return;
-    fetch('https://lxgipzdybigdpdcmcnez.supabase.co/rest/v1/debug_log', {
-      method:'POST',
-      headers:{ 'apikey':'sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Authorization':'Bearer sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Content-Type':'application/json' },
-      body: JSON.stringify({ member: me ? me.name : '?', msg: String(msg).slice(0, 200) })
-    }).catch(()=>{});
-  }catch(e){}
+  history.pushState({inApp:1}, '');
+  const t = document.createElement('div');
+  t.textContent = '↩ Нажмите «Назад» ещё раз для выхода';
+  t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2400);
 }
-window.addEventListener('error', e => dbg('ERROR: ' + e.message + ' @' + (e.filename||'').split('/').pop() + ':' + e.lineno));
-window.addEventListener('unhandledrejection', e => dbg('REJECTION: ' + (e.reason && e.reason.message || e.reason)));
-document.addEventListener('click', e => {
-  const b = e.target.closest && e.target.closest('button, .struct-chip, .tabbar button');
-  if(b) dbg('CLICK: ' + (b.id || b.dataset.v || b.dataset.tid || b.className || b.textContent || '?').toString().slice(0,60));
-}, true);
-dbg('BOOT v77 view=' + (typeof view !== 'undefined' ? view : '?'));
-fetch('sw.js').then(r=>r.text()).then(t=>{
-  const v = (t.match(/niokr-pwa-v(\d+)/)||[])[1];
-  const el = document.getElementById('verTag');
-  if(el && v) el.textContent = 'v' + v;
-  dbg('SW version v' + v);
-}).catch(()=>{});
-setTimeout(() => dbg('ALIVE 5s, view=' + view + ', SYNC=' + SYNC + ', TABS=' + (typeof TABS !== 'undefined' ? TABS.length : '?')), 5000);
+window.addEventListener('popstate', backIntercept);
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
