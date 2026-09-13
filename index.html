@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#7a5410">
+<meta name="theme-color" content="#2f6fed">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="НИОКР">
@@ -12,118 +12,54 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>НИОКР Команда</title>
 <style>
-:root{--bg:#f3eee1;--card:#ffffff;--card2:#ece3cb;--txt:#1f190e;--mut:#756947;--acc:#7a5410;--ok:#2e7d4f;--warn:#a06d05;--bad:#a83427;--brd:#ddd2b8;--brd2:#cabf9e;}
+:root{--bg:#0f1117;--card:#1a1d29;--card2:#22263a;--txt:#e8eaf2;--mut:#8b90a5;--acc:#2f6fed;--ok:#3ecf8e;--warn:#f5a623;--bad:#ef5350;}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column}
-header{background:var(--card);border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:5}
-.hrow{display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 6px;width:100%}
-main{min-height:0}
-.tabbar{position:sticky;bottom:0}
-#structBar::-webkit-scrollbar{display:none}
-.struct-chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:16px;padding:5px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer}
-.struct-chip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
-.struct-chip.done{opacity:.55;text-decoration:line-through}
+header{padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:var(--card);display:flex;align-items:center;gap:8px;border-bottom:1px solid #262a3d;position:sticky;top:0;z-index:5}
 header .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
 header .dot.off{background:var(--bad)}
 header h1{font-size:16px;flex:none}
-#teamBtn{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:18px;padding:6px 12px;font-size:13px;font-weight:600;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#syncBadge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--card2);color:var(--mut);flex:none;cursor:pointer}
-#syncBadge.on{background:#e6f4ec;color:#1e7a43}
+#teamBtn{background:var(--card2);border:1px solid #30344d;color:var(--txt);border-radius:18px;padding:6px 12px;font-size:13px;font-weight:600;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#syncBadge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--card2);color:var(--mut);flex:none}
+#syncBadge.on{background:#12362a;color:var(--ok)}
 header small{color:var(--mut);flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 header #installBtn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:600;flex:none}
 main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
-.tabbar{display:flex;background:var(--card);border-top:1px solid var(--brd);padding-bottom:env(safe-area-inset-bottom)}
+.tabbar{display:flex;background:var(--card);border-top:1px solid #262a3d;padding-bottom:env(safe-area-inset-bottom)}
 .tabbar button{flex:1;background:none;border:0;color:var(--mut);padding:8px 1px 10px;font-size:10.5px;cursor:pointer}
 .tabbar button .ic{display:block;font-size:20px;margin-bottom:2px}
 .tabbar button.on{color:var(--acc);font-weight:700}
-.card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:12px;margin-bottom:10px}
+.card{background:var(--card);border:1px solid #262a3d;border-radius:12px;padding:12px;margin-bottom:10px}
 .card h3{font-size:15px;margin-bottom:4px;word-break:break-word}
 .mut{color:var(--mut);font-size:12.5px}
 .row{display:flex;gap:8px;align-items:center}
-input,textarea,select{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px;font:inherit;width:100%}
+input,textarea,select{background:var(--card2);border:1px solid #30344d;color:var(--txt);border-radius:10px;padding:10px;font:inherit;width:100%}
 button.pri{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
-button.sec{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
+button.sec{background:var(--card2);border:1px solid #30344d;color:var(--txt);border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
 button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
 .ch{display:flex;flex-direction:column;gap:8px}
-.msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid var(--brd)}
-.msg.me{align-self:flex-end;background:#eeddb2;border-color:#d6ba76}
-.msg b{font-size:12.5px;color:#5f3f0a}
+.msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid #262a3d}
+.msg.me{align-self:flex-end;background:#1d2b52;border-color:#2b3c6b}
+.msg b{font-size:12.5px;color:#9db8ff}
 .msg .t{font-size:11px;color:var(--mut);margin-top:3px}
 .msg img{max-width:100%;border-radius:8px;margin-top:6px}
-.msg a{color:#7a5410}
+.msg a{color:#9db8ff}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--mut)}
-.badge.ok{background:#e6f4ec;color:#1e7a43} .badge.warn{background:#fdf2df;color:#a06a00} .badge.bad{background:#fbe7e5;color:#b3261e}
-.composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid var(--brd)}
+.badge.ok{background:#12362a;color:var(--ok)} .badge.warn{background:#3a2c10;color:var(--warn)} .badge.bad{background:#3a1515;color:var(--bad)}
+.composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid #262a3d}
 .composer input{flex:1}
 .composer button{background:var(--acc);color:#fff;border:0;border-radius:10px;width:46px;font-size:18px}
 .chans{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px}
-.chans button{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px}
+.chans button{flex:0 0 auto;background:var(--card2);border:1px solid #30344d;color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px}
 .chans button.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:none;align-items:flex-end}
-#overlay .sheet{position:relative;background:var(--card);border-radius:18px 18px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-height:90vh;overflow-y:auto}
-#overlay h2{font-size:18px;margin-bottom:12px;padding-right:34px}
-#sheetClose{position:absolute;top:10px;right:12px;width:30px;height:30px;border-radius:50%;background:var(--card2);color:var(--mut);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;z-index:6}
-#sheetClose:hover{color:var(--bad);background:#fbe7e5}
+#overlay .sheet{background:var(--card);border-radius:18px 18px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-height:90vh;overflow-y:auto}
+#overlay h2{font-size:18px;margin-bottom:12px}
 ol{padding-left:20px} ol li{margin:8px 0}
-ul.subs{padding-left:18px;margin-top:6px} ul.subs li{margin:5px 0;font-size:13.5px;color:#3a3f4a}
+ul.subs{padding-left:18px;margin-top:6px} ul.subs li{margin:5px 0;font-size:13.5px;color:#c3c7d8}
 .hidden{display:none!important}
 h2.pt{font-size:16px;margin:4px 0 10px}
-/* --- Выпадающее меню команд --- */
-.dropdown{position:absolute;top:calc(100% + 6px);left:8px;background:var(--card);border:1px solid var(--brd);border-radius:12px;box-shadow:0 10px 28px rgba(31,25,14,.22);z-index:60;min-width:230px;overflow:hidden}
-.dropdown .di{padding:12px 14px;cursor:pointer;display:flex;gap:8px;align-items:center;font-size:14px}
-.dropdown .di:hover{background:var(--card2)}
-.dropdown .di.on{font-weight:700;color:var(--acc)}
-/* --- Мобильная оптимизация --- */
-html,body{height:100%}
-body{height:100dvh}
-input,textarea,select{font-size:16px}
-.tabbar{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.tabbar::-webkit-scrollbar{display:none}
-.tabbar button{flex:0 0 auto;min-width:58px;padding:8px 6px 10px}
-.composer{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
-header h1{font-size:15px}
-#teamBtn{max-width:30vw}
-.sheet input,.sheet select,.sheet textarea{font-size:16px}
-@media (max-width:380px){.tabbar button{min-width:50px;font-size:10px}.card{padding:10px}}
-/* ==== ИНСПЕКЦИЯ: автоадаптация окон под смартфон ==== */
-html,body{overflow-x:hidden}
-main{overflow-x:hidden;padding:10px 10px 12px}
-.card, .mrow, .msg, .inf{overflow-wrap:anywhere;min-width:0}
-.msg div{overflow-wrap:anywhere;word-break:break-word}
-pre{overflow-x:auto;max-width:100%}
-img{max-width:100%;height:auto}
-input[type=date],input[type=time]{min-height:44px}
-#overlay .sheet{max-height:94dvh;overscroll-behavior:contain}
-.dropdown{max-width:calc(100vw - 16px);left:4px}
-select{appearance:auto}
-/* Узкие экраны: компактная шапка и кнопки */
-@media (max-width:420px){
-  .hrow{gap:5px;padding-left:8px;padding-right:8px}
-  .hrow h1{font-size:14px}
-  .hrow button{padding:5px 7px !important;font-size:13px !important}
-  #teamBtn{max-width:26vw;font-size:12px}
-  header small{font-size:11px}
-  .tabbar button{min-width:52px;font-size:10px;padding:7px 3px 9px}
-  .tabbar button .ic{font-size:19px}
-  h2.pt{font-size:15px}
-  .card{padding:10px}
-  .struct-chip{padding:4px 10px;font-size:12px}
-  button.pri,button.sec,button.dng{padding:9px 12px}
-  .composer input,.composer button{min-height:44px}
-  #sheetClose{top:8px;right:10px;width:34px;height:34px}
-}
-/* Средние экраны */
-@media (min-width:421px) and (max-width:600px){
-  .hrow button{padding:6px 8px !important}
-}
-/* Ландшафтная ориентация: окна не выше экрана */
-@media (max-height:500px){
-  #overlay .sheet{max-height:96dvh;padding-top:12px}
-  #agentLog,#consLog{max-height:30vh !important}
-}
-/* Безопасные зоны: нижняя панель и композер */
-.tabbar{padding-bottom:calc(6px + env(safe-area-inset-bottom))}
 .stage-head{display:flex;align-items:flex-start;gap:8px}
 .stage-head h3{flex:1}
 details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
@@ -132,36 +68,19 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 .mrow .av{width:34px;height:34px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
 .mrow .inf{flex:1;min-width:0}
 .mrow .inf b{font-size:14px}
-.pill{font-size:10px;background:var(--acc);color:#fff;border-radius:8px;padding:1px 6px;font-weight:700}
-.code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #7a541088;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
-main{overscroll-behavior-y:contain}
-body{overscroll-behavior-y:contain}
+.pill{font-size:10px;background:var(--warn);color:#201600;border-radius:8px;padding:1px 6px;font-weight:700}
+.code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #4a5070;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
 </style>
 </head>
 <body>
-<header><div class="hrow">
-  
-  <button id="teamChip" title="Команды" style="display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--brd2);border-radius:20px;padding:4px 12px 4px 4px;max-width:44vw;overflow:hidden;flex:none">
-    <span id="teamAv" style="width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none">🏗</span>
-    <span id="teamNm" style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Команда</span>
-    <span id="teamDot" style="width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none"></span>
-  </button>
-  
-  <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
-  <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
-  <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
-  <button id="cacheBtn" class="hidden" title="Очистить кэш приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🧹</button>
-  <button id="setBtn" title="Настройки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⚙</button>
-  <button id="pushBtn" class="hidden" title="Пуш-уведомления" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🔔</button>
-  <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
-  <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
-  <span id="syncBadge" title="Обновить данные">Локальный</span>
-  <span id="appVer" title="Версия приложения" style="font-size:10px;font-family:monospace;color:var(--mut);flex:none;padding:2px 4px;border:1px solid var(--brd);border-radius:8px;white-space:nowrap"></span>
+<header>
+  <span class="dot" id="net"></span>
+  <h1>НИОКР</h1>
+  <button id="teamBtn" class="hidden">👥 Команда</button>
+  <span id="syncBadge">Локальный</span>
   <small id="who"></small>
-  <button id="installBtn" class="hidden">Установить</button></div>
-<div id="structBar" class="hidden" style="display:flex;gap:6px;overflow-x:auto;padding:0 10px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
+  <button id="installBtn" class="hidden">Установить</button>
 </header>
-<div id="azBar" class="hidden" style="background:var(--acc);color:#fff;padding:8px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(31,25,14,.25)"></div>
 <main id="view"></main>
 <div id="chatComposer" class="composer hidden">
   <button onclick="document.getElementById('fileInp').click()" title="Прикрепить">📎</button>
@@ -175,12 +94,608 @@ body{overscroll-behavior-y:contain}
   <button data-v="tasks"><span class="ic">✅</span>Задачи</button>
   <button data-v="news"><span class="ic">📢</span>Объявл.</button>
   <button data-v="files"><span class="ic">📁</span>Файлы</button>
-  <button data-v="plan"><span class="ic">🗺</span>План</button>
   <button data-v="misc"><span class="ic">🔧</span>Разное</button>
-  <span id="dynTabs" style="display:contents"></span>
 </nav>
 <div id="overlay"><div class="sheet" id="sheet"></div></div>
 
-<script src="lib.js"></script><script src="app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js?v=4"></script>
+<script>
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d){ try{ const v = JSON.parse(localStorage.getItem('niokr_'+k)); return v==null?d:v }catch(e){ return d } },
+  set(k, v){ localStorage.setItem('niokr_'+k, JSON.stringify(v)) },
+  del(k){ localStorage.removeItem('niokr_'+k) }
+};
+const CHANNELS = ['Общий','Технические вопросы','Отчётность'];
+let me = store.get('user', null);
+let team = store.get('team', null);
+let view = 'chat', chan = store.get('chan', 'Общий');
+let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
+let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
+
+/* ---------- Supabase ---------- */
+let sb = null, SYNC = false;
+try{
+  if(typeof SUPABASE_URL!=='undefined' && SUPABASE_URL.indexOf('YOUR_')===-1){
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    SYNC = true;
+  }
+}catch(e){}
+const cid = store.get('cid', null) || (function(){ const c = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random()); store.set('cid', c); return c; })();
+function syncBadge(){ const b = $('#syncBadge'); b.textContent = SYNC ? 'Синхрон' : 'Локально'; b.classList.toggle('on', SYNC); }
+async function sbList(table, eqs){
+  let q = sb.from(table).select('*').order('created_at',{ascending:true}).limit(500);
+  (eqs||[]).forEach(e => q = q.eq(e[0], e[1]));
+  const r = await q; return r.error ? [] : (r.data || []);
+}
+const tid = () => team ? team.id : null;
+
+/* ---------- загрузчики ---------- */
+async function loadMembers(){ MEMBERS = SYNC ? await sbList('members') : []; }
+async function fetchMyTeams(){
+  if(!SYNC) return [];
+  const r = await sb.from('team_members').select('is_owner, teams(id,name,owner,invite_code)').eq('member', me.name);
+  return r.error ? [] : (r.data||[]).map(x => ({id:x.teams.id, name:x.teams.name, owner:x.teams.owner, invite_code:x.teams.invite_code, is_owner:x.is_owner}));
+}
+async function loadTeamMembers(){
+  if(!SYNC || !team) return;
+  const r = await sb.from('team_members').select('*').eq('team_id', team.id).order('created_at');
+  TEAM_MEMBERS = r.error ? [] : r.data;
+}
+async function loadChan(){
+  if(!SYNC) return;
+  rMsgs = (await sbList('messages', [['team_id', tid()], ['channel', chan]])).map(rowToMsg);
+  if(view==='chat') render();
+}
+function rowToMsg(m){
+  return { id:m.id, n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at), edited:m.edited,
+    f:m.file_url||null, fn:m.file_name||'', img:m.file_url && /\.(png|jpe?g|gif|webp)$/i.test(m.file_url||'') };
+}
+async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); if(view==='tasks') render(); }
+async function loadNews(){ if(!SYNC) return; rNews = (await sbList('announcements', [['team_id', tid()]])).reverse(); if(view==='news') render(); }
+async function loadDocs(){ if(!SYNC) return; rDocs = (await sbList('documents', [['team_id', tid()]])).reverse(); if(view==='files') render(); }
+async function loadStages(){
+  if(!SYNC) return;
+  const r = await sb.from('stages').select('*').eq('team_id', tid()).order('num');
+  STAGES = r.error ? [] : r.data;
+  if(view==='stages') render();
+}
+
+/* ---------- старт ---------- */
+async function init(){
+  syncBadge();
+  if(!SYNC){
+    if(!me) onboarding1(); else start();
+    return;
+  }
+  await loadMembers();
+  if(!me){ onboarding1(); return; }
+  MYTEAMS = await fetchMyTeams();
+  onboarding2();
+}
+function start(){
+  syncBadge();
+  $('#teamBtn').classList.remove('hidden');
+  render(); loadTeamMembers();
+  if(SYNC){
+    subscribeAll();
+    loadChan();
+  }
+}
+
+/* ---------- ОНБОРДИНГ 1: кто вы ---------- */
+function onboarding1(){
+  const opts = MEMBERS.map(m => `<option value="${esc(m.name)}">${esc(m.name)} — ${esc(m.role||'')}</option>`).join('');
+  $('#sheet').innerHTML = `<h2>Кто вы?</h2>
+    <div class="card">
+      <p class="mut" style="margin-bottom:10px">Выберите себя из списка участников:</p>
+      <select id="existSel" ${MEMBERS.length?'':'disabled'}>
+        ${MEMBERS.length?opts:'<option value="">— пока никого нет —</option>'}
+      </select>
+      <div style="height:8px"></div>
+      <button class="pri" style="width:100%" onclick="pickExisting()" ${MEMBERS.length?'':'disabled'}>Это я</button>
+    </div>
+    <p class="mut" style="text-align:center;margin:6px 0">или</p>
+    <div class="card">
+      <p class="mut" style="margin-bottom:10px">Новый участник:</p>
+      <input id="nm" placeholder="Фамилия И.О."><div style="height:8px"></div>
+      <select id="rl"><option>ГИП / руководитель</option><option>Главный инженер</option><option>Инженер-конструктор</option><option>Инженер-геотехник</option><option>Инженер ПТО</option><option>Сметчик</option><option>Лаборант</option><option>Другое</option></select>
+      <div style="height:8px"></div><input id="rc_p" placeholder="Телефон (необязательно)"><div style="height:8px"></div>
+      <input id="rc_e" placeholder="E-mail (необязательно)"><div style="height:8px"></div>
+      <input id="rc_t" placeholder="Telegram, например @ivanov (необязательно)">
+      <div style="height:12px"></div><button class="sec" style="width:100%" onclick="regNew()">Зарегистрироваться</button>
+    </div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function pickExisting(){
+  const name = $('#existSel').value; if(!name) return;
+  const rec = MEMBERS.find(m => m.name === name);
+  me = {name, role: rec ? rec.role : ''}; store.set('user', me);
+  $('#overlay').style.display='none';
+  if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
+}
+async function regNew(){
+  const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
+  const role = $('#rl').value;
+  if(SYNC){ const {error} = await sb.from('members').insert({name:n, role, phone:$('#rc_p').value||null, email:$('#rc_e').value||null, telegram:$('#rc_t').value||null}); if(error && error.code!=='23505') return alert(error.message); }
+  me = {name:n, role}; store.set('user', me);
+  $('#overlay').style.display='none';
+  if(SYNC){ MYTEAMS = []; onboarding2(); } else start();
+}
+
+/* ---------- ОНБОРДИНГ 2: выбор команды ---------- */
+function onboarding2(){
+  const list = MYTEAMS.map(t => `<button class="pri" style="width:100%;margin-bottom:8px" onclick="selectTeam('${t.id}')">👥 ${esc(t.name)}${t.is_owner?' · моя':''}${team&&team.id===t.id?' ✓':''}</button>`).join('');
+  $('#sheet').innerHTML = `<h2>Выбор команды</h2><p class="mut" style="margin-bottom:10px">Выберите команду для работы:</p>
+    ${list || '<p class="mut" style="margin-bottom:10px">Вы пока не состоите ни в одной команде.</p>'}
+    <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Создать свою команду (видят только приглашённые):</p>
+      <div class="row"><input id="newTeamName" placeholder="Название команды / проекта"><button class="pri" onclick="createTeam()">Создать</button></div></div>
+    <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду приглашения:</p>
+      <div class="row"><input id="joinCode" placeholder="Код (6 символов)" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div></div>`;
+  $('#overlay').style.display = 'flex';
+}
+function selectTeam(id){
+  team = MYTEAMS.find(t => t.id === id); store.set('team', team);
+  $('#overlay').style.display='none'; start();
+}
+function mkCode(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<6;i++) c+=a[Math.floor(Math.random()*a.length)]; return c; }
+async function createTeam(){
+  const name = $('#newTeamName').value.trim(); if(!name) return alert('Введите название');
+  if(!SYNC){ team = {id:'local', name, is_owner:true}; store.set('team', team); $('#overlay').style.display='none'; start(); return; }
+  const code = mkCode();
+  const {data, error} = await sb.from('teams').insert({name, owner:me.name, invite_code:code}).select().single();
+  if(error) return alert(error.message);
+  await sb.from('team_members').insert({team_id:data.id, member:me.name, is_owner:true});
+  MYTEAMS = await fetchMyTeams();
+  team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
+  $('#overlay').style.display='none'; start();
+}
+async function joinTeam(){
+  const code = $('#joinCode').value.trim().toUpperCase(); if(code.length!==6) return alert('Введите код из 6 символов');
+  const {data, error} = await sb.from('teams').select('*').eq('invite_code', code).single();
+  if(error || !data) return alert('Команда с таким кодом не найдена');
+  const {error:e2} = await sb.from('team_members').insert({team_id:data.id, member:me.name, is_owner:false});
+  if(e2 && e2.code!=='23505') return alert(e2.message);
+  MYTEAMS = await fetchMyTeams();
+  team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
+  $('#overlay').style.display='none'; start();
+}
+
+/* ---------- панель команды (шапка) ---------- */
+async function teamSheet(){
+  MYTEAMS = await fetchMyTeams();
+  const t = MYTEAMS.find(x => x.id === tid()) || team;
+  const list = MYTEAMS.map(x => `<button class="${x.id===tid()?'pri':'sec'}" style="width:100%;margin-bottom:8px" onclick="switchTeam('${x.id}')">👥 ${esc(x.name)}${x.is_owner?' · владелец':''}</button>`).join('');
+  $('#sheet').innerHTML = `<h2>Команды</h2>${list || '<p class="mut">Нет команд.</p>'}
+    <div class="card"><p class="mut" style="margin-bottom:8px">Создать новую команду:</p>
+      <div class="row"><input id="newTeamName" placeholder="Название"><button class="pri" onclick="createTeam()">Создать</button></div></div>
+    <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду:</p>
+      <div class="row"><input id="joinCode" placeholder="Код" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div></div>
+    ${t && t.is_owner ? `<div class="card"><p class="mut">Код приглашения в «${esc(t.name)}» (сообщите только своим):</p><div class="code">${esc(t.invite_code)}</div></div>`:''}
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display = 'flex';
+}
+function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
+function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; start(); }
+$('#teamBtn').onclick = () => { if(SYNC) teamSheet(); };
+
+/* ---------- навигация ---------- */
+document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
+  view = b.dataset.v;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
+  if(SYNC && team){
+    if(view==='tasks'&&rTasks===null) loadTasks();
+    if(view==='news'&&rNews===null) loadNews();
+    if(view==='files'&&rDocs===null) loadDocs();
+    if(view==='stages'&&STAGES===null) loadStages();
+  }
+  render();
+});
+
+function render(){
+  $('#who').textContent = me ? me.name.split(' ')[0] : '';
+  $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
+  $('#chatComposer').classList.toggle('hidden', view!=='chat');
+  const v = $('#view'); v.innerHTML='';
+  if(view==='chat') renderChat(v);
+  if(view==='stages') renderStages(v);
+  if(view==='tasks') renderTasks(v);
+  if(view==='news') renderNews(v);
+  if(view==='files') renderFiles(v);
+  if(view==='misc') renderMisc(v);
+  v.scrollTop = v.scrollHeight;
+}
+const scrollDown = () => { const v=$('#view'); v.scrollTop = v.scrollHeight; };
+const teamIds = () => TEAM_MEMBERS.map(m => m.member);
+
+/* ---------- ЧАТ ---------- */
+function msgHTML(m){
+  const mine = m.n===me.name && m.id;
+  return `<div class="msg ${m.n===me.name?'me':''}">
+    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span>${mine?` <span style="cursor:pointer" title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}<div>${esc(m.x)}</div>
+    ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
+    <div class="t">${m.t}${m.edited?' · изменено':''}</div></div>`;
+}
+async function editMsg(id){
+  const m = rMsgs.find(x=>x.id===id); if(!m) return;
+  const t = prompt('Исправить сообщение:', m.x); if(t===null) return;
+  const body = t.trim(); if(!body || body===m.x) return;
+  const {error} = await sb.from('messages').update({body, edited:true}).eq('id',id);
+  if(error) alert(error.message);
+}
+function renderChat(v){
+  v.innerHTML = `<div class="chans">${CHANNELS.map(c =>
+    `<button class="${c===chan?'on':''}" onclick="chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
+    <div class="ch" id="msgs"></div>`;
+  const msgs = SYNC ? rMsgs : store.get('chat_'+chan, []);
+  $('#msgs').innerHTML = msgs.map(msgHTML).join('') || `<p class="mut">${SYNC?'Сообщений нет — начните обсуждение.':'Локальный режим.'}</p>`;
+  scrollDown();
+}
+function pushLocal(m){ const arr = store.get('chat_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); if(!SYNC) render(); }
+async function sendMsg(){
+  const inp = $('#mText'), txt = inp.value.trim(); if(!txt) return;
+  inp.value='';
+  if(SYNC){
+    const row = {team_id:tid(), channel:chan, author:me.name, role:me.role, body:txt, client_id:cid};
+    rMsgs.push({n:me.name, r:me.role, x:txt, t:now()}); render();
+    const {error} = await sb.from('messages').insert(row);
+    if(error) alert('Не отправлено: '+error.message);
+  } else pushLocal({n:me.name, r:me.role, x:txt, t:now()});
+}
+$('#mText')?.addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
+$('#fileInp').addEventListener('change', async e => {
+  const f = e.target.files[0]; if(!f) return; e.target.value='';
+  if(SYNC){
+    try{
+      const path = tid() + '/' + cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, f);
+      if(up.error) throw up.error;
+      const {data:u} = sb.storage.from('files').getPublicUrl(path);
+      const row = {team_id:tid(), channel:chan, author:me.name, role:me.role, body:'', file_name:f.name, file_url:u.publicUrl, client_id:cid};
+      rMsgs.push(rowToMsg({...row, created_at:new Date().toISOString()})); render();
+      await sb.from('messages').insert(row);
+    }catch(err){ alert('Ошибка загрузки файла: '+err.message); }
+  } else {
+    const r = new FileReader();
+    r.onload = () => pushLocal({n:me.name, r:me.role, x:'', t:now(), f:r.result, fn:f.name, img:f.type.startsWith('image/')});
+    r.readAsDataURL(f);
+  }
+});
+
+/* ---------- ЭТАПЫ ---------- */
+const NIORK_PLAN = [
+ {num:1, title:'Анализ исходных данных', subs:['Изучение проектной, эксплуатационной и инспекционной документации по всем 10 объектам ГТС (хвостохранилища, пруды-накопители, ГТ и др.)','Систематизация материалов инженерных изысканий (геологических, геокриологических, гидрологических)','Анализ метеорологических данных за исторический период (осадки, температура воздуха, скорость ветра, изменение длительности тёплого периода года) по данным Росгидромета и мировых климатических баз']},
+ {num:2, title:'Анализ результатов ежегодного мониторинга ГТС', subs:['Обработка данных ежегодного мониторинга (вертикальные и горизонтальные деформации дамб, температурный режим грунтов в теле и основании дамб, уровень грунтовых вод)','Анализ данных натурных наблюдений и отчётов по эксплуатации ГТС']},
+ {num:3, title:'Разработка актуализированных климатических моделей', subs:['Построение региональных моделей изменения климата до 2050 года для НПР','Учёт сценариев экстремальных погодных явлений (ливни, снегопады, таяние снега и др.)']},
+ {num:4, title:'Оценка устойчивости ГТС в условиях изменяющегося климата', subs:['Моделирование термического состояния многолетнемерзлых пород с использованием нестационарной физически полной модели','Расчёт мощности сезонно-талого слоя и температурного профиля грунтов','Теплофизические и напряжённо-деформированные расчёты (НДС) для ключевых створов дамб','3D-моделирование деформаций и тепловых полей с учётом прогнозных климатических условий','Калибровка моделей по данным натурных наблюдений']},
+ {num:5, title:'Анализ применимости нормативно-технической документации', subs:['Сопоставление текущих климатических и геокриологических условий с требованиями действующих нормативов','Оценка необходимости корректировки НТД в части проектирования, строительства и эксплуатации ГТС на многолетнемерзлых грунтах']},
+ {num:6, title:'Прогноз рисков и разработка рекомендаций', subs:['Количественная оценка вероятности и последствий аварийных ситуаций на ГТС под воздействием климатических изменений','Оценка рисков для объектов инфраструктуры (трубопроводы и др.) при необходимости','Выявление рисков, связанных с устареванием нормативной базы','Формирование перечня мероприятий по снижению рисков: усиление конструкций, модернизация систем дренажа и мониторинга, аварийные планы реагирования','Подготовка заключения с выводами и рекомендациями по обеспечению эксплуатационной надёжности ГТС']},
+ {num:7, title:'Уточнение результатов НИР', subs:['Выполняется при наличии должного обоснования, по согласованию с заказчиком (срок ~2 мес. с момента получения уточнённых инженерно-геологических изысканий)','Дополнительные инженерно-геологические изыскания и расчёты по створам с уточняемыми характеристиками грунтов','Подготовка пояснительной записки; при существенном влиянии — корректировка заключения по этапу 6']}
+];
+function renderStages(v){
+  if(!SYNC){ v.innerHTML = '<h2 class="pt">Этапы НИОКР</h2><p class="mut">Требуется подключение Supabase.</p>'; return; }
+  if(STAGES === null){ v.innerHTML = '<p class="mut">Загрузка…</p>'; loadStages(); return; }
+  const isOwner = team && team.is_owner;
+  let html = `<h2 class="pt">Календарный план НИОКР</h2>`;
+  if(!STAGES.length){
+    html += `<div class="card"><p class="mut" style="margin-bottom:8px">План не загружен. ${isOwner?'Загрузите 7 этапов по ТЗ (раздел 8).':'Спросите владельца команды.'}</p>
+      ${isOwner?'<button class="pri" style="width:100%" onclick="seedStages()">🗓 Загрузить календарный план НИОКР (7 этапов)</button>':''}</div>`;
+    v.innerHTML = html; return;
+  }
+  html += STAGES.map(s => `<div class="card">
+    <div class="stage-head"><h3>Этап ${s.num}. ${esc(s.title)}</h3>
+      <span class="badge ${s.status==='Выполнен'?'ok':s.status==='В работе'?'warn':''}">${esc(s.status)}</span></div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <select onchange="setStageStatus(${s.id}, this.value)" style="flex:1;min-width:110px">
+        ${['Не начат','В работе','Выполнен'].map(st => `<option ${st===s.status?'selected':''}>${st}</option>`).join('')}
+      </select>
+      <select onchange="setStageResp(${s.id}, this.value)" style="flex:1;min-width:110px">
+        <option value="">Ответственный…</option>
+        ${teamIds().map(nm => `<option ${nm===s.responsible?'selected':''}>${esc(nm)}</option>`).join('')}
+      </select>
+      <input type="date" value="${s.deadline||''}" onchange="setStageDeadline(${s.id}, this.value)" style="flex:1;min-width:110px" title="Срок">
+    </div>
+    ${s.responsible?`<p class="mut" style="margin-top:6px">👤 Ответственный: ${esc(s.responsible)}</p>`:''}
+    <details><summary>Содержание этапа (${(s.subs||[]).length})</summary><ul class="subs">${(s.subs||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>
+    <div class="row" style="margin-top:8px"><input id="note_${s.id}" placeholder="Примечание по ходу работ…" value="${esc(s.note||'')}"><button class="sec" onclick="setStageNote(${s.id})">💾</button></div>
+    ${s.note?`<p class="mut" style="margin-top:6px">📝 ${esc(s.note)}</p>`:''}
+  </div>`).join('');
+  v.innerHTML = html;
+}
+async function seedStages(){
+  const rows = NIORK_PLAN.map(p => ({team_id:tid(), num:p.num, title:p.title, subs:p.subs, status:'Не начат'}));
+  const {error} = await sb.from('stages').insert(rows);
+  if(error) return alert(error.message);
+  loadStages();
+}
+async function setStageStatus(id, val){ await sb.from('stages').update({status:val}).eq('id',id); loadStages(); }
+async function setStageResp(id, val){ await sb.from('stages').update({responsible:val||null}).eq('id',id); loadStages(); }
+async function setStageDeadline(id, val){ await sb.from('stages').update({deadline:val||null}).eq('id',id); loadStages(); }
+async function setStageNote(id){ const val = $('#note_'+id).value; await sb.from('stages').update({note:val||null}).eq('id',id); loadStages(); }
+
+/* ---------- ЗАДАЧИ ---------- */
+function renderTasks(v){
+  const ts = SYNC ? (rTasks||[]) : store.get('tasks', []);
+  v.innerHTML = `<h2 class="pt">Задачи</h2>
+  <div class="card"><input id="tt" placeholder="Новая задача…" style="margin-bottom:8px">
+    <div class="row"><select id="ta" style="flex:1">${teamIds().map(a=>`<option>${esc(a)}</option>`).join('')||'<option>—</option>'}</select>
+    <input id="td" type="date" style="flex:1"></div>
+    <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addTask()">Добавить</button></div>
+  ${taskList(ts.slice().reverse())}`;
+}
+function taskList(ts){
+  if(!ts.length) return '<p class="mut">Задач нет.</p>';
+  return ts.map(t=>`<div class="card"><div class="row"><h3 style="flex:1">${esc(t.title)}</h3>
+    <span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></div>
+    <p class="mut">Исполнитель: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'} · ${esc(t.author||'')}</p>
+    <div style="height:8px"></div><div class="row">
+    ${t.status!=='Выполнено'?`<button class="pri" onclick="setTask(${t.id},'В работе')">В работу</button>
+    <button class="pri" style="background:var(--ok)" onclick="setTask(${t.id},'Выполнено')">✔ Готово</button>`:''}
+    <button class="dng" onclick="delTask(${t.id})">✖</button></div></div>`).join('');
+}
+async function addTask(){
+  const t = $('#tt').value.trim(); if(!t) return;
+  if(SYNC){ await sb.from('tasks').insert({team_id:tid(), title:t, assignee:$('#ta').value, deadline:$('#td').value||null, status:'Новая', author:me.name}); loadTasks(); }
+  else { const ts = store.get('tasks', []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks', ts); render(); }
+}
+async function setTask(id,s){ if(SYNC){ await sb.from('tasks').update({status:s}).eq('id',id); loadTasks(); } else { const ts=store.get('tasks',[]); const t=ts.find(x=>x.id===id); if(t){t.status=s; store.set('tasks',ts); render();} } }
+async function delTask(id){ if(SYNC){ await sb.from('tasks').delete().eq('id',id); loadTasks(); } else { store.set('tasks', store.get('tasks',[]).filter(x=>x.id!==id)); render(); } }
+
+/* ---------- ОБЪЯВЛЕНИЯ ---------- */
+function renderNews(v){
+  const ns = SYNC ? (rNews||[]) : store.get('news', []);
+  v.innerHTML = `<h2 class="pt">Объявления</h2>
+  <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
+  <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addNews()">Опубликовать</button></div>
+  ${ns.map(n=>`<div class="card"><h3>${esc(n.body)}</h3><p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p>
+  <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
+}
+async function addNews(){
+  const t = $('#nt').value.trim(); if(!t) return;
+  if(SYNC){ await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name}); loadNews(); }
+  else { const ns = store.get('news', []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news', ns); render(); }
+}
+async function editNews(id){
+  const n = (rNews||[]).find(x=>x.id===id); if(!n) return;
+  const t = prompt('Исправить объявление:', n.body); if(t===null) return;
+  const body = t.trim(); if(!body || body===n.body) return;
+  const {error} = await sb.from('announcements').update({body, edited:true}).eq('id',id);
+  if(error) alert(error.message);
+}
+async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news', store.get('news',[]).filter(x=>x.id!==id)); render(); } }
+
+/* ---------- ФАЙЛЫ ---------- */
+function renderFiles(v){
+  const fs = SYNC ? (rDocs||[]) : store.get('files', []);
+  v.innerHTML = `<h2 class="pt">Документы команды</h2>
+  <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
+  <button class="pri" style="width:100%" onclick="addFile()">Загрузить</button></div>
+  ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
+  <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#9db8ff;font-size:22px">⬇</a>
+  <button class="dng" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
+}
+async function addFile(){
+  const f = $('#projFile').files[0]; if(!f) return;
+  if(SYNC){
+    try{
+      const path = tid() + '/' + cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, f);
+      if(up.error) throw up.error;
+      const {data:u} = sb.storage.from('files').getPublicUrl(path);
+      await sb.from('documents').insert({team_id:tid(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', url:u.publicUrl, author:me.name});
+      loadDocs();
+    }catch(err){ alert('Ошибка загрузки: '+err.message); }
+  } else {
+    const r = new FileReader();
+    r.onload = () => { const fs = store.get('files', []); fs.unshift({id:Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', created_at:new Date().toISOString(), d:r.result}); store.set('files', fs); render(); };
+    r.readAsDataURL(f);
+  }
+}
+async function delFile(id){
+  if(SYNC){ await sb.from('documents').delete().eq('id',id); loadDocs(); }
+  else { store.set('files', store.get('files',[]).filter(x=>x.id!==id)); render(); }
+}
+
+/* ---------- РАЗНОЕ ---------- */
+function renderMisc(v){
+  const isOwner = team && team.is_owner;
+  const others = MEMBERS.filter(m => !TEAM_MEMBERS.find(t => t.member === m.name));
+  v.innerHTML = `<h2 class="pt">Разное</h2>
+  <div class="card"><h3>Участник</h3><p class="mut" style="margin:4px 0 10px">${esc(me.name)} · ${esc(me.role||'')}</p>
+    <button class="sec" style="width:100%" onclick="switchUser()">👤 Сменить участника</button></div>
+  <div class="card"><h3>Состав команды «${esc(team?team.name:'—')}»</h3>
+    ${TEAM_MEMBERS.map(m => `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av">${esc((m.member||'?')[0])}</div>
+      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc((MEMBERS.find(x=>x.name===m.member)||{}).phone||'')}</span></div>
+      ${isOwner && m.member!==me.name ? `<button class="dng" style="padding:6px 10px" onclick="removeMember('${esc(m.member)}')">✖</button>`:''}
+    </div>`).join('') || '<p class="mut">Нет участников.</p>'}
+    ${isOwner ? `<div style="height:8px"></div>
+      ${others.length?`<div class="row"><select id="addM" style="flex:1">${others.map(m=>`<option>${esc(m.name)}</option>`).join('')}</select><button class="pri" onclick="addMember()">+ В команду</button></div>`:'<p class="mut">Все зарегистрированные участники уже в команде.</p>'}
+      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="newMemberForm()">＋ Создать нового участника</button>`:''}
+  </div>
+  ${isOwner ? `<div class="card"><p class="mut" style="margin-bottom:8px">Код приглашения:</p><div class="code">${esc(team.invite_code)}</div>
+    <p class="mut">По этому коду можно вступить в команду (кнопка 👥 вверху → «Вступить по коду»).</p>
+    <div style="height:10px"></div><button class="dng" style="width:100%" onclick="deleteTeam()">🗑 Удалить команду</button></div>`:''}
+  <p class="mut" style="text-align:center;margin-top:8px">НИОКР Команда · PWA v4 · Supabase Realtime</p>`;
+}
+function switchUser(){
+  if(!confirm('Выйти и выбрать другого участника?')) return;
+  store.del('user'); store.del('team'); me = null; team = null; MEMBERS=[]; TEAM_MEMBERS=[];
+  init();
+}
+async function addMember(){
+  const nm = $('#addM').value; if(!nm) return;
+  await sb.from('team_members').insert({team_id:tid(), member:nm, is_owner:false});
+  await loadTeamMembers(); render();
+}
+async function removeMember(nm){
+  if(!confirm('Исключить '+nm+' из команды?')) return;
+  await sb.from('team_members').delete().eq('team_id',tid()).eq('member',nm);
+  await loadTeamMembers(); render();
+}
+async function deleteTeam(){
+  if(!confirm('Удалить команду «'+team.name+'» вместе со всеми сообщениями, задачами и файлами?')) return;
+  await sb.from('teams').delete().eq('id', tid());
+  store.del('team'); team = null; reloadAll2();
+}
+async function reloadAll2(){ MYTEAMS = await fetchMyTeams(); if(MYTEAMS.length){ team=MYTEAMS[0]; store.set('team',team); reloadAll(); } else onboarding2(); }
+
+/* ---------- Карточки участников и отправка сообщений ---------- */
+function memberCard(name){
+  const m = MEMBERS.find(x=>x.name===name) || {name};
+  const isSelf = name===me.name;
+  const tg = (m.telegram||'').replace('@','');
+  $('#sheet').innerHTML = `<h2>${esc(name)}</h2>
+   <div class="card">
+     <p class="mut">${esc(m.role||'Участник')}</p>
+     ${m.phone?`<p style="margin-top:8px">📞 <a href="tel:${esc(m.phone)}" style="color:#9db8ff">${esc(m.phone)}</a></p>`:''}
+     ${m.email?`<p style="margin-top:4px">✉️ <a href="mailto:${esc(m.email)}" style="color:#9db8ff">${esc(m.email)}</a></p>`:''}
+     ${m.telegram?`<p style="margin-top:4px">✈️ <a href="https://t.me/${esc(tg)}" target="_blank" style="color:#9db8ff">${esc(m.telegram)}</a></p>`:''}
+     ${!m.phone&&!m.email&&!m.telegram?'<p class="mut" style="margin-top:8px">Контакты не заполнены'+(isSelf?' — нажмите «Редактировать»':'')+'.</p>':''}
+     <div style="height:12px"></div>
+     <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
+     ${(isSelf || (team&&team.is_owner))?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard('${esc(name)}')">✏️ Редактировать карточку</button>`:''}
+     <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+function composeTo(name){
+  $('#sheet').innerHTML = `<h2>Сообщение для ${esc(name)}</h2>
+   <div class="card"><textarea id="cMsg" rows="4" placeholder="Текст сообщения…"></textarea>
+   <div style="height:10px"></div>
+   <button class="pri" style="width:100%;margin-bottom:8px" onclick="sendToChat('${esc(name)}')">💬 В чат приложения (мгновенно)</button>
+   <div class="row" style="flex-wrap:wrap">
+     <button class="sec" style="flex:1" onclick="viaSms('${esc(name)}')">📱 SMS</button>
+     <button class="sec" style="flex:1" onclick="viaWa('${esc(name)}')">🟢 WhatsApp</button>
+     <button class="sec" style="flex:1" onclick="viaTg('${esc(name)}')">✈️ Telegram</button>
+     <button class="sec" style="flex:1" onclick="viaMail('${esc(name)}')">✉️ Почта</button>
+   </div>
+   <p class="mut" style="margin-top:10px">SMS / WhatsApp / Telegram / Почта откроют штатное приложение устройства с готовым текстом — в одно касание. «В чат» — полностью внутри этого приложения, без сторонних программ.</p></div>`;
+  $('#overlay').style.display='flex';
+}
+function sendToChat(name){
+  const t = msgText();
+  $('#overlay').style.display='none';
+  dmWith = name;
+  view = 'chat';
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  loadChan();
+  setTimeout(() => { if(t && $('#mText')) $('#mText').value = t; }, 400);
+}
+function msgText(){ return ($('#cMsg') ? $('#cMsg').value : '').trim(); }
+function viaSms(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('У участника не указан телефон'); const t=msgText(); location.href='sms:'+m.phone.replace(/[^\d+]/g,'')+(t?'?body='+encodeURIComponent(t):''); }
+function viaWa(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('Не указан телефон'); const t=msgText(); window.open('https://wa.me/'+m.phone.replace(/[^\d]/g,'')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
+function viaTg(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.telegram) return alert('Не указан Telegram'); const t=msgText(); window.open('https://t.me/'+m.telegram.replace('@','')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
+function viaMail(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.email) return alert('Не указан e-mail'); const t=msgText(); location.href='mailto:'+m.email+(t?'?body='+encodeURIComponent(t):''); }
+function editCard(name){
+  const m = MEMBERS.find(x=>x.name===name) || {};
+  const canDelete = team && team.is_owner && name!==me.name;
+  $('#sheet').innerHTML = `<h2>Карточка: ${esc(name)}</h2>
+   <div class="card">
+    <input id="ec_r" placeholder="Роль" value="${esc(m.role||'')}"><div style="height:8px"></div>
+    <input id="ec_p" placeholder="Телефон" value="${esc(m.phone||'')}"><div style="height:8px"></div>
+    <input id="ec_e" placeholder="E-mail" value="${esc(m.email||'')}"><div style="height:8px"></div>
+    <input id="ec_t" placeholder="Telegram, например @ivanov" value="${esc(m.telegram||'')}">
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="saveCard('${esc(name)}')">💾 Сохранить</button>
+    ${canDelete?`<div style="height:8px"></div><button class="dng" style="width:100%" onclick="deleteMember('${esc(name)}')">🗑 Удалить участника из системы</button>`:''}
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(name)}')">← Назад</button>
+   </div>`;
+}
+async function saveCard(name){
+  const {error} = await sb.from('members').update({role:$('#ec_r').value||null, phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null}).eq('name', name);
+  if(error) return alert(error.message);
+  if(name===me.name){ me.role = $('#ec_r').value; store.set('user', me); }
+  await loadMembers(); render();
+  memberCard(name);
+}
+async function deleteMember(name){
+  if(!confirm('Удалить участника «'+name+'» из системы? Он будет исключён из всех команд; история сообщений сохранится.')) return;
+  await sb.from('team_members').delete().eq('member', name);
+  const {error} = await sb.from('members').delete().eq('name', name);
+  if(error) return alert(error.message);
+  await loadMembers(); await loadTeamMembers(); render();
+  $('#overlay').style.display='none';
+}
+function newMemberForm(){
+  $('#sheet').innerHTML = `<h2>Новый участник</h2><div class="card">
+   <input id="cn" placeholder="Фамилия И.О."><div style="height:8px"></div>
+   <input id="cr" placeholder="Роль"><div style="height:8px"></div>
+   <input id="cp" placeholder="Телефон"><div style="height:8px"></div>
+   <input id="ce" placeholder="E-mail"><div style="height:8px"></div>
+   <input id="ct" placeholder="Telegram (@username)">
+   <div style="height:12px"></div><button class="pri" style="width:100%" onclick="createMember()">💾 Создать и добавить в команду</button>
+   <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Отмена</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function createMember(){
+  const n = $('#cn').value.trim(); if(!n) return alert('Введите имя');
+  const {error} = await sb.from('members').insert({name:n, role:$('#cr').value||null, phone:$('#cp').value||null, email:$('#ce').value||null, telegram:$('#ct').value||null});
+  if(error){ if(error.code==='23505') return alert('Такой участник уже зарегистрирован'); return alert(error.message); }
+  await sb.from('team_members').insert({team_id:tid(), member:n, is_owner:false});
+  await loadMembers(); await loadTeamMembers(); render();
+  $('#overlay').style.display='none';
+}
+
+/* ---------- Realtime ---------- */
+function subscribeAll(){
+  sb.channel('niokr-v4')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, p => {
+      if(p.new.team_id===tid() && p.new.channel===chan && p.new.client_id!==cid){ rMsgs.push(rowToMsg(p.new)); if(view==='chat') render(); }
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, p => { if(!p.new || p.new.team_id===tid() || p.old?.team_id===tid()) loadTasks(); })
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages'}, p => {
+      const m = p.new;
+      const inView = m.dm ? (dmWith && m.dm===dmKey(me.name, dmWith)) : (!dmWith && m.team_id===tid() && m.channel===chan);
+      if(inView) loadChan();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'announcements'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadNews(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'documents'}, p => { if(p.new.team_id===tid()) loadDocs(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'stages'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadStages(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'team_members'}, () => { loadTeamMembers(); if(view==='misc') render(); })
+    .subscribe();
+}
+
+/* ---------- утилиты ---------- */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function now(){ const d=new Date(); return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function fmtT(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?iso:d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function netUpd(){ $('#net').classList.toggle('off', !navigator.onLine); }
+addEventListener('online', netUpd); addEventListener('offline', netUpd); netUpd();
+
+/* ---------- PWA ---------- */
+let deferredPrompt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; $('#installBtn').classList.remove('hidden'); });
+$('#installBtn').onclick = async () => { if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('#installBtn').classList.add('hidden'); } };
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isInStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+if(isIOS && !isInStandalone && me){
+  setTimeout(()=>{
+    if($('#overlay').style.display === 'flex') return; // окно приветствия важнее
+    $('#sheet').innerHTML = `<h2>Установка на iPhone</h2><ol>
+      <li>Нажмите <b>«Поделиться»</b> в Safari.</li>
+      <li>Выберите <b>«На экран "Домой"»</b> → <b>«Добавить»</b>.</li></ol>
+      <div style="height:12px"></div><button class="pri" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Понятно</button>`;
+    $('#overlay').style.display = 'flex';
+  }, 1500);
+}
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      if(w) w.addEventListener('statechange', () => {
+        if(w.state === 'activated' && navigator.serviceWorker.controller) location.reload();
+      });
+    });
+  }).catch(()=>{});
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(!refreshing){ refreshing = true; location.reload(); }
+  });
+}
+
+init();
+</script>
 </body>
 </html>
