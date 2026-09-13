@@ -1329,6 +1329,7 @@ function renderStructBar(){
   const items = [];
   const azTab = TABS.find(t=>t.kind==='az');
   if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
+  items.push({icon:'📄', label:'Акты и документы', fn:"navGo('acts')", on: view==='acts'});
   TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
   (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
   bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
@@ -1719,6 +1720,133 @@ function agentToggleMic(){
 }
 $('#agentBtn').onclick = () => agentSheet();
 
+
+/* ================= АКТЫ И ДОКУМЕНТЫ (АОСР + реестр) ================= */
+let ACTS = [];
+// Виды скрытых работ строго по проекту Ф-2024-НОК-ДТ-0424-КР (укрепление грунтов основания дымовой трубы)
+const ACT_WORKS = [
+ {name:'Закрепление геодезической разбивочной основы и осей инъекционных скважин', section:'ПЗ, раздел «Конструктивные и объемно-планировочные решения»', doc:'Исполнительная геодезическая схема разбивки; журнал геодезических работ'},
+ {name:'Бурение инъекционных скважин (до закрытия устья / начала инъектирования)', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Журнал бурения; паспорта буровых растворов (при применении); исполнительная схема расположения скважин'},
+ {name:'Установка обсадных (фильтровых) труб в скважинах', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Сертификаты на трубы; исполнительная схема'},
+ {name:'Приёмка цемента и приготовление инъекционных смесей (входной контроль материалов)', section:'ПЗ, раздел технологии; ТУ на материалы', doc:'Сертификаты/паспорта цемента; протоколы лабораторных испытаний смеси (В/Ц, сроки схватывания)'},
+ {name:'Инъектирование (цементация) грунтов по скважинам', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Журнал инъектирования по скважинам (давление, расход, объёмы); протоколы опытного инъектирования'},
+ {name:'Устройство дренажа (укладка дренажных труб с обратной засыпкой фильтрующим материалом)', section:'ПЗ, раздел «Инженерное оборудование» (при наличии в объёме работ)', doc:'Сертификаты на дренажные трубы и фильтрующий материал; исполнительная схема; фото'},
+ {name:'Обратная засыпка котлованов и траншей с послойным уплотнением', section:'ПЗ, раздел технологии', doc:'Акты на скрытые работы по уплотнению; исполнительная схема; фото'},
+ {name:'Устройство контрольных (наблюдательных) точек мониторинга крена и осадок трубы', section:'ПЗ, раздел мониторинга', doc:'Исполнительная схема закрепления точек; геодезический журнал'}
+];
+const ACT_NORM = 'Форма акта — РД-11-02-2006. Освидетельствование до закрытия работ: СП 70.13330.2012, п. 4.5. Исполнительная документация: ГОСТ Р 21.101-2020, СП 48.13330.2019.';
+
+async function loadActs(){
+  if(!SYNC) return;
+  const {data} = await sb.from('acts').select('*').eq('team_id', tid()).order('num');
+  ACTS = data || [];
+}
+async function ensureActsDefaults(){
+  // подставляем представителей из известных данных
+  const m = MEMBERS.find(x => x.name === me.name) || {};
+  return {
+    customer: team && team.is_owner ? me.name : '',
+    contractor: '', designer: 'Керимов А.Г. (ООО «НПО Фундамент»)', control: ''
+  };
+}
+function renderActs(v){
+  if(!SYNC){ v.innerHTML = '<h2 class="pt">📄 Акты и документы</h2><p class="mut">Требуется подключение.</p>'; return; }
+  if(ACTS === null){ v.innerHTML='<p class="mut">Загрузка…</p>'; loadActs().then(render); return; }
+  const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
+  const isOwner = team && team.is_owner;
+  v.innerHTML = `<h2 class="pt">📄 Акты и документы</h2>
+   <p class="mut" style="margin-bottom:8px">Акты освидетельствования скрытых работ (АОСР) по видам работ проекта ${esc(azc.project_code||'Ф-2024-НОК-ДТ-0424-КР')}. ${esc(ACT_NORM)}</p>
+   <div class="card"><b>Объект:</b> ${esc(azc.object||'—')}<br><span class="mut">Застройщик: ${esc(azc.customer||'—')} · Проектировщик: ${esc(azc.designer||'ООО «НПО Фундамент»')}</span></div>
+   <div class="row" style="margin-bottom:8px">
+     <button class="pri" style="flex:1" onclick="actForm()">＋ Новый акт (АОСР)</button>
+   </div>
+   ${ACTS.length ? ACTS.map(a => `<div class="card" style="cursor:pointer" onclick="actView(${a.id})">
+     <div class="row"><b style="flex:1">АОСР-${String(a.num).padStart(3,'0')} · ${esc(a.work_name)}</b></div>
+     <p class="mut" style="margin-top:4px">${a.date_act ? 'от ' + a.date_act : 'дата не указана'} · ${esc(a.created_by||'')}</p>
+   </div>`).join('') : '<p class="mut">Актов нет — создайте первый.</p>'}
+   <h2 class="pt" style="margin-top:14px">🗂 Реестр исполнительной документации (формируется автоматически)</h2>
+   <div class="card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
+     <tr style="text-align:left;color:var(--mut)"><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">№</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Наименование документа</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Номер/дата</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Источник</th></tr>
+     ${actsRegistryRows()}
+   </table></div>
+   <p class="mut" style="font-size:11px">Реестр автоматически пополняется по мере создания актов, загрузки документов и выполнения работ по техплану.</p>`;
+}
+function actsRegistryRows(){
+  const rows = [];
+  ACTS.forEach(a => rows.push(['АОСР-' + String(a.num).padStart(3,'0'), 'Акт освидетельствования скрытых работ: ' + a.work_name, (a.date_act||'—'), 'Акты']));
+  (rDocs || []).forEach(d => rows.push(['', 'Документ: ' + d.name, (d.created_at||'').slice(0,10), 'Файлы команды']));
+  (PLAN_ROWS || []).filter(r => r.status === 'Выполнено').forEach(r => rows.push(['', 'Исполнена работа: ' + r.work, (r.done_at||'').slice(0,10), 'Техплан']));
+  (AZ_ENTRIES || []).forEach(e => rows.push(['', 'Запись журнала авторского надзора: ' + e.works.slice(0,60), e.entry_date, 'Журнал АН']));
+  if(!rows.length) return '<tr><td colspan="4" class="mut" style="padding:8px">Документов пока нет.</td></tr>';
+  return rows.map((r,i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${i+1}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[1])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[2])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)" class="mut">${esc(r[3])}</td></tr>`).join('');
+}
+function actForm(){
+  const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
+  $('#sheet').innerHTML = `<h2>＋ Акт освидетельствования скрытых работ</h2>
+   <div class="card">
+     <p class="mut" style="margin-bottom:6px">Вид работы (по проекту):</p>
+     <select id="acW">${ACT_WORKS.map((w,i)=>`<option value="${i}">${esc(w.name)}</option>`).join('')}</select>
+     <div style="height:8px"></div>
+     <div class="row"><input type="date" id="acD" style="flex:1" title="Дата акта"><input id="acFrom" type="date" style="flex:1" title="Начало работ"><input id="acTo" type="date" style="flex:1" title="Окончание работ"></div>
+     <div style="height:8px"></div>
+     <input id="acCust" placeholder="Представитель застройщика (техзаказчика)" value="${esc(azc.customer||'ООО «НОК»')}">
+     <div style="height:8px"></div>
+     <input id="acContr" placeholder="Представитель подрядчика (лицо, осуществляющее строительство)">
+     <div style="height:8px"></div>
+     <input id="acDes" placeholder="Представитель проектировщика (авторский надзор)" value="Керимов А.Г. — ООО «НПО Фундамент»">
+     <div style="height:8px"></div>
+     <input id="acCtrl" placeholder="Представитель строительного контроля">
+     <div style="height:8px"></div>
+     <textarea id="acAttach" rows="2" placeholder="Приложения (исполнительные схемы, протоколы испытаний, сертификаты — вручную)"></textarea>
+     <div style="height:8px"></div>
+     <select id="acConc"><option selected>Работы выполнены в соответствии с проектной документацией, техническими регламентами и технологическими картами. Разрешается производство последующих работ.</option><option>Замечания: (указать в приложении). Последующие работы — после устранения.</option></select>
+     <div style="height:12px"></div>
+     <button class="pri" style="width:100%" onclick="actSave()">💾 Сформировать акт</button>
+     <p class="mut" style="font-size:11px;margin-top:8px">${esc(ACT_NORM)}</p>
+   </div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function actSave(){
+  const w = ACT_WORKS[parseInt($('#acW').value)];
+  const num = (ACTS.length ? Math.max(...ACTS.map(a=>a.num)) : 0) + 1;
+  const row = {
+    team_id: tid(), num,
+    work_name: w.name,
+    basis_project: w.section,
+    basis_quality: w.doc,
+    date_act: $('#acD').value || null, date_from: $('#acFrom').value || null, date_to: $('#acTo').value || null,
+    conclusion: $('#acConc').value,
+    rep_customer: $('#acCust').value || null, rep_contractor: $('#acContr').value || null,
+    rep_designer: $('#acDes').value || null, rep_control: $('#acCtrl').value || null,
+    attach: $('#acAttach').value || null, created_by: me.name
+  };
+  const {error} = await sb.from('acts').insert(row);
+  if(error) return alert(error.message);
+  $('#overlay').style.display = 'none';
+  ACTS = null; render();
+}
+function actView(id){
+  const a = ACTS.find(x => x.id === id); if(!a) return;
+  $('#sheet').innerHTML = `<h2>АОСР-${String(a.num).padStart(3,'0')}</h2><div class="card">
+    <p><b>${esc(a.work_name)}</b></p>
+    <p class="mut" style="margin-top:6px">Дата акта: ${a.date_act||'—'} · Работы: ${a.date_from||'—'} — ${a.date_to||'—'}</p>
+    <p style="margin-top:6px">Основание: ${esc(a.basis_project||'—')}</p>
+    <p style="margin-top:4px">Документы о качестве: ${esc(a.basis_quality||'—')}</p>
+    <p style="margin-top:6px">Застройщик: ${esc(a.rep_customer||'—')}<br>Подрядчик: ${esc(a.rep_contractor||'—')}<br>Проектировщик: ${esc(a.rep_designer||'—')}<br>Стройконтроль: ${esc(a.rep_control||'—')}</p>
+    <p style="margin-top:6px">Заключение: ${esc(a.conclusion)}</p>
+    ${a.attach ? `<p style="margin-top:4px">Приложения: ${esc(a.attach)}</p>` : ''}
+    <div class="row" style="margin-top:8px">
+      <button class="sec" onclick="navigator.clipboard && navigator.clipboard.writeText(document.querySelector('#sheet .card').innerText).then(()=>alert('Акт скопирован'))">📋 Копировать текст</button>
+      <button class="dng" onclick="actDel(${a.id})">🗑</button>
+    </div></div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function actDel(id){
+  if(!confirm('Удалить акт?')) return;
+  await sb.from('acts').delete().eq('id', id);
+  ACTS = null; render();
+}
+
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
@@ -1759,6 +1887,7 @@ function render(){
     return;
   }
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
+  if(view==='acts'){ renderActs(v); return; }
   if(view==='chat') renderChat(v);
   if(view==='stages') renderStages(v);
   if(view==='tasks') renderTasks(v);
@@ -2290,6 +2419,7 @@ function subscribeAll(){
         qaScanTimer = setTimeout(qaScanNow, 90000);
       }
     })
+    .on('postgres_changes', {event:'*', schema:'public', table:'acts'}, () => { if(view==='acts'){ ACTS=null; render(); } })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'agent_messages'}, p => {
       if(p.new.role !== 'assistant') return;
       const overlayOpen = document.getElementById('overlay').style.display === 'flex';
