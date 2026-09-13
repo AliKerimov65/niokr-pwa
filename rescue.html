@@ -1,0 +1,20 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Восстановление приложения</title>
+<style>body{font:16px/1.5 system-ui;background:#241a0e;color:#e6d9bd;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}div{max-width:320px}</style>
+</head><body><div>
+<h2>🧹 Восстановление</h2>
+<p>Очищаю кэш и служебные механизмы…</p>
+<p id="st">подождите</p>
+<script>
+(async () => {
+  const st = document.getElementById('st');
+  try{
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for(const r of regs){ await r.unregister(); st.textContent = 'службы остановлены'; }
+    const ks = await caches.keys();
+    for(const k of ks){ await caches.delete(k); st.textContent = 'кэш удалён'; }
+  }catch(e){ st.textContent = 'пропуск: ' + e.message; }
+  setTimeout(() => { location.replace('./index.html?fresh=' + Date.now()); }, 800);
+})();
+</script></div></body></html>
