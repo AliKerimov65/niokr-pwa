@@ -150,6 +150,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
   <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
   <span id="syncBadge" title="Обновить данные">Локальный</span>
+  <span id="appVer" title="Версия приложения" style="font-size:10px;font-family:monospace;color:var(--mut);flex:none;padding:2px 4px;border:1px solid var(--brd);border-radius:8px;white-space:nowrap"></span>
   <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button></div>
 <div id="structBar" class="hidden" style="display:flex;gap:6px;overflow-x:auto;padding:0 10px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
@@ -343,6 +344,15 @@ function initPresence(){
   });
   const hb = setInterval(() => { if(presenceCh) presenceCh.track({name: me.name, at: Date.now()}).catch(()=>{}); else clearInterval(hb); }, 25000);
 }
+function refreshVerTag(){
+  const el = document.getElementById('appVer'); if(!el) return;
+  fetch('sw.js?v=' + Date.now(), {cache:'no-store'}).then(r => r.text()).then(t => {
+    const v = (t.match(/niokr-pwa-v(\d+)/) || [])[1];
+    el.textContent = (v ? 'v' + v : '…') + (SYNC ? '' : ' ·offline');
+    el.title = 'Версия приложения: ' + (v || '?') + (SYNC ? ' · связь с базой установлена' : ' · НЕТ СВЯЗИ С БАЗОЙ');
+  }).catch(() => { el.textContent = 'offline'; });
+}
+setInterval(refreshVerTag, 30000);
 function updateOnlineUI(){
   const names = Object.keys(ONLINE);
   const n = names.length;
@@ -406,7 +416,7 @@ function start(){
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
-  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync();
+  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync(); refreshVerTag();
   loadTabs().then(() => {
     const pt = TABS.find(x => x.kind === 'plan');
     if(pt) loadPlanRows(pt.id);
