@@ -134,24 +134,38 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 .mrow .inf b{font-size:14px}
 .pill{font-size:10px;background:var(--acc);color:#fff;border-radius:8px;padding:1px 6px;font-weight:700}
 .code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #7a541088;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
+/* ==== Профессиональная шапка: адаптив ==== */
+.hrow{gap:6px;padding:calc(8px + env(safe-area-inset-top)) 10px 8px}
+#hdrRight button{padding:5px 7px !important}
+#hdrRight{gap:4px}
+@media (max-width:420px){
+  #teamChip{max-width:38vw;padding-right:8px}
+  #teamNm{font-size:12px}
+  #appVer{font-size:9px;padding:1px 4px}
+  #syncBadge{font-size:9px;padding:1px 5px}
+  #hdrRight{max-width:56vw}
+}
+@media (max-height:700px){
+  .hrow{padding-top:calc(6px + env(safe-area-inset-top));padding-bottom:6px}
+}
+#overlay .sheet{transition:transform .22s ease}
 </style>
 </head>
 <body>
 <header><div class="hrow">
-  <span class="dot" id="net"></span>
-  <h1>НИОКР</h1>
-  <button id="teamBtn" class="hidden">👥 Команда</button>
-  <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
-  <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
-  <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
-  <button id="cacheBtn" class="hidden" title="Очистить кэш приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🧹</button>
-  <button id="setBtn" title="Настройки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⚙</button>
-  <button id="pushBtn" class="hidden" title="Пуш-уведомления" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🔔</button>
-  <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
-  <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
-  <span id="syncBadge" title="Обновить данные">Локальный</span>
-  <span id="appVer" title="Версия приложения" style="font-size:10px;font-family:monospace;color:var(--mut);flex:none;padding:2px 4px;border:1px solid var(--brd);border-radius:8px;white-space:nowrap"></span>
-  <small id="who"></small>
+  <button id="teamChip" title="Команды" style="display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--brd2);border-radius:20px;padding:4px 12px 4px 4px;max-width:44vw;overflow:hidden;flex:none">
+    <span id="teamAv" style="width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none">🏗</span>
+    <span id="teamNm" style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Команда</span>
+    <span id="teamDot" style="width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none"></span>
+  </button>
+  <span style="flex:1"></span>
+  <span id="hdrRight" style="display:flex;align-items:center;gap:4px;flex:none;max-width:52vw;overflow-x:auto;scrollbar-width:none">
+    <span id="appVer" title="Версия" style="font-size:10px;font-family:monospace;color:var(--mut);padding:2px 5px;border:1px solid var(--brd);border-radius:8px;white-space:nowrap"></span>
+    <span id="syncBadge" title="Обновить данные" style="flex:none">Локальный</span>
+    <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:5px 8px;font-size:13px;flex:none">🤖</button>
+    <button id="membersBtn" class="hidden" title="Участники" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:5px 8px;font-size:13px;flex:none">👤</button>
+    <button id="exitBtn" title="Выход" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:5px 8px;font-size:13px;flex:none">⎋</button>
+  </span>
   <button id="installBtn" class="hidden">Установить</button></div>
 <div id="structBar" class="hidden" style="display:flex;gap:6px;overflow-x:auto;padding:0 10px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
 </header>
@@ -413,6 +427,7 @@ async function init(){
 }
 function start(){
   appStarted = true;
+  if(!navReady){ navReady = true; try{ history.pushState({inApp:1}, ''); }catch(e){} }
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
@@ -567,7 +582,7 @@ async function teamMenuToggle(ev){
     + `<div class="di" style="border-top:1px solid var(--brd);color:var(--acc)" onclick="document.getElementById('teamMenu').remove();teamSheet()">＋ Создать / вступить по коду…</div>`;
   document.querySelector('header').appendChild(m);
 }
-$('#teamBtn').onclick = (ev) => teamMenuToggle(ev);
+const _tc = document.getElementById('teamChip'); if(_tc) _tc.onclick = (ev) => { if(!SYNC){ teamSheet(); return; } teamMenuToggle(ev); };
 document.addEventListener('click', e => {
   const m = document.getElementById('teamMenu');
   if(m && !e.target.closest('#teamMenu') && !e.target.closest('#teamBtn')) m.remove();
@@ -590,6 +605,9 @@ async function loadTabs(){
   if(view.startsWith('tab:') || view === 'plan') render();
 }
 function renderTabbar(){
+  const av = document.getElementById('teamAv'), nm = document.getElementById('teamNm');
+  if(av){ av.textContent = team ? (team.name||'?').trim().charAt(0).toUpperCase() : '🏗'; av.style.background = team ? 'var(--acc)' : 'var(--mut)'; }
+  if(nm) nm.textContent = team ? team.name : 'Выбор команды';
   const c = $('#dynTabs'); if(!c) return;
   c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
@@ -1857,6 +1875,74 @@ async function actDel(id){
   ACTS = null; render();
 }
 
+
+/* ==== Профессиональная навигация ==== */
+let navReady = false, lastExitPress = 0;
+function backIntercept(){
+  if(!navReady) return;
+  const ov = document.getElementById('overlay');
+  if(ov && ov.style.display === 'flex' && document.getElementById('sheet').innerHTML){
+    ov.style.display = 'none'; window._taskSheetId = null;
+    history.pushState({inApp:1}, '');
+    return;
+  }
+  const now = Date.now();
+  if(now - lastExitPress < 2500) return; // второе нажатие — выход
+  lastExitPress = now;
+  history.pushState({inApp:1}, '');
+  const t = document.createElement('div');
+  t.textContent = '↩ Ещё раз «Назад» — выход';
+  t.style.cssText = 'position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2400);
+}
+window.addEventListener('popstate', backIntercept);
+/* Свайп вниз по окну — закрытие (когда окно прокручено вверх) */
+(function(){
+  const ov = document.getElementById('overlay');
+  let sy = 0, sx = 0, tracking = false;
+  ov.addEventListener('touchstart', e => {
+    if(ov.style.display !== 'flex') return;
+    const sheet = document.getElementById('overlay').querySelector('.sheet');
+    tracking = sheet && sheet.scrollTop <= 0;
+    sy = e.touches[0].clientY; sx = e.touches[0].clientX;
+  }, {passive:true});
+  ov.addEventListener('touchmove', e => {
+    if(!tracking) return;
+    const dy = e.touches[0].clientY - sy;
+    if(dy > 0){
+      const sheet = ov.querySelector('.sheet');
+      if(sheet){ sheet.style.transform = 'translateY(' + Math.min(dy,140) + 'px)'; sheet.style.transition = 'none'; }
+    }
+  }, {passive:true});
+  ov.addEventListener('touchend', e => {
+    if(!tracking){ return; }
+    tracking = false;
+    const dy = e.changedTouches[0].clientY - sy;
+    const sheet = ov.querySelector('.sheet');
+    if(sheet){ sheet.style.transform = ''; sheet.style.transition = 'transform .22s ease'; }
+    if(dy > 110){ ov.style.display = 'none'; window._taskSheetId = null; }
+  }, {passive:true});
+})();
+/* Свайп вправо от левого края — «назад» */
+(function(){
+  let sx = 0, sy = 0, track = false;
+  document.addEventListener('touchstart', e => {
+    const x = e.touches[0].clientX;
+    track = x < 24;
+    if(track){ sx = x; sy = e.touches[0].clientY; }
+  }, {passive:true});
+  document.addEventListener('touchend', e => {
+    if(!track) return;
+    track = false;
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = Math.abs(e.changedTouches[0].clientY - sy);
+    if(dx > 70 && dy < 60){ backIntercept(); history.pushState({inApp:1}, ''); }
+  }, {passive:true});
+})();
+
+
+
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
@@ -2468,7 +2554,7 @@ function linkify(s){
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function now(){ const d=new Date(); return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
 function fmtT(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?iso:d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
-function netUpd(){ $('#net').classList.toggle('off', !navigator.onLine); }
+function netUpd(){ const d = document.getElementById('teamDot'); if(d) d.style.background = navigator.onLine ? 'var(--ok)' : 'var(--bad)'; }
 addEventListener('online', netUpd); addEventListener('offline', netUpd); netUpd();
 
 /* ---------- PWA ---------- */
