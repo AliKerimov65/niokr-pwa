@@ -1,6 +1,6 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v97';
-const ASSETS = ['./', './index.html', './lib.js', './app.js', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
+const CACHE = 'niokr-pwa-v98';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -12,22 +12,8 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // API Supabase и CDN не кэшируем — только статику приложения
   if (e.request.url.includes('supabase.co') || e.request.url.includes('supabase-js')) return;
-  const isHTML = e.request.mode === 'navigate' || /\/index\.html/.test(e.request.url);
-  if (isHTML) {
-    // Страница приложения: сначала кэш (мгновенный старт), сеть — для обновления в фоне
-    e.respondWith(
-      caches.match('./index.html').then(cached => {
-        const net = fetch(e.request).then(res => {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put('./index.html', copy));
-          return res;
-        }).catch(() => cached);
-        return cached || net;
-      })
-    );
-    return;
-  }
   e.respondWith(
     fetch(e.request).then(res => {
       const copy = res.clone();
@@ -35,27 +21,4 @@ self.addEventListener('fetch', (e) => {
       return res;
     }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
   );
-});
-
-// ---------- Web Push ----------
-self.addEventListener('push', (e) => {
-  let d = {};
-  try{ d = e.data ? e.data.json() : {}; }catch(err){}
-  e.waitUntil(self.registration.showNotification(d.title || 'НИОКР Команда', {
-    body: d.body || 'Новое сообщение',
-    icon: './icon-192.png',
-    badge: './icon-192.png',
-    data: { url: './' }
-  }));
-});
-self.addEventListener('notificationclick', (e) => {
-  e.notification.close();
-  e.waitUntil(clients.matchAll({type:'window', includeUncontrolled:true}).then(cs => {
-    const c = cs.find(x => x.url.indexOf('niokr') > -1);
-    return c ? c.focus() : clients.openWindow('./');
-  }));
-});
-
-self.addEventListener('message', (e) => {
-  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
