@@ -138,9 +138,13 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 </head>
 <body>
 <header><div class="hrow">
-  <span class="dot" id="net"></span>
-  <h1>НИОКР</h1>
-  <button id="teamBtn" class="hidden">👥 Команда</button>
+  
+  <button id="teamChip" title="Команды" style="display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--brd2);border-radius:20px;padding:4px 12px 4px 4px;max-width:44vw;overflow:hidden;flex:none">
+    <span id="teamAv" style="width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none">🏗</span>
+    <span id="teamNm" style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Команда</span>
+    <span id="teamDot" style="width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none"></span>
+  </button>
+  
   <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
   <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
   <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
@@ -567,7 +571,7 @@ async function teamMenuToggle(ev){
     + `<div class="di" style="border-top:1px solid var(--brd);color:var(--acc)" onclick="document.getElementById('teamMenu').remove();teamSheet()">＋ Создать / вступить по коду…</div>`;
   document.querySelector('header').appendChild(m);
 }
-$('#teamBtn').onclick = (ev) => teamMenuToggle(ev);
+const _tc = document.getElementById('teamChip'); if(_tc) _tc.onclick = () => teamSheet();
 document.addEventListener('click', e => {
   const m = document.getElementById('teamMenu');
   if(m && !e.target.closest('#teamMenu') && !e.target.closest('#teamBtn')) m.remove();
@@ -590,6 +594,9 @@ async function loadTabs(){
   if(view.startsWith('tab:') || view === 'plan') render();
 }
 function renderTabbar(){
+  const av = document.getElementById('teamAv'), nm = document.getElementById('teamNm');
+  if(av) av.textContent = team ? (team.name||'?').trim().charAt(0).toUpperCase() : '🏗';
+  if(nm) nm.textContent = team ? team.name : 'Выбор команды';
   const c = $('#dynTabs'); if(!c) return;
   c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
@@ -2504,7 +2511,7 @@ function linkify(s){
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function now(){ const d=new Date(); return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
 function fmtT(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?iso:d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
-function netUpd(){ $('#net').classList.toggle('off', !navigator.onLine); }
+function netUpd(){ const d = document.getElementById('teamDot'); if(d) d.style.background = navigator.onLine ? 'var(--ok)' : 'var(--bad)'; }
 addEventListener('online', netUpd); addEventListener('offline', netUpd); netUpd();
 
 /* ---------- PWA ---------- */
