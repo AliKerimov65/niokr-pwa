@@ -1338,6 +1338,7 @@ function renderStructBar(){
   bar.classList.remove('hidden');
   const items = [];
   const azTab = TABS.find(t=>t.kind==='az');
+  items.push({icon:'🏠', label:'Главная', fn:"navGo('home')", on: view==='home'});
   if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
   items.push({icon:'📄', label:'Акты и документы', fn:"navGo('acts')", on: view==='acts'});
   TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
@@ -1857,6 +1858,40 @@ async function actDel(id){
   ACTS = null; render();
 }
 
+
+/* ================= ГЛАВНОЕ ОКНО (приветствие) ================= */
+function renderHome(v){
+  const az = TABS.find(x => x.kind === 'az');
+  const c = az ? az.config : {};
+  const hour = new Date().getHours();
+  const greet = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+  const openTasks = (rTasks || []).filter(t => t.status !== 'Выполнено').length;
+  const doneWorks = (PLAN_ROWS || []).filter(r => r.status === 'Выполнено').length;
+  const planTab = TABS.find(x => x.kind === 'plan');
+  const totalWorks = planTab ? (planTab.config.items || []).reduce((s, x) => s + (x.works || []).length, 0) : 0;
+  v.innerHTML = `
+  <div class="card" style="background:linear-gradient(135deg,#241a0e 0%,#3a2c14 100%);border:1px solid #4a3a1f;color:#e9dfc8">
+    <p style="font-family:Georgia,serif;font-size:17px;margin-bottom:2px">${greet}, <b>${esc(me.name)}</b></p>
+    <p style="font-size:13.5px;opacity:.9">${esc(team ? team.name : '')}</p>
+    <p style="font-size:12.5px;opacity:.75;margin-top:6px;line-height:1.5">Объект: ${esc(c.object || '—')}<br>Проект: ${esc(c.project_code || 'Ф-2024-НОК-ДТ-0424-КР')} · Застройщик: ${esc(c.customer || '—')}</p>
+  </div>
+  <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+    <span class="badge ${openTasks ? 'warn' : 'ok'}" style="padding:6px 12px">✅ Задач открыто: ${openTasks}</span>
+    <span class="badge" style="padding:6px 12px">🗺 Готовность работ: ${doneWorks}/${totalWorks || '—'}</span>
+    <span class="badge" style="padding:6px 12px">👥 В команде: ${TEAM_MEMBERS.length}</span>
+  </div>
+  <h2 class="pt">Как работать в приложении</h2>
+  <div class="card">
+    <div class="mrow"><div class="av" style="background:#8a5f16">💬</div><div class="inf"><b>Чат</b><br><span class="mut" style="font-size:12px">Общение по каналам. 📎 — фото и файлы. Личные сообщения — через 💌 или карточку участника.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#2e7d4f">✅</div><div class="inf"><b>Задачи</b><br><span class="mut" style="font-size:12px">Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#33608a">🗺</div><div class="inf"><b>Технический план</b><br><span class="mut" style="font-size:12px">Этапы и состав работ: статусы, до 3 ответственных, документы и фото. ❓ — консультация со ссылками на проект и нормативку.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#7a4a8a">📋</div><div class="inf"><b>Журнал АН</b><br><span class="mut" style="font-size:12px">Записи обходов: дата/погода автоматически, 🎙 — голосовой набор, предписания со статусами.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#8a3a2e">📄</div><div class="inf"><b>Акты и документы</b><br><span class="mut" style="font-size:12px">АОСР по видам работ проекта (форма РД-11-02-2006) и авто-реестр исполнительной документации.</span></div></div>
+    ${team && team.is_owner ? `<div class="mrow"><div class="av" style="background:#8a6a1f">🤖</div><div class="inf"><b>Агент «Управление командой»</b> (владелец)<br><span class="mut" style="font-size:12px">Голосом или текстом: «Создай задачу…», «Опубликуй объявление…». История сохраняется.</span></div></div>` : ''}
+  </div>
+  <p class="mut" style="text-align:center;font-size:11px">НИОКР Команда</p>`;
+}
+
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
@@ -1898,6 +1933,7 @@ function render(){
   }
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='acts'){ renderActs(v); return; }
+  if(view==='home'){ renderHome(v); return; }
   if(view==='chat') renderChat(v);
   if(view==='stages') renderStages(v);
   if(view==='tasks') renderTasks(v);
