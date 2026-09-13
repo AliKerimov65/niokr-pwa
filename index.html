@@ -1740,6 +1740,17 @@ document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('button, .tchip');
   if(b) dbg('CLICK: ' + (b.id || b.dataset.v || b.dataset.tid || b.className || b.textContent || '?').toString().slice(0,60));
 }, true);
+// Диагностика касаний: фиксируем pointerdown ВЕЗДЕ + видимый индикатор
+let touchN = 0;
+document.addEventListener('pointerdown', e => {
+  touchN++;
+  dbg('TOUCH #' + touchN + ' @' + (e.target.id || e.target.className || e.target.tagName).toString().slice(0,40));
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:' + (e.clientX-18) + 'px;top:' + (e.clientY-18) + 'px;width:36px;height:36px;border-radius:50%;border:2px solid #d33;z-index:999;pointer-events:none;transition:opacity .5s';
+  document.body.appendChild(d);
+  setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 500); }, 300);
+}, {capture:true, passive:true});
+dbg('DIAG v82 armed');
 dbg('BOOT v79 view=' + (typeof view !== 'undefined' ? view : '?'));
 setTimeout(() => dbg('ALIVE 5s view=' + view + ' SYNC=' + SYNC), 5000);
 (function(){
