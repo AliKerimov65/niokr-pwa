@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#7a5410">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="НИОКР">
@@ -1517,7 +1518,7 @@ async function devRetry(id){
     if(document.getElementById('sheet')) devDetail(id);
     if(j && j.ok) alert('✅ Исполнено и опубликовано (v' + j.version + ')');
   }catch(e){
-    alert('⏳ Задача поставлена в очередь. Статус обновится автоматически.');
+    alert('📨 Задача в очереди. Исполнитель подберёт её автоматически (обычно 5–10 минут).');
   }
 }
 /* ---------- Ответы на вопросы (перехват обращений к владельцу) ---------- */
@@ -1586,9 +1587,9 @@ async function devSend(id){
     const j = await r.json().catch(()=>({}));
     await loadDevTasks(); renderDevBox();
     if(j && j.ok) alert('✅ Задача исполнена автоматически и опубликована (v' + j.version + '). Перезапустите приложение, чтобы увидеть изменение.');
-    else alert('⚠️ Авто-исполнение: ' + ((j && j.error) || 'ошибка') + '\nСтатус задачи обновлён — попробуйте «Отправить Kimi» ещё раз после правки ТЗ.');
+    else alert('📨 Задача в очереди. Исполнитель подберёт её автоматически (обычно 5–10 минут) и опубликует новую версию — статус обновится сам.');
   }catch(e){
-    alert('📨 Задача принята. Авто-исполнение временно недоступно (' + e.message + ') — повторите отправку.');
+    alert('📨 Задача в очереди. Исполнитель подберёт её автоматически (обычно 5–10 минут) и опубликует новую версию — статус обновится сам.');
   }
 }
 async function devDel(id){
@@ -1779,10 +1780,44 @@ const ACT_WORKS = [
 ];
 const ACT_NORM = 'Форма акта — РД-11-02-2006. Освидетельствование до закрытия работ: СП 70.13330.2012, п. 4.5. Исполнительная документация: ГОСТ Р 21.101-2020, СП 48.13330.2019.';
 
+/* Хранилище актов АОСР: JSON-файлы в Supabase Storage (бакет files, acts/<team_id>/).
+   Таблица acts в базе отсутствует (удалена при сбросах) — Storage даёт ту же
+   межустройную синхронизацию без DDL. Аудит 2026-09-14, патч v104 вшит в v105. */
+const ActsStore = {
+  prefix(){ return 'acts/' + tid(); },
+  async load(){
+    try{
+      const {data: list, error} = await sb.storage.from('files').list(this.prefix(), {limit: 500});
+      if(error) throw error;
+      const out = [];
+      for(const o of (list || [])){
+        if(!o.name || !o.name.endsWith('.json')) continue;
+        try{
+          const url = sb.storage.from('files').getPublicUrl(this.prefix() + '/' + o.name).data.publicUrl;
+          const r = await fetch(url + '?t=' + Date.now(), {cache: 'no-store'});
+          if(r.ok){ const j = await r.json(); if(j && typeof j.num === 'number') out.push(j); }
+        }catch(_){}
+      }
+      out.sort((a,b) => a.num - b.num);
+      return out;
+    }catch(e){ console.warn('Акты: ошибка загрузки —', e && e.message); return []; }
+  },
+  async save(row){
+    const id = Date.now();
+    const act = Object.assign({}, row, {id, created_at: new Date().toISOString()});
+    const body = new Blob([JSON.stringify(act)], {type: 'application/json'});
+    const {error} = await sb.storage.from('files').upload(this.prefix() + '/' + id + '.json', body, {contentType: 'application/json', upsert: true});
+    if(error) throw error;
+    return act;
+  },
+  async remove(id){
+    const {error} = await sb.storage.from('files').remove([this.prefix() + '/' + id + '.json']);
+    if(error) throw error;
+  }
+};
 async function loadActs(){
-  if(!SYNC) return;
-  const {data} = await sb.from('acts').select('*').eq('team_id', tid()).order('num');
-  ACTS = data || [];
+  if(!SYNC){ ACTS = []; return; }
+  ACTS = await ActsStore.load();
 }
 async function ensureActsDefaults(){
   // подставляем представителей из известных данных
@@ -1794,7 +1829,10 @@ async function ensureActsDefaults(){
 }
 function renderActs(v){
   if(!SYNC){ v.innerHTML = '<h2 class="pt">📄 Акты и документы</h2><p class="mut">Требуется подключение.</p>'; return; }
-  if(ACTS === null){ v.innerHTML='<p class="mut">Загрузка…</p>'; loadActs().then(render); return; }
+  v.innerHTML = '<h2 class="pt">📄 Акты и документы</h2><p class="mut">Загрузка…</p>';
+  loadActs().then(() => { if(view === 'acts') renderActsBody(v); });
+}
+function renderActsBody(v){
   const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
   const isOwner = team && team.is_owner;
   v.innerHTML = `<h2 class="pt">📄 Акты и документы</h2>
@@ -1863,8 +1901,8 @@ async function actSave(){
     rep_designer: $('#acDes').value || null, rep_control: $('#acCtrl').value || null,
     attach: $('#acAttach').value || null, created_by: me.name
   };
-  const {error} = await sb.from('acts').insert(row);
-  if(error) return alert(error.message);
+  try{ await ActsStore.save(row); }
+  catch(e){ return alert('Не удалось сохранить акт: ' + (e.message || e)); }
   $('#overlay').style.display = 'none';
   ACTS = null; render();
 }
@@ -1886,7 +1924,8 @@ function actView(id){
 }
 async function actDel(id){
   if(!confirm('Удалить акт?')) return;
-  await sb.from('acts').delete().eq('id', id);
+  try{ await ActsStore.remove(id); }
+  catch(e){ return alert('Не удалось удалить акт: ' + (e.message || e)); }
   ACTS = null; render();
 }
 
@@ -2530,7 +2569,6 @@ function subscribeAll(){
         qaScanTimer = setTimeout(qaScanNow, 90000);
       }
     })
-    .on('postgres_changes', {event:'*', schema:'public', table:'acts'}, () => { if(view==='acts'){ ACTS=null; render(); } })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'agent_messages'}, p => {
       if(p.new.role !== 'assistant') return;
       const overlayOpen = document.getElementById('overlay').style.display === 'flex';

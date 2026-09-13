@@ -13,9 +13,17 @@
 | `sms-gateway` | ✅ 200 | `{action:'send', member, text}` | SMS/мессенджер-шлюз уведомлений |
 | `max-bot` | ✅ 200 | `{action:'send', member, text}` | Отправка в MAX по `max_links.chat_id` |
 | `az-polish` | ✅ 200 | `{text}` | Обработка голосовой диктовки журнала АН |
-| `dev-executor` | ❌ BOOT_ERROR | `{task_id, owner}` → `{ok, version}` / `{error}` | Автоисполнитель задач разработки: читает `dev_tasks`, правит код, публикует новую версию |
+| `dev-executor` | 🔄 ПЕРЕНЕСЁН в GitHub Actions (2026-09-14) | очередь `dev_tasks` → коммит | Автоисполнитель задач: см. `.github/workflows/dev-executor.yml` + `tools/dev-executor.mjs` |
 
-## Ремонт dev-executor
+## dev-executor (архитектура с 2026-09-14)
+Supabase-функция заменена workflow GitHub Actions (крон каждые 5 минут + ручной запуск):
+забирает одну задачу «Отправлено» из `dev_tasks`, LLM-патчит `index.html`, проверяет
+(уникальные якоря, контроль `<script>`, node --check), поднимает версию в `sw.js`, коммитит.
+Секрет `LLM_API_KEY` хранится в репозитории (Actions secrets). Код — `tools/dev-executor.mjs`.
+Исходный Deno-вариант сохранён в `supabase/functions/dev-executor/index.ts` как резерв
+(если развёрнуть его с секретами GITHUB_TOKEN+LLM_API_KEY — будет мгновенный запуск без очереди).
+
+## Ремонт dev-executor (СТАРАЯ Edge Function — архив)
 1. Supabase Dashboard → Edge Functions → `dev-executor` → **Logs** — причина BOOT_ERROR
    (обычно: отсутствует/протух секрет env, синтаксическая ошибка после правки, тяжёлый импорт).
 2. Проверить секреты функции (Settings → Edge Functions): токен GitHub и ключ LLM
