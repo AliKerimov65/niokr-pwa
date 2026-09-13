@@ -406,8 +406,9 @@ async function init(){
     if(!me) onboarding1(); else start();
     return;
   }
-  await loadMembers();
-  if(!me){ onboarding1(); return; }
+  const membersP = loadMembers();
+  if(!me){ await membersP; onboarding1(); return; }
+  await membersP;
   // Идентификация с приоритетом фамилии: подтягиваем каноническое имя, если на устройстве устаревшее написание
   const canon = findMemberCase(me.name);
   if(canon && canon.name !== me.name){
