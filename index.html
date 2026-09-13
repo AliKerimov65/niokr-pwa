@@ -225,10 +225,12 @@ let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [], QA_IT
 let sb = null, SYNC = false;
 try{
   if(typeof SUPABASE_URL!=='undefined' && SUPABASE_URL.indexOf('YOUR_')===-1){
-    if(typeof WebSocket === 'undefined'){
+    window.__WS_STUBBED = (typeof WebSocket === 'undefined');
+    if(window.__WS_STUBBED){
       const WSStub = function(){ this.readyState=0; this.send=function(){}; this.close=function(){}; };
       try{ self.WebSocket = WSStub; window.WebSocket = WSStub; }catch(_){}
     }
+    window.__WS_STUBBED = (typeof WebSocket === 'undefined') || (typeof window.__origWS === 'undefined' && false);
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     SYNC = true;
   }
@@ -361,7 +363,7 @@ function refreshVerTag(){
     el.title = 'Версия приложения: ' + (v || '?') + (SYNC ? ' · связь с базой установлена' : ' · НЕТ СВЯЗИ С БАЗОЙ');
   }).catch(() => { el.textContent = 'offline'; });
 }
-setInterval(refreshVerTag, 30000);
+setInterval(refreshVerTag, 120000);
 function updateOnlineUI(){
   const names = Object.keys(ONLINE);
   const n = names.length;
@@ -442,8 +444,8 @@ function start(){
     if(pt) loadPlanRows(pt.id);
   });
   if(SYNC){
-    subscribeAll();
     loadChan();
+    if(!window.__WS_STUBBED) subscribeAll();
   }
 }
 
