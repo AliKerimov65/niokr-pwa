@@ -175,10 +175,18 @@ let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [], QA_IT
 let sb = null, SYNC = false;
 try{
   if(typeof SUPABASE_URL!=='undefined' && SUPABASE_URL.indexOf('YOUR_')===-1){
+    // Заглушка WebSocket для браузеров без него (экономия трафика/mini-режимы):
+    // REST-запросы работают всегда, realtime — где доступен
+    if(typeof WebSocket === 'undefined'){
+      const WSStub = function(){ this.readyState = 0; this.send = function(){}; this.close = function(){}; };
+      try{ self.WebSocket = WSStub; window.WebSocket = WSStub; }catch(_){}
+    }
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     SYNC = true;
   }
-}catch(e){}
+}catch(e){
+  try{ dbg && dbg('CLIENT INIT FAIL: ' + e.message); }catch(_){}
+}
 const cid = store.get('cid', null) || (function(){ const c = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random()); store.set('cid', c); return c; })();
 function syncBadge(){ const b = $('#syncBadge'); b.textContent = SYNC ? 'Синхрон' : 'Локально'; b.classList.toggle('on', SYNC); }
 async function sbList(table, eqs){
