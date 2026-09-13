@@ -1,6 +1,6 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v96';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
+const CACHE = 'niokr-pwa-v97';
+const ASSETS = ['./', './index.html', './lib.js', './app.js', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
