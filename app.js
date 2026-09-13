@@ -1,0 +1,2386 @@
+
+const $ = s => document.querySelector(s);
+addEventListener('error', e => { try{ syncBadge && syncBadge(); }catch(_){}
+  if(e.message && !/Script error/.test(e.message)) console.error('APP ERROR:', e.message); });
+const store = {
+  get(k, d){ try{ const v = JSON.parse(localStorage.getItem('niokr_'+k)); return v==null?d:v }catch(e){ return d } },
+  set(k, v){ localStorage.setItem('niokr_'+k, JSON.stringify(v)) },
+  del(k){ localStorage.removeItem('niokr_'+k) }
+};
+const CHANNELS = ['Общий','Технические вопросы','Отчётность'];
+let me = store.get('user', null);
+let team = store.get('team', null);
+let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
+let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
+let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
+let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = [];
+let AUTO = store.get('auto', true), autoTimer = null;
+let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [], QA_ITEMS = [];
+
+/* ---------- Supabase ---------- */
+let sb = null, SYNC = false;
+try{
+  if(typeof SUPABASE_URL!=='undefined' && SUPABASE_URL.indexOf('YOUR_')===-1){
+    if(typeof WebSocket === 'undefined'){
+      const WSStub = function(){ this.readyState=0; this.send=function(){}; this.close=function(){}; };
+      try{ self.WebSocket = WSStub; window.WebSocket = WSStub; }catch(_){}
+    }
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    SYNC = true;
+  }
+}catch(e){}
+const cid = store.get('cid', null) || (function(){ const c = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random()); store.set('cid', c); return c; })();
+function syncBadge(){ const b = $('#syncBadge'); b.textContent = SYNC ? 'Синхрон' : 'Локально'; b.classList.toggle('on', SYNC); }
+async function sbList(table, eqs){
+  let q = sb.from(table).select('*').order('created_at',{ascending:true}).limit(500);
+  (eqs||[]).forEach(e => q = q.eq(e[0], e[1]));
+  const r = await q; return r.error ? [] : (r.data || []);
+}
+const tid = () => team ? team.id : null;
+
+/* ---------- загрузчики ---------- */
+async function loadMembers(){ MEMBERS = SYNC ? await sbList('members') : []; }
+async function fetchMyTeams(){
+  if(!SYNC) return [];
+  const r = await sb.from('team_members').select('is_owner, teams(id,name,owner,invite_code)').eq('member', me.name);
+  return r.error ? [] : (r.data||[]).map(x => ({id:x.teams.id, name:x.teams.name, owner:x.teams.owner, invite_code:x.teams.invite_code, is_owner:x.is_owner}));
+}
+async function loadTeamMembers(){
+  if(!SYNC || !team) return;
+  const r = await sb.from('team_members').select('*').eq('team_id', team.id).order('created_at');
+  TEAM_MEMBERS = r.error ? [] : r.data;
+}
+async function loadDmPartners(){
+  if(!SYNC || !me) return;
+  const {data} = await sb.from('messages').select('id,dm,author,body,created_at').not('dm','is',null)
+    .or('dm.ilike.'+me.name+'||%,dm.ilike.%||'+me.name)
+    .order('created_at',{ascending:false}).limit(200);
+  DM_PARTNERS = {};
+  (data||[]).forEach(m => {
+    const other = m.dm.split('||').find(x => x !== me.name);
+    if(!other) return;
+    if(!DM_PARTNERS[other] || m.created_at > DM_PARTNERS[other].created_at)
+      DM_PARTNERS[other] = {id:m.id, author:m.author, body:m.body, created_at:m.created_at};
+  });
+}
+function dmUnread(p){ return p && p.author!==me.name && !readBy('msg', p.id).includes(me.name); }
+function dmListSheet(){
+  const names = Object.keys(DM_PARTNERS).sort((x,y)=> String(DM_PARTNERS[y].created_at).localeCompare(String(DM_PARTNERS[x].created_at)));
+  $('#sheet').innerHTML = `<h2>💌 Личные сообщения</h2><p class="mut" style="margin-bottom:8px">Видно только вам.</p>` +
+    (names.map(n => { const p = DM_PARTNERS[n]; const un = dmUnread(p);
+      return `<div class="mrow" style="cursor:pointer" onclick="openDm('${esc(n)}')"><div class="av">${esc(n[0])}</div>
+      <div class="inf"><b>${esc(n)}</b>${un?' <span class="pill">новое</span>':''}<br><span class="mut" style="font-size:11.5px">${esc(((p.body||'')||'📎 файл').slice(0,42))} · ${fmtT(p.created_at)}</span></div></div>`; }).join('') || '<p class="mut">Личных переписок нет.</p>') +
+    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
+}
+function openDm(name){
+  $('#overlay').style.display='none';
+  dmWith = name;
+  view = 'chat';
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  loadChan();
+}
+function dmKey(a,b){ return [a,b].sort().join('||'); }
+async function loadChan(){
+  if(!SYNC) return;
+  if(dmWith){
+    rMsgs = (await sbList('messages', [['dm', dmKey(me.name, dmWith)]])).map(rowToMsg);
+  } else {
+    rMsgs = (await sbList('messages', [['team_id', tid()], ['channel', chan]])).map(rowToMsg);
+  }
+  await loadReads('msg', rMsgs.filter(m=>m.id).map(m=>m.id));
+  markRead('msg', rMsgs);
+  loadDmPartners();
+  if(view==='chat') render();
+}
+async function loadReads(kind, ids){
+  if(!SYNC || !ids || !ids.length) return;
+  const {data, error} = await sb.from('reads').select('*').eq('kind',kind).in('ref_id', ids);
+  if(error) return;
+  const known = new Set(READS.map(r=>r.kind+':'+r.ref_id+':'+r.member));
+  (data||[]).forEach(r => { const k=r.kind+':'+r.ref_id+':'+r.member; if(!known.has(k)) READS.push(r); });
+}
+async function markRead(kind, items){
+  if(!SYNC || !me) return;
+  const known = new Set(READS.map(r=>r.kind+':'+r.ref_id+':'+r.member));
+  const rows = [];
+  items.forEach(m => {
+    const author = m.n || m.author;
+    if(m.id && author && author!==me.name && !known.has(kind+':'+m.id+':'+me.name))
+      rows.push({kind, ref_id:m.id, member:me.name});
+  });
+  if(!rows.length) return;
+  rows.forEach(r => READS.push(r));
+  await sb.from('reads').upsert(rows, {onConflict:'kind,ref_id,member'});
+}
+function readBy(kind, id){ return READS.filter(r=>r.kind===kind && r.ref_id===id).map(r=>r.member); }
+function readReceipt(kind, id){
+  const others = TEAM_MEMBERS.map(t=>t.member).filter(n => n && n!==me.name);
+  if(!others.length) return '';
+  const rb = readBy(kind, id).filter(n => others.includes(n));
+  const names = rb.map(n => n.split(' ')[0]).join(', ');
+  const label = rb.length === others.length ? `✓✓ прочитали все (${rb.length}/${others.length})`
+    : rb.length ? `✓ прочитали: ${names} (${rb.length}/${others.length})` : `✓ не прочитано`;
+  return ` · <span style="cursor:pointer;border-bottom:1px dotted var(--mut)" title="Подробнее: кто прочитал" onclick="event.stopPropagation();readDetails('${kind}',${id})">${label}</span>`;
+}
+function readDetails(kind, id){
+  const others = TEAM_MEMBERS.map(t=>t.member).filter(n => n && n!==me.name);
+  const rb = readBy(kind, id);
+  const read = others.filter(n => rb.includes(n));
+  const unread = others.filter(n => !rb.includes(n));
+  const row = n => `<div class="mrow"><div class="av">${esc((n||'?')[0])}</div><div class="inf"><b>${esc(n)}</b></div></div>`;
+  $('#sheet').innerHTML = `<h2>Кто прочитал</h2>
+    <div class="card"><b style="color:var(--ok)">✓ Прочитали (${read.length})</b>${read.map(row).join('') || '<p class="mut">Пока никто.</p>'}</div>
+    <div class="card"><b style="color:var(--bad)">✗ Не прочитали (${unread.length})</b>${unread.map(row).join('') || '<p class="mut">Все прочитали.</p>'}</div>
+    <button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
+}
+let presenceCh = null;
+function initPresence(){
+  if(!SYNC || !me || presenceCh) return;
+  presenceCh = sb.channel('online', {config:{presence:{key: me.name}}});
+  presenceCh.on('presence', {event:'sync'}, () => {
+    const st = presenceCh.presenceState();
+    ONLINE = {};
+    Object.keys(st).forEach(k => ONLINE[k] = true);
+    updateOnlineUI();
+  }).subscribe(async (status) => {
+    if(status === 'SUBSCRIBED'){ try{ await presenceCh.track({name: me.name, at: Date.now()}); }catch(e){} }
+  });
+  const hb = setInterval(() => { if(presenceCh) presenceCh.track({name: me.name, at: Date.now()}).catch(()=>{}); else clearInterval(hb); }, 25000);
+}
+function refreshVerTag(){
+  const el = document.getElementById('appVer'); if(!el) return;
+  fetch('sw.js?v=' + Date.now(), {cache:'no-store'}).then(r => r.text()).then(t => {
+    const v = (t.match(/niokr-pwa-v(\d+)/) || [])[1];
+    el.textContent = (v ? 'v' + v : '…') + (SYNC ? '' : ' ·offline');
+    el.title = 'Версия приложения: ' + (v || '?') + (SYNC ? ' · связь с базой установлена' : ' · НЕТ СВЯЗИ С БАЗОЙ');
+  }).catch(() => { el.textContent = 'offline'; });
+}
+setInterval(refreshVerTag, 30000);
+function updateOnlineUI(){
+  const names = Object.keys(ONLINE);
+  const n = names.length;
+  $('#who').innerHTML = esc(me ? me.name.split(' ')[0] : '') +
+    (SYNC && n ? ` · <span style="color:var(--ok);font-weight:700">🟢 ${n} в сети</span>` : '');
+  $('#who').title = SYNC && n ? 'Кто в сети?' : '';
+  $('#who').style.cursor = SYNC && n ? 'pointer' : 'default';
+}
+function onlineSheet(){
+  const names = Object.keys(ONLINE);
+  $('#sheet').innerHTML = `<h2>🟢 Сейчас в сети (${names.length})</h2><p class="mut" style="margin-bottom:8px">Нажмите на участника — откроется карточка.</p>` +
+    names.map(n => `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(n)}')"><div class="av" style="box-shadow:0 0 0 2px var(--ok);">${esc((n||'?')[0])}</div><div class="inf"><b>${esc(n)}</b></div></div>`).join('') +
+    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
+}
+function rowToMsg(m){
+  return { id:m.id, n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at), edited:m.edited,
+    f:m.file_url||null, fn:m.file_name||'', img:m.file_url && /\.(png|jpe?g|gif|webp)$/i.test(m.file_url||'') };
+}
+async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); renderStructBar(); if(view==='tasks') render(); }
+async function loadNews(){
+  if(!SYNC) return;
+  rNews = (await sbList('announcements', [['team_id', tid()]])).reverse();
+  await loadReads('ann', rNews.filter(n=>n.id).map(n=>n.id));
+  markRead('ann', rNews);
+  if(view==='news') render();
+}
+async function loadDocs(){ if(!SYNC) return; rDocs = (await sbList('documents', [['team_id', tid()]])).reverse(); if(view==='files') render(); }
+async function loadStages(){
+  if(!SYNC) return;
+  const r = await sb.from('stages').select('*').eq('team_id', tid()).order('num');
+  STAGES = r.error ? [] : r.data;
+  if(view==='stages') render();
+}
+
+// Страховка пустого экрана: если приложение не стартовало (закрыто приветствие) — вернуть окно входа
+setTimeout(() => {
+  if(!appStarted && document.getElementById('overlay').style.display !== 'flex'){ init(); }
+}, 1500);
+
+/* ---------- старт ---------- */
+async function init(){
+  syncBadge();
+  if(!SYNC){
+    if(!me) onboarding1(); else start();
+    return;
+  }
+  const membersP = loadMembers();
+  if(!me){ await membersP; onboarding1(); return; }
+  await membersP;
+  // Идентификация с приоритетом фамилии: подтягиваем каноническое имя, если на устройстве устаревшее написание
+  const canon = findMemberCase(me.name);
+  if(canon && canon.name !== me.name){
+    me = {name: canon.name, role: canon.role || me.role};
+    store.set('user', me);
+  }
+  MYTEAMS = await fetchMyTeams();
+  const resumed = sessionStorage.getItem('sess') === '1';
+  if(resumed && team && MYTEAMS.find(t => t.id === team.id)){
+    const lv = sessionStorage.getItem('lastView');
+    if(lv) view = lv;
+    start();
+  } else {
+    sessionStorage.removeItem('sess');
+    onboarding2();
+  }
+}
+function start(){
+  appStarted = true;
+  try{ sessionStorage.setItem('sess','1'); }catch(e){}
+  syncBadge();
+  initPresence();
+  $('#teamBtn').classList.remove('hidden');
+  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync(); refreshVerTag();
+  loadTabs().then(() => {
+    const pt = TABS.find(x => x.kind === 'plan');
+    if(pt) loadPlanRows(pt.id);
+  });
+  if(SYNC){
+    subscribeAll();
+    loadChan();
+  }
+}
+
+/* ---------- ОНБОРДИНГ 1: кто вы ---------- */
+function onboarding1(){
+  const seen = new Set();
+  const uniq = MEMBERS.filter(m => { const k = surnameKey(m.name); if(seen.has(k)) return false; seen.add(k); return true; });
+  const opts = uniq.map(m => `<option value="${esc(m.name)}">${esc(m.name)} — ${esc(m.role||'')}</option>`).join('');
+  $('#sheet').innerHTML = `<h2>Кто вы?</h2>
+    <div class="card">
+      <p class="mut" style="margin-bottom:10px">Выберите себя из списка участников:</p>
+      <select id="existSel" ${MEMBERS.length?'':'disabled'}>
+        ${MEMBERS.length?opts:'<option value="">— пока никого нет —</option>'}
+      </select>
+      <div style="height:8px"></div>
+      <button class="pri" style="width:100%" onclick="pickExisting()" ${MEMBERS.length?'':'disabled'}>Это я</button>
+    </div>
+    <p class="mut" style="text-align:center;margin:6px 0">или</p>
+    <div class="card">
+      <p class="mut" style="margin-bottom:10px">Новый участник:</p>
+      <input id="nm" placeholder="Фамилия И.О."><div style="height:8px"></div>
+      <select id="rl"><option>ГИП / руководитель</option><option>Главный инженер</option><option>Инженер-конструктор</option><option>Инженер-геотехник</option><option>Инженер ПТО</option><option>Сметчик</option><option>Лаборант</option><option>Другое</option></select>
+      <div style="height:8px"></div><input id="rc_p" placeholder="Телефон (необязательно)"><div style="height:8px"></div>
+      <input id="rc_e" placeholder="E-mail (необязательно)"><div style="height:8px"></div>
+      <input id="rc_t" placeholder="Telegram, например @ivanov (необязательно)"><div style="height:8px"></div>
+      <input id="rc_m" placeholder="MAX: max.ru/u/… (необязательно)">
+      <div style="height:12px"></div><button class="sec" style="width:100%" onclick="regNew()">Зарегистрироваться</button>
+    </div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function pickExisting(){
+  const name = $('#existSel').value; if(!name) return;
+  const rec = MEMBERS.find(m => m.name === name);
+  me = {name, role: rec ? rec.role : ''}; store.set('user', me);
+  $('#overlay').style.display='none';
+  if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
+}
+// Идентификация участника с приоритетом ФАМИЛИИ: «Керимов А.Г» = «Керимов А.Г.» = «Керимов»
+function surnameKey(n){
+  const first = String(n||'').trim().split(/[\s]+/)[0] || '';
+  return first.toLowerCase().replace(/[^\p{L}]/gu, '');
+}
+function findMemberCase(n){
+  const k = surnameKey(n);
+  if(!k) return null;
+  // точное совпадение полного имени — в приоритете
+  const exact = MEMBERS.find(m => (m.name||'') === n);
+  if(exact) return exact;
+  // иначе совпадение по фамилии
+  return MEMBERS.find(m => surnameKey(m.name) === k) || null;
+}
+async function regNew(){
+  const n = $('#nm').value.trim(); if(!n) return alert('Введите имя');
+  const role = $('#rl').value;
+  const existing = findMemberCase(n);
+  if(existing){
+    // Имя-дубликат (например, с точкой/без) — входим под существующим, не создаём новую запись
+    me = {name:existing.name, role:existing.role||role}; store.set('user', me);
+    $('#overlay').style.display='none';
+    if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
+    return;
+  }
+  if(SYNC){ const {error} = await sb.from('members').insert({name:n, role, phone:$('#rc_p').value||null, email:$('#rc_e').value||null, telegram:$('#rc_t').value||null, max:$('#rc_m').value||null}); if(error && error.code!=='23505') return alert(error.message); }
+  me = {name:n, role}; store.set('user', me);
+  $('#overlay').style.display='none';
+  if(SYNC){ MYTEAMS = []; onboarding2(); } else start();
+}
+
+/* ---------- ОНБОРДИНГ 2: выбор команды ---------- */
+function onboarding2(){
+  const list = MYTEAMS.map(t => `<div class="card row" style="cursor:pointer;margin-bottom:8px;padding:14px" onclick="selectTeam('${t.id}')">
+    <div class="av" style="width:40px;height:40px;background:var(--acc)">👥</div>
+    <div style="flex:1"><b style="font-size:15px">${esc(t.name)}</b><br><span class="mut">${t.is_owner?'вы владелец':'участник'}</span></div>
+    ${team&&team.id===t.id?'<span style="color:var(--ok);font-size:20px">✓</span>':''}</div>`).join('');
+  $('#sheet').innerHTML = `<h2>Ваши команды</h2><p class="mut" style="margin-bottom:10px">Вы вошли как: <b style="color:var(--txt)">${esc(me.name)}</b>. Выберите команду для работы:</p>
+    ${list || `<div class="card" style="border-color:var(--warn);margin-bottom:10px">
+      <p>⚠️ Под именем <b>${esc(me.name)}</b> команд не найдено.</p>
+      <p class="mut" style="margin-top:6px">Если вы раньше создавали команды — вы вошли под другим написанием имени. Вернитесь и выберите себя точно (<b>Керимов А.Г</b> — без точки в конце).</p>
+      <div style="height:10px"></div>
+      <button class="sec" style="width:100%" onclick="store.del('user'); store.del('team'); me=null; team=null; appStarted=false; loadMembers().then(onboarding1)">← Выбрать другого участника</button>
+    </div>`}
+    <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Создать свою команду (видят только приглашённые):</p>
+      <div class="row"><input id="newTeamName" placeholder="Название команды / проекта"><button class="pri" onclick="createTeam()">Создать</button></div></div>
+    <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду приглашения:</p>
+      <div class="row"><input id="joinCode" placeholder="Код (6 символов)" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div></div>`;
+  $('#overlay').style.display = 'flex';
+}
+function selectTeam(id){
+  team = MYTEAMS.find(t => t.id === id); store.set('team', team);
+  $('#overlay').style.display='none'; dmWith = null; reloadAll();
+}
+function mkCode(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<6;i++) c+=a[Math.floor(Math.random()*a.length)]; return c; }
+async function createTeam(){
+  const name = $('#newTeamName').value.trim(); if(!name) return alert('Введите название');
+  if(!SYNC){ team = {id:'local'+Date.now(), name, is_owner:true}; store.set('team', team); $('#overlay').style.display='none'; dmWith = null; reloadAll(); return; }
+  const code = mkCode();
+  const {data, error} = await sb.from('teams').insert({name, owner:me.name, invite_code:code}).select().single();
+  if(error) return alert(error.message);
+  await sb.from('team_members').insert({team_id:data.id, member:me.name, is_owner:true});
+  MYTEAMS = await fetchMyTeams();
+  team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
+  $('#overlay').style.display='none'; dmWith = null; reloadAll();
+}
+async function joinTeam(){
+  const code = $('#joinCode').value.trim().toUpperCase(); if(code.length!==6) return alert('Введите код из 6 символов');
+  const {data, error} = await sb.from('teams').select('*').eq('invite_code', code).single();
+  if(error || !data) return alert('Команда с таким кодом не найдена');
+  const {error:e2} = await sb.from('team_members').insert({team_id:data.id, member:me.name, is_owner:false});
+  if(e2 && e2.code!=='23505') return alert(e2.message);
+  await sb.from('members').upsert({name:me.name, role:me.role||''}, {ignoreDuplicates:false, onConflict:'name'});
+  MYTEAMS = await fetchMyTeams();
+  team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
+  $('#overlay').style.display='none'; dmWith = null; reloadAll();
+}
+
+/* ---------- панель команды (шапка) ---------- */
+async function teamSheet(){
+  MYTEAMS = await fetchMyTeams();
+  const t = MYTEAMS.find(x => x.id === tid()) || team;
+  const list = MYTEAMS.map(x => `<button class="${x.id===tid()?'pri':'sec'}" style="width:100%;margin-bottom:8px" onclick="switchTeam('${x.id}')">👥 ${esc(x.name)}${x.is_owner?' · владелец':''}</button>`).join('');
+  $('#sheet').innerHTML = `<h2>Команды</h2>${list || '<p class="mut">Нет команд.</p>'}
+    <div class="card"><p class="mut" style="margin-bottom:8px">Создать новую команду:</p>
+      <div class="row"><input id="newTeamName" placeholder="Название"><button class="pri" onclick="createTeam()">Создать</button></div></div>
+    <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду:</p>
+      <div class="row"><input id="joinCode" placeholder="Код" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div></div>
+    ${t && t.is_owner ? `<div class="card"><p class="mut">Код приглашения в «${esc(t.name)}» (сообщите только своим):</p><div class="code">${esc(t.invite_code)}</div></div>`:''}
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display = 'flex';
+}
+function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
+function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; AZ_ENTRIES=null; start(); }
+async function teamMenuToggle(ev){
+  ev.stopPropagation();
+  if(!SYNC) return;
+  const old = document.getElementById('teamMenu');
+  if(old){ old.remove(); return; }
+  MYTEAMS = await fetchMyTeams();
+  const m = document.createElement('div');
+  m.id = 'teamMenu'; m.className = 'dropdown';
+  m.innerHTML = MYTEAMS.map(t => `<div class="di ${team&&team.id===t.id?'on':''}" onclick="document.getElementById('teamMenu').remove();switchTeam('${t.id}')">👥 ${esc(t.name)}${t.is_owner?' · моя':''}${team&&team.id===t.id?' ✓':''}</div>`).join('')
+    + `<div class="di" style="border-top:1px solid var(--brd);color:var(--acc)" onclick="document.getElementById('teamMenu').remove();teamSheet()">＋ Создать / вступить по коду…</div>`;
+  document.querySelector('header').appendChild(m);
+}
+const _tc = document.getElementById('teamChip'); if(_tc) _tc.onclick = () => teamSheet();
+document.addEventListener('click', e => {
+  const m = document.getElementById('teamMenu');
+  if(m && !e.target.closest('#teamMenu') && !e.target.closest('#teamBtn')) m.remove();
+});
+
+/* ---------- динамические вкладки (владелец) ---------- */
+document.querySelector('.tabbar').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if(b && b.dataset.tid){
+    view = 'tab:' + b.dataset.tid;
+    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
+    render();
+  }
+});
+async function loadTabs(){
+  if(!SYNC || !team) return;
+  TABS = await sbList('tabs', [['team_id', tid()]]);
+  if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
+  renderTabbar();
+  if(view.startsWith('tab:') || view === 'plan') render();
+}
+function renderTabbar(){
+  const av = document.getElementById('teamAv'), nm = document.getElementById('teamNm');
+  if(av) av.textContent = team ? (team.name||'?').trim().charAt(0).toUpperCase() : '🏗';
+  if(nm) nm.textContent = team ? team.name : 'Выбор команды';
+  const c = $('#dynTabs'); if(!c) return;
+  c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
+  if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
+  if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
+  if($('#agentBtn')){
+    $('#agentBtn').classList.toggle('hidden', !(team && team.is_owner));
+    if(team && team.is_owner && store.get('agentNotify')) $('#agentBtn').textContent = '🤖●';
+  }
+  if($('#cacheBtn')) $('#cacheBtn').classList.toggle('hidden', !(team && team.is_owner));
+}
+function membersSheet(){
+  if(!team) return;
+  $('#sheet').innerHTML = `<h2>${esc(team.name)} · ${TEAM_MEMBERS.length} чел.</h2>` +
+    TEAM_MEMBERS.map(m => { const mm = MEMBERS.find(x=>x.name===m.member)||{}; const on = ONLINE[m.member];
+      return `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av" style="${on?'box-shadow:0 0 0 2px var(--ok);':''}">${esc((m.member||'?')[0])}</div>
+      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc(mm.role||'Участник')}${on?' · 🟢 онлайн':''}</span></div></div>`; }).join('') +
+    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
+}
+function curTab(){ return TABS.find(t => 'tab:'+t.id === view); }
+function manageTabs(){
+  if(!(team && team.is_owner)) return;
+  $('#sheet').innerHTML = `<h2>Вкладки команды</h2>
+    ${TABS.map(t=>`<div class="card row"><span style="font-size:20px">${t.icon}</span><div style="flex:1"><b>${esc(t.name)}</b><p class="mut">${({link:'внешняя ссылка',text:'текстовая страница',list:'чек-лист',feed:'лента записей',az:'журнал авторского надзора',plan:'технический план реализации'})[t.kind]||t.kind}</p></div>
+      <button class="sec" style="padding:8px 10px" onclick="tabForm(${t.id})">✏️</button>
+      <button class="dng" style="padding:8px 10px" onclick="delTab(${t.id})">🗑</button></div>`).join('') || '<p class="mut">Своих вкладок пока нет.</p>'}
+    <div style="height:10px"></div><button class="pri" style="width:100%" onclick="tabForm()">＋ Создать вкладку</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
+}
+function tabForm(id){
+  const t = id ? TABS.find(x=>x.id===id) : null;
+  const cfg = t ? t.config : {};
+  $('#sheet').innerHTML = `<h2>${t?'Правка':'Новая'} вкладка</h2><div class="card">
+    <input id="tbN" placeholder="Название" value="${esc(t?t.name:'')}"><div style="height:8px"></div>
+    <div class="row"><select id="tbI" style="flex:1">${['📄','🔗','📝','☑','📰','📊','🧪','📐','⚠️','📅'].map(e=>`<option ${t&&t.icon===e?'selected':''}>${e}</option>`).join('')}</select>
+    <select id="tbK" style="flex:1" onchange="tabKindFill({})">
+      <option value="text" ${t&&t.kind==='text'?'selected':''}>📝 Текст</option>
+      <option value="link" ${t&&t.kind==='link'?'selected':''}>🔗 Ссылка</option>
+      <option value="list" ${t&&t.kind==='list'?'selected':''}>☑ Список</option>
+      <option value="feed" ${t&&t.kind==='feed'?'selected':''}>📰 Лента</option>
+      <option value="az" ${t&&t.kind==='az'?'selected':''}>📋 Журнал авторского надзора</option>
+    </select></div>
+    <div id="tbX" style="margin-top:8px"></div>
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="saveTab(${t?t.id:'null'})">💾 Сохранить</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="manageTabs()">← Назад</button></div>`;
+  $('#overlay').style.display='flex';
+  tabKindFill(cfg);
+}
+function tabKindFill(cfg){
+  const k = $('#tbK').value;
+  $('#tbX').innerHTML = k==='link' ? `<input id="tbU" placeholder="https://…" value="${esc(cfg.url||'')}">`
+    : k==='text' ? `<textarea id="tbT" rows="6" placeholder="Текст страницы…">${esc(cfg.text||'')}</textarea>`
+    : k==='list' ? `<textarea id="tbL" rows="4" placeholder="Пункты чек-листа, каждый с новой строки…">${esc((cfg.items||[]).map(i=>i.text).join('\n'))}</textarea>`
+    : `<p class="mut">Лента: все участники команды смогут публиковать записи.</p>`;
+}
+async function saveTab(id){
+  const name = $('#tbN').value.trim(); if(!name) return alert('Введите название');
+  const kind = $('#tbK').value; const icon = $('#tbI').value;
+  let config = {};
+  if(kind==='link'){ config.url = ($('#tbU') ? $('#tbU').value : '').trim(); if(!config.url) return alert('Укажите ссылку'); }
+  if(kind==='text'){ config.text = $('#tbT') ? $('#tbT').value : ''; }
+  if(kind==='list'){ config.items = ($('#tbL') ? $('#tbL').value : '').split('\n').map(s=>s.trim()).filter(Boolean).map(x=>({text:x, done:false})); }
+  if(id){ await sb.from('tabs').update({name, icon, kind, config}).eq('id',id); }
+  else { await sb.from('tabs').insert({team_id:tid(), name, icon, kind, config, pos:TABS.length, created_by:me.name}); }
+  manageTabs();
+}
+async function delTab(id){
+  if(!confirm('Удалить вкладку?')) return;
+  await sb.from('tabs').delete().eq('id',id);
+  if(view==='tab:'+id) view='chat';
+  manageTabs();
+}
+function editTabText(id){
+  const t = TABS.find(x=>x.id===id);
+  $('#sheet').innerHTML = `<h2>${esc(t.name)}</h2><div class="card"><textarea id="tbT2" rows="10">${esc(t.config.text||'')}</textarea><div style="height:10px"></div><button class="pri" style="width:100%" onclick="saveTabText(${id})">💾 Сохранить</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function saveTabText(id){
+  const t = TABS.find(x=>x.id===id);
+  await sb.from('tabs').update({config:{...t.config, text:$('#tbT2').value}}).eq('id',id);
+  $('#overlay').style.display='none'; render();
+}
+async function updTabCfg(id, cfg){ await sb.from('tabs').update({config:cfg}).eq('id',id); }
+async function addItem(id){
+  const t = curTab(); const items = (t.config.items||[]).slice();
+  const txt = $('#newItem').value.trim(); if(!txt) return;
+  items.push({text:txt, done:false, by:me.name});
+  await updTabCfg(id, {...t.config, items});
+}
+async function toggleItem(id, i){
+  const t = curTab(); const items = (t.config.items||[]).slice();
+  items[i].done = !items[i].done; items[i].by = me.name;
+  await updTabCfg(id, {...t.config, items});
+}
+async function delItem(id, i){
+  const t = curTab(); const items = (t.config.items||[]).slice();
+  items.splice(i,1);
+  await updTabCfg(id, {...t.config, items});
+}
+async function loadPosts(tabId){
+  const {data} = await sb.from('posts').select('*').eq('tab_id',tabId).order('created_at');
+  const el = $('#posts'); if(!el) return;
+  el.innerHTML = (data||[]).slice().reverse().map(p=>`<div class="card"><p>${linkify(p.body)}</p><p class="mut" style="margin-top:4px">${esc(p.author||'')} · ${fmtT(p.created_at)}</p></div>`).join('') || '<p class="mut">Записей нет.</p>';
+}
+async function addPost(tabId){
+  const b = $('#pText').value.trim(); if(!b) return;
+  await sb.from('posts').insert({tab_id:tabId, author:me.name, body:b});
+}
+function renderCustomTab(v){
+  const t = curTab(); if(!t){ view='chat'; render(); return; }
+  const isOwner = team && team.is_owner;
+  if(t.kind === 'link'){
+    const url = t.config.url || '';
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div class="card"><p class="mut" style="margin-bottom:10px;word-break:break-all">${esc(url)}</p>
+      <button class="pri" style="width:100%" onclick="window.open('${esc(url)}','_blank')">↗ Открыть</button></div>`;
+  }
+  if(t.kind === 'text'){
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div class="card">${linkify(t.config.text||'Пусто.').replace(/\n/g,'<br>')}</div>
+      ${isOwner?`<button class="sec" style="width:100%" onclick="editTabText(${t.id})">✏️ Править текст</button>`:''}`;
+  }
+  if(t.kind === 'list'){
+    const items = t.config.items || [];
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2>
+      <div class="card">${items.map((it,i)=>`<div class="mrow"><input type="checkbox" ${it.done?'checked':''} onchange="toggleItem(${t.id},${i})" style="width:auto;flex:none">
+        <div class="inf" style="${it.done?'text-decoration:line-through;color:var(--mut)':''}">${esc(it.text)}</div>
+        ${isOwner?`<button class="dng" style="padding:6px 10px" onclick="delItem(${t.id},${i})">✖</button>`:''}</div>`).join('') || '<p class="mut">Пунктов нет.</p>'}
+      <div style="height:8px"></div><div class="row"><input id="newItem" placeholder="Новый пункт…"><button class="pri" onclick="addItem(${t.id})">＋</button></div></div>`;
+  }
+  if(t.kind === 'feed'){
+    v.innerHTML = `<h2 class="pt">${t.icon} ${esc(t.name)}</h2><div id="posts"></div>
+      <div class="composer" style="border-radius:12px;border:1px solid var(--brd);margin-top:10px"><input id="pText" placeholder="Запись…" style="flex:1"><button onclick="addPost(${t.id})">➤</button></div>`;
+    loadPosts(t.id);
+  }
+  if(t.kind === 'az') renderAz(v, t);
+  if(t.kind === 'plan') renderPlan(v, t);
+  if(!['link','text','list','feed','az','plan'].includes(t.kind))
+    v.innerHTML = `<h2 class="pt">${t.icon||'📄'} ${esc(t.name)}</h2><p class="mut">Тип вкладки «${esc(t.kind)}» не поддерживается этой версией приложения. Обновите приложение: закройте полностью и откройте заново.</p>`;
+}
+
+/* ---------- Технический план: встроенная вкладда ---------- */
+const DEFAULT_PLAN = {"items":[
+ {"n":1,"title":"Подготовительный этап","dur":"2 нед","works":["Составление ППР на укрепление грунтов","Ограждение зоны работ, организация бытового городка","Геодезическая съёмка и закрепление контрольных точек на трубе и вокруг","Вводный инструктаж, допуски к работам"],"docs":"Проект (раздел «Общие положения»), СП 48.13330.2019"},
+ {"n":2,"title":"Бурение инъекционных скважин","dur":"по графику","works":["Разбивка скважин по проектной схеме","Бурение скважин заданного диаметра и глубины","Установка обсадных труб (при необходимости)","Регистрация фактических координат и глубин"],"docs":"Проект (раздел конструктивных решений), СП 45.13330.2017"},
+ {"n":3,"title":"Приготовление инъекционных смесей","dur":"постоянно","works":["Приёмка и входной контроль цемента (сертификаты, паспорта)","Приготовление смесей по проектным параметрам (водоцементное отношение)","Лабораторный контроль консистенции и сроков схватывания"],"docs":"Проект (раздел технологии работ), СП 70.13330.2012"},
+ {"n":4,"title":"Инъектирование (укрепление грунтов)","dur":"по графику","works":["Инъектирование по режимам проекта (давление, расход, объёмы)","Поэтапный контроль показателей (давление, расход смеси)","Ведение журнала инъектирования по скважинам","Анализ фактических объёмов против проектных"],"docs":"Проект (ключевой раздел), СП 45.13330.2017 п. 11"},
+ {"n":5,"title":"Контроль качества и испытания","dur":"по мере работ","works":["Контрольные скважины/опытные участки по проекту","Оценка фактической прочности укреплённого массива","АОСР на скрытые работы до закрытия","Оформление исполнительной документации"],"docs":"Проект, СП 70.13330.2012 п. 4.5 (АОСР)"},
+ {"n":6,"title":"Мониторинг дымовой трубы","dur":"весь период + эксплуатация","works":["Регулярные геодезические наблюдения за креном/осадками","Сравнение с проектными допусками","Учёт температурного режима грунтов","Отчёты по результатам циклов наблюдений"],"docs":"Проект (раздел мониторинга), журнал АН"},
+ {"n":7,"title":"Авторский надзор и приёмка","dur":"весь период","works":["Регулярные обходы с записями в журнале авторского надзора","Предписания по несоответствиям с контролем исполнения","Участие в освидетельствовании скрытых работ","Заключение о соответствии выполненных работ проекту"],"docs":"СП 246.1325800.2023, ГрК РФ ст. 55.24, ПП РФ № 963"}
+]};
+let planTabLock = null, appStarted = false;
+async function ensurePlanTab(){
+  let t = TABS.find(x => x.kind==='plan');
+  if(t) return t;
+  if(planTabLock) return planTabLock;
+  planTabLock = (async () => {
+    try{
+      const ins = await sb.from('tabs').insert({team_id: tid(), name:'Технический план реализации', icon:'🗺', kind:'plan', config: DEFAULT_PLAN, pos: 5, created_by:'Система'}).select().single();
+      if(ins.data){ TABS.push(ins.data); renderTabbar(); renderStructBar(); return ins.data; }
+      // конфликт уникального индекса — подхватываем существующую
+      const { data } = await sb.from('tabs').select('*').eq('team_id', tid()).eq('kind','plan').maybeSingle();
+      if(data && !TABS.find(x=>x.id===data.id)) TABS.push(data);
+      return data || null;
+    } finally { planTabLock = null; }
+  })();
+  return planTabLock;
+}
+
+/* ---------- Технический план реализации (интерактивный + консультации) ---------- */
+async function renderPlan(v, t){
+  const c = t.config;
+  if(!PLAN_ROWS.length) await loadPlanRows(t.id);
+  const done = store.get('plan_done_' + t.id, []);
+  v.innerHTML = `<div class="row" style="margin-bottom:8px"><h2 class="pt" style="flex:1;margin:0">🗺 ${esc(t.name)}</h2>
+    ${canReport()?`<button class="pri" style="padding:7px 12px" onclick="reportForm('all')">📄 Сводный отчёт</button>`:''}</div>
+   <p class="mut" style="margin-bottom:10px">План по проекту Ф-2024-НОК-ДТ-0424-КР. Раскройте пункт до состава работ: каждая работа — статус, ответственный, документы и фотоотчёт.</p>
+   ${(c.items||[]).map((it,i)=>{
+     const works = it.works||[];
+     const rows = works.map(w => PLAN_ROWS.find(r => r.tab_id===t.id && r.item_n===it.n && r.work===w) || {status:'Не начат', responsible:null, files:[]});
+     const doneCnt = rows.filter(r=>r.status==='Выполнено').length;
+     return `<div class="card" style="${done.includes(i)?'opacity:.85':''}">
+     <div class="row" style="align-items:flex-start">
+       <div class="av" style="flex:none;${done.includes(i)?'background:var(--ok)':''}">${done.includes(i)?'✓':it.n}</div>
+       <div style="flex:1"><b>${esc(it.title)}</b> <span class="badge">${esc(it.dur||'')}</span>
+         <div class="mut" style="font-size:11.5px;margin-top:2px">Готовность работ: ${doneCnt}/${works.length} · 📎 ${esc(it.docs||'')}</div></div>
+     </div>
+     <details style="margin-top:8px" ${doneCnt>0?'open':''}><summary class="mut" style="cursor:pointer;font-size:13px">Состав работ — исполнение (${doneCnt}/${works.length})</summary>
+       ${works.map((w,j)=>{
+         const r = rows[j];
+         return `<div class="mrow" style="align-items:flex-start;border-bottom:1px solid var(--brd)">
+           <div style="flex:1;min-width:0">
+             <div class="row"><span style="flex:1;font-size:13.5px;${r.status==='Выполнено'?'text-decoration:line-through;color:var(--mut)':''}">${r.status==='Выполнено'?'✓ ':''}${esc(w)}</span></div>
+             <div class="row" style="margin-top:5px;flex-wrap:wrap">
+               ${[0,1,2].map(ri=>{
+                 const cur = (r.responsibles||[])[ri] || '';
+                 return `<select onchange="planWorkResp(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}',${ri},this.value)" style="flex:1;min-width:31%;padding:6px 6px;font-size:12.5px" title="Ответственный ${ri+1}">
+                   <option value="">${ri===0?'Ответственный…':'—'}</option>
+                   ${TEAM_MEMBERS.map(m=>`<option ${m.member===cur?'selected':''}>${esc(m.member)}</option>`).join('')}
+                 </select>`;
+               }).join('')}
+               <button class="sec" style="padding:6px 10px;flex:none" onclick="planWorkAttach(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">📎 Док/фото</button>
+             </div>
+             <div class="row" style="margin-top:4px">
+               <span class="badge ${r.status==='Выполнено'?'ok':r.status==='В работе'?'warn':''}" style="cursor:pointer;flex:none" title="Нажмите — сменить статус" onclick="planWorkStatus(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">${r.status==='Выполнено' ? '✓ ' + r.status : r.status}</span>
+               ${(r.responsibles||[]).filter(Boolean).length ? `<span class="mut" style="font-size:11.5px;flex:1">👥 ${(r.responsibles||[]).filter(Boolean).map(x=>x.split(' ')[0]).join(', ')}</span>` : ''}
+             </div>
+             ${(r.files&&r.files.length)?`<div style="margin-top:5px">${r.files.map((f,k)=>f.img?`<img src="${f.url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;margin-right:4px" onclick="window.open('${f.url}','_blank')">`:`<a href="${f.url}" target="_blank" style="font-size:12px;color:var(--acc)">📄 ${esc(f.name)}</a>`).join(' ')}</div>`:''}
+           </div>
+         </div>`;}).join('')}
+     </details>
+     <div class="row" style="margin-top:8px;flex-wrap:wrap">
+       <button class="sec" style="padding:7px 12px" onclick="planConsultSheet(${i})">❓ Консультация</button>
+       ${canReport()?`<button class="sec" style="padding:7px 12px" onclick="reportForm(${it.n})">📄 Отчёт по этапу</button>`:''}
+       <button class="${done.includes(i)?'sec':'pri'}" style="padding:7px 12px" onclick="planToggle(${t.id},${i})">${done.includes(i)?'↩ В работу':'✔ Пункт выполнен'}</button>
+     </div>
+   </div>`;}).join('')}
+   <p class="mut" style="text-align:center">Пунктов выполнено: ${done.length}/${(c.items||[]).length}</p>`;
+}
+async function loadPlanRows(tabId){
+  try{
+    const {data, error} = await sb.from('plan_works').select('*').eq('tab_id', tabId);
+    if(!error) PLAN_ROWS = data || [];
+  }catch(e){ /* оставляем прежнее */ }
+}
+function planRowKey(tabId, n, work){ return PLAN_ROWS.find(r => r.tab_id===tabId && r.item_n===n && r.work===work); }
+async function planWorkUpsert(tabId, n, work, patch){
+  const existing = planRowKey(tabId, n, work);
+  let row;
+  if(existing){
+    const {data} = await sb.from('plan_works').update(patch).eq('id', existing.id).select().single();
+    row = data;
+    Object.assign(existing, patch);
+  } else {
+    const {data} = await sb.from('plan_works').insert({tab_id: tabId, item_n: n, work, ...patch}).select().single();
+    row = data; if(row) PLAN_ROWS.push(row);
+  }
+  renderStructBar();
+  return row;
+}
+async function planWorkStatus(tabId, n, work){
+  const r = planRowKey(tabId, n, work);
+  const cur = r ? r.status : 'Не начат';
+  const next = cur==='Не начат' ? 'В работе' : cur==='В работе' ? 'Выполнено' : 'Не начат';
+  await planWorkUpsert(tabId, n, work, {status: next, done_at: next==='Выполнено' ? new Date().toISOString() : null});
+  render();
+}
+async function planWorkResp(tabId, n, work, idx, member){
+  const r = planRowKey(tabId, n, work);
+  const arr = [...((r && r.responsibles) || [])];
+  while(arr.length < 3) arr.push(null);
+  arr[idx] = member || null;
+  const filtered = arr.filter(Boolean).slice(0, 3);
+  await planWorkUpsert(tabId, n, work, {responsible: filtered[0] || null, responsibles: filtered});
+}
+async function planWorkAttach(tabId, n, work){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if(!f) return;
+    const path = tid() + '/plan/' + tabId + '/' + n + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+    const up = await sb.storage.from('files').upload(path, f);
+    if(up.error) return alert(up.error.message);
+    const url = sb.storage.from('files').getPublicUrl(path).data.publicUrl;
+    const r = planRowKey(tabId, n, work);
+    const files = [...((r && r.files) || []), {name: f.name, url, img: f.type.startsWith('image/'), by: me.name, at: now()}];
+    await planWorkUpsert(tabId, n, work, {files});
+    render();
+  };
+  inp.click();
+}
+function planToggle(tabId, i){
+  const k = 'plan_done_' + tabId;
+  let d = store.get(k, []);
+  d = d.includes(i) ? d.filter(x=>x!==i) : [...d, i];
+  store.set(k, d); render();
+}
+function planConsultSheet(i){
+  const t = curTab(); const it = (t.config.items||[])[i]; if(!it) return;
+  $('#sheet').innerHTML = `<h2>❓ Пункт ${it.n}: ${esc(it.title)}</h2>
+   <p class="mut" style="margin-bottom:8px">Ответ формируется строго по этому пункту: сначала анализ вопроса, затем поиск по проекту и нормативке, затем ответ со ссылками на источники. Без домыслов.</p>
+   <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
+     ${['Что проверять на этом этапе?','Какие документы оформить?','Типичные нарушения и как их избежать','Как контролируется качество?'].map(x=>`<span class="struct-chip" onclick="planAsk(${i},'${x}')">${x}</span>`).join('')}
+   </div>
+   <div id="consLog" style="max-height:42vh;overflow-y:auto"></div>
+   <div class="row" style="margin-top:8px">
+     <input id="consInp" placeholder="Ваш вопрос по пункту…" style="flex:1" onkeydown="if(event.key==='Enter')planAsk(${i},null)">
+     <button class="pri" onclick="planAsk(${i},null)">➤</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+async function planAsk(i, preset){
+  const t = curTab(); const it = (t.config.items||[])[i];
+  const inp = document.getElementById('consInp');
+  const qText = preset || (inp ? inp.value : '').trim();
+  if(!qText) return;
+  if(inp) inp.value = '';
+  const log = document.getElementById('consLog');
+  log.innerHTML += `<div class="msg" style="max-width:100%;margin-top:8px"><b>Вы</b><div>${esc(qText)}</div></div>`;
+  const pend = document.createElement('div');
+  pend.className = 'msg me'; pend.style.maxWidth='100%'; pend.style.marginTop='8px';
+  pend.innerHTML = '<b>🤖 Консультант</b><div>🔍 Этап 1/3. Анализ вопроса…</div>';
+  log.appendChild(pend); log.scrollTop = log.scrollHeight;
+  const div = pend.querySelector('div');
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/consult', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({team_id: tid(), question: qText,
+        item: {n: it.n, title: it.title, works: it.works || [], docs: it.docs || ''}})
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!(r.ok && j.ok)){
+      div.textContent = 'Ошибка: ' + ((j && j.error) || r.status);
+    } else {
+      div.innerHTML = '<div style="white-space:pre-wrap">' + esc(j.text) + '</div>'
+        + (j.sources && j.sources.length ? '<div class="mut" style="font-size:11px;margin-top:8px">Источники: ' + esc(j.sources.join(' · ')) + '</div>' : '');
+    }
+  }catch(e){ div.textContent = 'Нет связи: ' + e.message; }
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ---------- Отчёты (владелец + делегированные) ---------- */
+function canReport(){
+  if(!team || !me) return false;
+  if(team.is_owner) return true;
+  const tm = TEAM_MEMBERS.find(x => x.member === me.name);
+  return !!(tm && tm.can_report);
+}
+function reportForm(scope){
+  if(!canReport()) return alert('Формирование отчётов доступно владельцу или делегированному члену команды.');
+  const t = curTab(); const c = t.config;
+  const secs = [
+    ['head','Реквизиты (объект, шифр, дата, составил)', true],
+    ['works','Состав работ со статусами и ответственными', true],
+    ['files','Документы и фотоотчёты', true],
+    ['az','Записи журнала авторского надзора', false],
+    ['tasks','Задачи команды', false],
+    ['stages','Этапы НИОКР', false],
+    ['sum','Выводы и готовность', true]
+  ];
+  $('#sheet').innerHTML = `<h2>📄 ${scope==='all' ? 'Сводный отчёт' : 'Отчёт по этапу'}</h2>
+   <div class="card"><p class="mut" style="margin-bottom:8px">Разделы отчёта (отметьте галочками):</p>
+   ${secs.map(s=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--brd)">
+     <input type="checkbox" id="rs_${s[0]}" ${s[2]?'checked':''} style="width:auto;flex:none"> <span style="flex:1">${s[1]}</span></label>`).join('')}
+   <div style="height:12px"></div>
+   <button class="pri" style="width:100%" onclick="reportBuild('${scope==='all'?'all':scope}')">⚙️ Сформировать отчёт</button></div>
+   <div id="repOut"></div>`;
+  $('#overlay').style.display='flex';
+}
+async function reportBuild(scope){
+  const t = curTab(); const c = t.config;
+  const azTab = TABS.find(x=>x.kind==='az');
+  if(azTab && !AZ_ENTRIES) await loadAz(azTab.id);
+  if(!rTasks && SYNC) await loadTasks();
+  if(STAGES===null && SYNC) await loadStages();
+  const g = id => { const el = document.getElementById('rs_'+id); return el && el.checked; };
+  const items = scope==='all' ? (c.items||[]) : (c.items||[]).filter(x=>x.n===scope);
+  let out = '';
+  if(g('head')){
+    out += 'ОТЧЁТ ' + (scope==='all' ? 'ПО РЕАЛИЗАЦИИ ПРОЕКТА' : 'ПО ЭТАПУ ' + scope) + '\n';
+    out += 'Объект: ' + (azTab ? (azTab.config.object||'') : (c.object||'')) + '\n';
+    out += 'Проект: Ф-2024-НОК-ДТ-0424-КР · Команда: ' + team.name + '\n';
+    out += 'Составил: ' + me.name + ' (' + (me.role||'') + ') · Дата: ' + new Date().toLocaleDateString('ru-RU') + '\n\n';
+  }
+  if(g('works')){
+    out += '1. СОСТАВ РАБОТ\n';
+    items.forEach(it => {
+      out += '\nЭтап ' + it.n + '. ' + it.title + ' (' + (it.dur||'') + ')\n';
+      (it.works||[]).forEach(w => {
+        const r = planRowKey(t.id, it.n, w);
+        const st = r ? r.status : 'Не начат';
+        out += '  [' + st + '] ' + w + (r && (r.responsibles||[]).filter(Boolean).length ? ' — отв.: ' + (r.responsibles||[]).filter(Boolean).join(', ') : '') + '\n';
+      });
+    });
+    out += '\n';
+  }
+  if(g('files')){
+    out += '2. ДОКУМЕНТЫ И ФОТООТЧЁТЫ\n';
+    let n = 0;
+    PLAN_ROWS.filter(r=>r.tab_id===t.id && items.some(it=>it.n===r.item_n) && r.files && r.files.length).forEach(r=>{
+      r.files.forEach(f=>{ n++; out += '  ' + n + '. ' + f.name + ' (' + (f.by||'') + ', ' + (f.at||'') + ') — ' + f.url + '\n'; });
+    });
+    out += (n ? '' : '  Нет вложений.\n') + '\n';
+  }
+  if(g('az')){
+    out += '3. ЖУРНАЛ АВТОРСКОГО НАДЗОРА (СП 246.1325800.2023)\n';
+    (AZ_ENTRIES||[]).forEach(e=>{ out += '  ' + e.entry_date + ' ' + String(e.entry_time).slice(0,5) + ' — ' + e.works + ' [' + e.conformity + ']' + (e.prescription ? ' Предписание: ' + e.prescription + ' (' + e.pres_status + ')' : '') + '\n'; });
+    out += '\n';
+  }
+  if(g('tasks')){
+    out += '4. ЗАДАЧИ КОМАНДЫ\n';
+    (rTasks||[]).slice().reverse().forEach(x=>{ out += '  [' + x.status + '] ' + x.title + (x.assignee ? ' → ' + x.assignee : '') + '\n'; });
+    out += '\n';
+  }
+  if(g('stages')){
+    out += '5. ЭТАПЫ НИОКР\n';
+    (STAGES||[]).forEach(s=>{ out += '  Этап ' + s.num + ' «' + s.title + '» — ' + s.status + (s.responsible ? ' (' + s.responsible + ')' : '') + '\n'; });
+    out += '\n';
+  }
+  if(g('sum')){
+    const all = [];
+    items.forEach(it => (it.works||[]).forEach(w => all.push({it: it.n, w, r: planRowKey(t.id, it.n, w)})));
+    const dn = all.filter(x=>x.r && x.r.status==='Выполнено').length;
+    out += '6. ВЫВОДЫ\n  Выполнено работ: ' + dn + ' из ' + all.length + ' (' + Math.round(dn/all.length*100) + '%).\n';
+    const open = all.filter(x=>!x.r || x.r.status!=='Выполнено');
+    if(open.length) out += '  Открыто: ' + open.map(x=>'этап ' + x.it + ' — ' + x.w).join('; ') + '.\n';
+    else out += '  Все работы пункта выполнены.\n';
+  }
+  document.getElementById('repOut').innerHTML = `<div class="card" style="margin-top:10px"><b>Готовый отчёт</b>
+    <pre style="white-space:pre-wrap;font:inherit;font-size:13px;margin-top:8px;max-height:35vh;overflow-y:auto">${esc(out)}</pre>
+    <div class="row" style="margin-top:8px">
+      <button class="sec" style="flex:1" onclick="navigator.clipboard.writeText(document.querySelector('#repOut pre').textContent).then(()=>alert('Скопировано'))">📋 Копировать</button>
+      <button class="pri" style="flex:1" onclick="reportPublish()">📢 В объявления</button>
+    </div></div>`;
+  window._reportText = out;
+}
+async function reportPublish(){
+  if(!window._reportText) return;
+  await sb.from('announcements').insert({team_id: tid(), body: window._reportText.slice(0, 4000), author: me.name});
+  alert('Опубликовано в объявлениях ✅');
+}
+
+/* ---------- Журнал авторского надзора (СП 246.1325800.2023) ---------- */
+let AZ_ENTRIES = [], azWeatherCache = null, azWTime = 0;
+async function loadAz(tabId){
+  const {data, error} = await sb.from('az_entries').select('*').eq('tab_id', tabId).order('entry_date').order('entry_time');
+  AZ_ENTRIES = error ? [] : data;
+}
+async function fetchWeather(cfg){
+  const now = Date.now();
+  if(azWeatherCache && now - azWTime < 1800000) return azWeatherCache;
+  try{
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${cfg.lat||69.35}&longitude=${cfg.lon||88.2}&current=temperature_2m,precipitation,weather_code&timezone=Asia%2FKrasnoyarsk`);
+    const j = await r.json();
+    const c = j.current || {};
+    const codes = {0:'ясно',1:'преим. ясно',2:'перем. облачность',3:'пасмурно',45:'туман',48:'изморозь',51:'морось',53:'морось',55:'морось',61:'дождь',63:'дождь',65:'сильный дождь',71:'снег',73:'снег',75:'сильный снег',77:'снег',80:'ливень',81:'ливень',82:'сильный ливень',85:'снегопад',86:'снегопад',95:'гроза',96:'гроза с градом',99:'гроза с градом'};
+    azWeatherCache = { temp: c.temperature_2m, precip: c.precipitation, desc: codes[c.weather_code]||'', manual:false };
+    azWTime = now;
+  }catch(e){ azWeatherCache = { temp:null, precip:null, desc:'нет данных', manual:true }; }
+  return azWeatherCache;
+}
+async function renderAz(v, t){
+  const c = t.config, isOwner = team && team.is_owner;
+  if(AZ_ENTRIES===null){ v.innerHTML='<p class="mut">Загрузка…</p>'; await loadAz(t.id); }
+  const w = await fetchWeather(c);
+  const today = new Date().toISOString().slice(0,10);
+  const nowT = new Date().toTimeString().slice(0,5);
+  v.innerHTML = `
+  <div class="card" style="background:var(--card2)">
+    <b>Титульные данные</b>
+    <p class="mut" style="margin-top:6px">Объект: <b style="color:var(--txt)">${esc(c.object||'—')}</b><br>
+    Застройщик: ${esc(c.customer||'—')} · Проектировщик: ${esc(c.designer||'—')}<br>
+    Шифр проекта: ${esc(c.project_code||'—')} · ГИП: ${esc(c.gip||'—')}<br>
+    Руководитель авторского надзора: ${esc(c.az_head||'—')} · ${esc(c.contract||'')}</p>
+    ${isOwner?`<div style="height:8px"></div><button class="sec" style="padding:6px 12px" onclick="azTitulForm(${t.id})">✏️ Править титульные данные</button>`:''}
+  </div>
+
+  <div class="card">
+    <b>Новая запись</b> <span class="mut">(лист учёта посещений — п. 6.6 СП 246.1325800.2023)</span>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <input type="date" id="azD" value="${today}" style="flex:1;min-width:120px">
+      <input type="time" id="azT" value="${nowT}" style="flex:1;min-width:100px">
+      <input id="azW" placeholder="Погода" value="${w.desc}${w.temp!==null&&w.temp!==undefined?', '+w.temp+'°C':''}${w.precip?' | осадки '+w.precip+' мм':''}" style="flex:2;min-width:150px" title="Автозаполнено по метеоданным (можно править)">
+    </div>
+    <div class="mut" style="margin-top:8px">Виды выполненных работ (по проекту ${esc(c.project_code||'')}):</div>
+    <div id="azWorks">${(c.works||[]).map((x,i)=>`<span class="badge" style="cursor:pointer;margin:3px 3px 0 0;padding:5px 10px" id="azw${i}" onclick="this.classList.toggle('on');this.style.background=this.classList.contains('on')?'var(--acc)':'';this.style.color=this.classList.contains('on')?'#fff':''">${esc(x)}</span>`).join('')}</div>
+    <div class="row" style="margin-top:8px">
+      <textarea id="azWorksT" rows="2" placeholder="Опишите работы вручную или диктуйте 🎙…" style="flex:1"></textarea>
+    </div>
+    <div class="row" style="margin-top:6px;flex-wrap:wrap">
+      <button class="sec" style="padding:7px 12px" id="azMicBtn" onclick="azVoice()">🎙 Диктовать</button>
+      <button class="sec" style="padding:7px 12px" onclick="azPolish()">✨ Интеллектуальная обработка</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <select id="azConf" style="flex:1"><option>Соответствует проектным решениям</option><option>Частично соответствует</option><option>Не соответствует</option></select>
+    </div>
+    <textarea id="azRem" rows="2" placeholder="Замечания (при наличии)…" style="margin-top:8px"></textarea>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <input id="azPres" placeholder="Предписание (при наличии)…" style="flex:2;min-width:150px">
+      <input type="date" id="azPresD" style="flex:1;min-width:120px" title="Срок исполнения предписания">
+    </div>
+    <div class="mut" style="margin-top:8px">Присутствовали (автор надзора подписывает запись автоматически):</div>
+    <div>${TEAM_MEMBERS.filter(m=>m.member!==me.name).map(m=>`<label style="display:inline-flex;gap:4px;align-items:center;margin:4px 10px 0 0;font-size:13px"><input type="checkbox" class="azPresChk" value="${esc(m.member)}" style="width:auto"> ${esc(m.member)}</label>`).join('')}</div>
+    <div style="height:10px"></div>
+    <button class="pri" style="width:100%" onclick="azAdd(${t.id})">✍️ Внести запись (от ${esc(me.name)})</button>
+  </div>
+
+  <h2 class="pt">Записи журнала (${AZ_ENTRIES.length})</h2>
+  ${AZ_ENTRIES.slice().reverse().map(e=>`
+  <div class="card">
+    <div class="row"><b style="flex:1">🗓 ${e.entry_date} · ${String(e.entry_time).slice(0,5)}</b>
+      <span class="badge ${e.conformity.indexOf('Не соотв')===0?'bad':e.conformity.indexOf('Частично')===0?'warn':'ok'}">${esc(e.conformity)}</span>
+      ${e.pres_status==='Исполнено'?'<span class="badge ok">предписание исполнено</span>':e.prescription?'<span class="badge warn">предписание открыто</span>':''}
+    </div>
+    <p class="mut" style="margin-top:4px">🌡 ${esc(e.weather||'—')} · Автор записи: ${esc(e.author||'—')} (${esc(e.author_role||'')})</p>
+    <p style="margin-top:6px">${esc(e.works)}</p>
+    ${e.remarks?`<p style="margin-top:4px">⚠ Замечания: ${esc(e.remarks)}</p>`:''}
+    ${e.prescription?`<p style="margin-top:4px">📌 Предписание: ${esc(e.prescription)} — срок ${e.pres_deadline||'—'} · статус:
+      <select onchange="azPresSet(${e.id}, this.value)" style="width:auto;display:inline-block;padding:4px 8px">
+        ${['Открыто','Исполнено','Просрочено'].map(s=>`<option ${s===e.pres_status?'selected':''}>${s}</option>`).join('')}
+      </select></p>`:''}
+    <p class="mut" style="margin-top:4px">Присутствовали: ${(e.present||[]).join(', ')||'—'}</p>
+    ${isOwner ? `<div class="row" style="margin-top:6px">
+      <button class="sec" style="padding:6px 10px" onclick="azEditForm(${e.id})">✏️ Править</button>
+      <button class="dng" style="padding:6px 10px" onclick="azDel(${e.id})">🗑 Удалить</button>
+    </div>` : ''}
+  </div>`).join('') || '<p class="mut">Записей пока нет.</p>'}`;
+}
+let azRec = null;
+function azVoice(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById('azMicBtn');
+  if(!SR) return alert('Голосовой ввод не поддерживается браузером (используйте Chrome)');
+  if(azRec){ try{ azRec.stop(); }catch(e){} azRec = null; if(btn) btn.textContent='🎙 Диктовать'; return; }
+  azRec = new SR();
+  azRec.lang = 'ru-RU'; azRec.interimResults = false; azRec.maxAlternatives = 1;
+  azRec.onresult = (e) => {
+    const t = e.results[0][0].transcript;
+    const ta = document.getElementById('azWorksT');
+    if(ta) ta.value = (ta.value ? ta.value + ' ' : '') + t;
+    if(btn) btn.textContent = '🎙 Диктовать';
+    azRec = null;
+  };
+  azRec.onerror = () => { if(btn) btn.textContent='🎙 Диктовать'; azRec = null; };
+  azRec.onend = () => { if(btn) btn.textContent='🎙 Диктовать'; azRec = null; };
+  azRec.start();
+  if(btn) btn.textContent = '🔴 Слушаю… (тап — стоп)';
+}
+async function azPolish(){
+  const ta = document.getElementById('azWorksT');
+  const raw = (ta ? ta.value : '').trim();
+  if(!raw) return alert('Сначала продиктуйте или введите текст');
+  ta.value = '⏳ Обработка диктовки…';
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/az-polish', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: raw})
+    });
+    const j = await r.json().catch(()=>({}));
+    ta.value = (j && j.text) ? j.text : raw;
+  }catch(e){ ta.value = raw; alert('Обработка недоступна, оставлен исходный текст'); }
+}
+async function azEditForm(id){
+  const e = (AZ_ENTRIES||[]).find(x=>x.id===id); if(!e) return;
+  const c = curTab().config;
+  $('#sheet').innerHTML = `<h2>✏️ Правка записи ${e.entry_date}</h2><div class="card">
+    <div class="row"><input type="date" id="azE_d" value="${e.entry_date}" style="flex:1"><input type="time" id="azE_t" value="${String(e.entry_time).slice(0,5)}" style="flex:1"></div>
+    <div style="height:8px"></div><input id="azE_w" placeholder="Погода" value="${esc(e.weather||'')}">
+    <div style="height:8px"></div><textarea id="azE_x" rows="3">${esc(e.works)}</textarea>
+    <div style="height:8px"></div>
+    <select id="azE_c">${['Соответствует проектным решениям','Частично соответствует','Не соответствует'].map(s=>`<option ${s===e.conformity?'selected':''}>${s}</option>`).join('')}</select>
+    <div style="height:8px"></div><textarea id="azE_r" rows="2" placeholder="Замечания">${esc(e.remarks||'')}</textarea>
+    <div style="height:8px"></div><input id="azE_p" placeholder="Предписание" value="${esc(e.prescription||'')}">
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="azEditSave(${e.id})">💾 Сохранить</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Отмена</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+async function azEditSave(id){
+  const patch = {
+    entry_date: $('#azE_d').value, entry_time: $('#azE_t').value + ':00',
+    weather: $('#azE_w').value, works: $('#azE_x').value.trim(),
+    conformity: $('#azE_c').value, remarks: $('#azE_r').value || null,
+    prescription: $('#azE_p').value || null
+  };
+  if(!patch.works) return alert('Укажите содержание работ');
+  await sb.from('az_entries').update(patch).eq('id', id);
+  $('#overlay').style.display='none';
+  AZ_ENTRIES = null;
+  if(curTab()) loadAz(curTab().id);
+}
+async function azDel(id){
+  if(!confirm('Удалить запись журнала?')) return;
+  await sb.from('az_entries').delete().eq('id', id);
+  AZ_ENTRIES = null;
+  if(curTab()) loadAz(curTab().id);
+}
+async function azAdd(tabId){
+  const t = curTab();
+  const sel = [];
+  document.querySelectorAll('#azWorks .badge.on').forEach(x => sel.push(x.textContent));
+  const manual = $('#azWorksT').value.trim();
+  const works = [...sel, manual].filter(Boolean).join('; ');
+  if(!works) return alert('Укажите виды выполненных работ');
+  const present = [...document.querySelectorAll('.azPresChk:checked')].map(x=>x.value);
+  const row = {
+    tab_id: tabId,
+    entry_date: $('#azD').value, entry_time: $('#azT').value + ':00',
+    weather: $('#azW').value,
+    works, conformity: $('#azConf').value,
+    remarks: $('#azRem').value||null,
+    prescription: $('#azPres').value||null, pres_deadline: $('#azPresD').value||null,
+    pres_status: $('#azPres').value ? 'Открыто' : 'Нет',
+    author: me.name, author_role: me.role, present
+  };
+  const {error} = await sb.from('az_entries').insert(row);
+  if(error) return alert(error.message);
+  AZ_ENTRIES = null;
+  render();
+}
+async function azPresSet(id, val){
+  await sb.from('az_entries').update({pres_status: val}).eq('id', id);
+  AZ_ENTRIES = null; render();
+}
+function azTitulForm(tabId){
+  const t = curTab(); const c = t.config;
+  $('#sheet').innerHTML = `<h2>Титульные данные журнала</h2><div class="card">
+   <input id="azF1" placeholder="Объект" value="${esc(c.object||'')}"><div style="height:8px"></div>
+   <input id="azF2" placeholder="Адрес" value="${esc(c.address||'')}"><div style="height:8px"></div>
+   <div class="row"><input id="azF3" placeholder="Застройщик" value="${esc(c.customer||'')}"><input id="azF4" placeholder="Проектировщик" value="${esc(c.designer||'')}"></div><div style="height:8px"></div>
+   <div class="row"><input id="azF5" placeholder="Шифр проекта" value="${esc(c.project_code||'')}"><input id="azF6" placeholder="ГИП" value="${esc(c.gip||'')}"></div><div style="height:8px"></div>
+   <div class="row"><input id="azF7" placeholder="Руководитель авторского надзора" value="${esc(c.az_head||'')}"><input id="azF8" placeholder="Договор АН" value="${esc(c.contract||'')}"></div>
+   <div style="height:12px"></div>
+   <button class="pri" style="width:100%" onclick="azTitulSave(${tabId})">💾 Сохранить</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function azTitulSave(tabId){
+  const t = curTab();
+  await sb.from('tabs').update({config:{...t.config, object:$('#azF1').value, address:$('#azF2').value, customer:$('#azF3').value, designer:$('#azF4').value, project_code:$('#azF5').value, gip:$('#azF6').value, az_head:$('#azF7').value, contract:$('#azF8').value}}).eq('id',tabId);
+  $('#overlay').style.display='none';
+}
+$('#tabsBtn').onclick = () => manageTabs();
+$('#membersBtn').onclick = () => membersSheet();
+$('#who').onclick = () => { if(SYNC && Object.keys(ONLINE).length) onlineSheet(); };
+function autoSet(){
+  const b = $('#autoBtn'); if(!b) return;
+  b.style.borderColor = AUTO ? 'var(--acc)' : 'var(--brd2)';
+  b.style.color = AUTO ? 'var(--acc)' : 'var(--mut)';
+  b.style.background = AUTO ? '#7a541014' : 'none';
+  b.title = 'Автообновление: ' + (AUTO ? 'вкл (каждые 5 мин)' : 'выкл — нажмите для включения');
+  clearInterval(autoTimer); autoTimer = null;
+  if(AUTO && SYNC){
+    autoTimer = setInterval(async () => {
+      await Promise.all([loadChan(), loadTasks(), loadNews(), loadDocs(), loadStages(), loadMembers(), loadTeamMembers(), loadTabs(), loadDmPartners()]);
+      if(team && team.is_owner) qaScanNow();
+    }, 300000);
+  }
+}
+$('#autoBtn').onclick = () => { AUTO = !AUTO; store.set('auto', AUTO); autoSet(); };
+$('#syncBadge').onclick = async () => {
+  const b = $('#syncBadge');
+  if(!SYNC){ location.reload(); return; }
+  b.textContent = '⟳ …';
+  await Promise.all([loadChan(), loadTasks(), loadNews(), loadDocs(), loadStages(), loadMembers(), loadTeamMembers(), loadTabs(), loadDmPartners()]);
+  render();
+  b.textContent = 'Синхрон'; b.classList.add('on');
+  setTimeout(() => syncBadge(), 1500);
+};
+const VAPID_PUBLIC = '${VAPID_PUBLIC}';
+function urlB64ToUint8(b){ const p = '='.repeat((4-b.length%4)%4); const s = (b+p).replace(/-/g,'+').replace(/_/g,'/'); const r = atob(s); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))); }
+async function pushSync(){
+  const b = $('#pushBtn'); if(!b) return;
+  if(!('Notification' in window) || !('serviceWorker' in window) || !('PushManager' in window)){ b.classList.add('hidden'); return; }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription().catch(()=>null);
+  b.classList.remove('hidden');
+  const denied = Notification.permission === 'denied';
+  b.textContent = '🔔';
+  b.style.color = sub ? 'var(--acc)' : (denied ? 'var(--bad)' : 'var(--mut)');
+  b.style.borderColor = sub ? 'var(--acc)' : 'var(--brd2)';
+  b.style.background = sub ? '#7a541014' : 'none';
+  b.title = denied ? 'Уведомления заблокированы в настройках браузера' : (sub ? 'Пуш-уведомления: вкл — нажмите для отключения' : 'Включить пуш-уведомления');
+}
+/* ---------- Настройки ---------- */
+function settingsSheet(){
+  const isOwner = team && team.is_owner;
+  const denied = ('Notification' in window) && Notification.permission === 'denied';
+  const sec = (icon, title, sub, fn) => `<div class="mrow" style="cursor:pointer" onclick="${fn}"><div class="av">${icon}</div><div class="inf"><b>${title}</b><br><span class="mut" style="font-size:11.5px">${sub}</span></div></div>`;
+  $('#sheet').innerHTML = `<h2>⚙ Настройки</h2>
+    ${sec('👤','Мой профиль', esc(me.name)+' · '+esc(me.role||'—'), 'editCard(\''+esc(me.name)+'\')')}
+    ${sec('👥','Текущая команда: '+esc(team?team.name:'—'), isOwner?'владелец · код '+esc(team.invite_code||''):(TEAM_MEMBERS.length+' участников'), 'teamSheet()')}
+    ${SYNC ? sec('🗂','Мои команды','переключение, создание, вступление по коду','teamSheet()') : ''}
+    ${SYNC ? sec('📱','SMS-шлюз','дубль на телефон для территории РФ','settingsSms()') : ''}
+    ${SYNC ? sec('🔔','Push-уведомления', denied?'заблокированы в браузере — откройте настройки сайта':'сообщения, задачи, этапы, участники','settingsPush()') : ''}
+    ${SYNC ? sec('⟳','Автообновление', AUTO?'вкл · каждые 5 мин':'выкл · нажмите для вкл','settingsAuto()') : ''}
+    ${SYNC ? sec('💾','Ручная синхронизация','обновить все данные сейчас','syncBadge().click()') : ''}
+    ${isOwner ? sec('🧩','Вкладки команды','конструктор: текст, ссылки, чек-листы, ленты','manageTabs()') : ''}
+    ${sec('📲','Установка на рабочий стол','Android и iPhone','settingsInstall()')}
+    ${sec('🚪','Выход из приложения','завершить сеанс на устройстве','document.getElementById(\'exitBtn\').click()')}
+    <div style="height:10px"></div><p class="mut" style="text-align:center">НИОКР Команда · PWA v46 · Supabase Realtime<br>Сервер: lxgipzdybigdpdcmcnez</p>`;
+  $('#overlay').style.display='flex';
+}
+function settingsPush(){
+  $('#pushBtn').click();
+  $('#overlay').style.display='none';
+  setTimeout(() => { $('#pushBtn').click(); $('#overlay').style.display='none'; settingsSheet(); }, 700);
+}
+function settingsAuto(){ AUTO = !AUTO; store.set('auto', AUTO); autoSet(); settingsSheet(); }
+async function settingsSms(){
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/sms-gateway', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'send', member:'__probe__', text:''})
+    });
+    const j = await r.json().catch(()=>({}));
+    const st = (j && j.error==='SMS_NOT_CONFIGURED')
+      ? '<b style="color:var(--warn)">Не настроен.</b> Провайдер: SMS Aero (работает в РФ). Укажите в секретах Supabase: SMS_AERO_EMAIL, SMS_AERO_API_KEY, SMS_SIGN.'
+      : '<b style="color:var(--ok)">Активен.</b> Дубль сообщений уходит на телефоны участников.';
+    $('#sheet').innerHTML = `<h2>📱 SMS-шлюз</h2><div class="card"><p>${st}</p><p class="mut" style="margin-top:8px">Подключение: dashboard.supabase.com → Project Settings → Vault/Secrets → добавьте SMS_AERO_EMAIL и SMS_AERO_API_KEY (берутся в личном кабинете sms-aero.ru).</p></div><button class="sec" style="width:100%" onclick="settingsSheet()">← Назад</button>`;
+  }catch(e){ alert('Ошибка проверки'); }
+}
+function settingsInstall(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const text = isIOS
+    ? 'iPhone (Safari):<br>1. Нажмите «Поделиться» (квадрат со стрелкой).<br>2. «На экран «Домой»» → «Добавить».<br>3. Открывайте приложение с иконки — оно работает полноэкранно и офлайн.'
+    : 'Android (Chrome):<br>1. Меню «⋮» (три точки).<br>2. «Установить приложение» / «Добавить на главный экран».<br>3. Или дождитесь баннера «Установить» внизу экрана.';
+  $('#sheet').innerHTML = `<h2>📲 Установка</h2><div class="card">${text}</div><button class="sec" style="width:100%" onclick="settingsSheet()">← Назад</button>`;
+}
+$('#setBtn').onclick = () => settingsSheet();
+$('#cacheBtn').onclick = async () => {
+  if(!team || !team.is_owner) return;
+  if(!confirm('🧹 Очистить кэш приложения?\n\nУдалятся закэшированные файлы (приложение загрузится заново с сервера). Данные входа и команды сохранятся.')) return;
+  try{ const ks = await caches.keys(); for(const k of ks){ await caches.delete(k); } }catch(e){}
+  try{ const r = await navigator.serviceWorker.getRegistration(); if(r) await r.unregister(); }catch(e){}
+  location.reload();
+};
+$('#pushBtn').onclick = async () => {
+  if(!('Notification' in window)) return alert('Уведомления не поддерживаются этим браузером');
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if(sub){
+    await sub.unsubscribe();
+    if(SYNC) await sb.from('push_subs').delete().eq('endpoint', sub.endpoint);
+  } else {
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ pushSync(); return alert('Разрешение на уведомления не получено'); }
+    sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)});
+    const j = sub.toJSON();
+    if(SYNC) await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
+  }
+  pushSync();
+};
+$('#exitBtn').onclick = () => {
+  if(!confirm('Выйти из приложения?\nПотребуется повторный выбор участника.')) return;
+  store.del('user'); store.del('team'); me = null; team = null;
+  try{ sessionStorage.removeItem('sess'); sessionStorage.removeItem('lastView'); }catch(e){} appStarted = false;
+  try{ window.close(); }catch(e){}
+  $('#sheet').innerHTML = `<h2>Выход выполнен</h2><div class="card">
+    <p class="mut">Сеанс завершён. Приложение можно закрыть (смахнуть из списка задач), либо войдите снова:</p>
+    <div style="height:12px"></div><button class="pri" style="width:100%" onclick="location.reload()">🔑 Войти снова</button></div>`;
+  $('#overlay').style.display='flex';
+};
+
+/* ---------- Верхнее меню структуры команды (авто) ---------- */
+function renderStructBar(){
+  const bar = document.getElementById('structBar'); if(!bar) return;
+  if(!team){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
+  bar.classList.remove('hidden');
+  const items = [];
+  const azTab = TABS.find(t=>t.kind==='az');
+  items.push({icon:'🏠', label:'Главная', fn:"navGo('home')", on: view==='home'});
+  if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
+  items.push({icon:'📄', label:'Акты и документы', fn:"navGo('acts')", on: view==='acts'});
+  TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
+  (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
+  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
+    || '<span class="mut" style="font-size:12px;padding:5px 2px">Структура команды появится здесь: журнал, задачи, вкладки</span>';
+}
+function openTabView(id){
+  view = 'tab:'+id;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.tid==String(id)));
+  render();
+}
+function taskSheet(id){
+  const t = (rTasks||[]).find(x=>x.id===id);
+  if(!t){ window._taskSheetId = null; document.getElementById('overlay').style.display='none'; return; }
+  window._taskSheetId = id;
+  const isOwner = team && team.is_owner;
+  $('#sheet').innerHTML = `<h2>✅ ${esc(t.title)}</h2><div class="card">
+    <p><span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></p>
+    <p class="mut" style="margin-top:8px">Исполнитель: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'}<br>Постановщик: ${esc(t.author||'—')}</p>
+    <div style="height:12px"></div>
+    <div class="row" style="flex-wrap:wrap">
+      ${t.status!=='В работе'&&t.status!=='Выполнено'?`<button class="pri" onclick="setTask(${id},'В работе');taskSheet(${id})">▶ В работу</button>`:''}
+      ${t.status!=='Выполнено'?`<button class="pri" style="background:var(--ok)" onclick="setTask(${id},'Выполнено');taskSheet(${id})">✔ Выполнено</button>`:''}
+      ${isOwner?`<button class="sec" onclick="taskEditForm(${id})">✏️ Править</button>`:''}
+      <button class="dng" onclick="delTask(${id})">🗑 Удалить</button>
+    </div></div>`;
+  $('#overlay').style.display='flex';
+}
+function taskEditForm(id){
+  const t = (rTasks||[]).find(x=>x.id===id); if(!t) return;
+  window._taskSheetId = id;
+  $('#sheet').innerHTML = `<h2>✏️ Правка задачи</h2><div class="card">
+    <input id="teTitle" value="${esc(t.title)}" placeholder="Название задачи"><div style="height:8px"></div>
+    <select id="teAssignee">${TEAM_MEMBERS.map(m=>`<option ${m.member===t.assignee?'selected':''}>${esc(m.member)}</option>`).join('')}</select>
+    <div style="height:8px"></div>
+    <input type="date" id="teDeadline" value="${t.deadline||''}">
+    <div style="height:8px"></div>
+    <select id="teStatus">${['Новая','В работе','Выполнено'].map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select>
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="taskSave(${id})">💾 Сохранить</button>
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="taskSheet(${id})">← Назад</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+async function taskSave(id){
+  const patch = { title: $('#teTitle').value.trim(), assignee: $('#teAssignee').value, deadline: $('#teDeadline').value || null, status: $('#teStatus').value };
+  if(!patch.title) return alert('Введите название');
+  if(SYNC){ await sb.from('tasks').update(patch).eq('id', id); await loadTasks(); }
+  else {
+    const ts = store.get('tasks_'+(team?team.id:'x'),[]);
+    const t = ts.find(x=>x.id===id); if(t) Object.assign(t, patch);
+    store.set('tasks_'+(team?team.id:'x'), ts); render();
+  }
+  taskSheet(id);
+}
+
+/* ---------- Умный агент «Управление командой» (владелец) ---------- */
+let agentRec = null, agentVoice = store.get('agentVoice', true);
+async function agentSheet(){
+  if(!team || !team.is_owner){ return; }
+  store.del('agentNotify');
+  const bb = document.getElementById('agentBtn'); if(bb) bb.textContent = '🤖';
+  if(SYNC){
+    const { data: { session } } = await sb.auth.getSession();
+    if(!session){ renderAgentLogin(); return; }
+  }
+  curThread = null;
+  await Promise.all([loadAgentThreads(), loadDevTasks(), loadQa()]);
+  renderAgentMenu();
+  qaScanNow();
+}
+async function loadDevTasks(){
+  if(!SYNC) return;
+  const {data} = await sb.from('dev_tasks').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(30);
+  DEV_TASKS = data || [];
+}
+const DEV_STATUS_META = {
+  'Черновик':      {icon:'📋', cls:'',     label:'на согласовании'},
+  'Отправлено':    {icon:'📨', cls:'warn', label:'в очереди'},
+  'В работе':      {icon:'⏳', cls:'warn', label:'исполняется…'},
+  'Готово':        {icon:'✅', cls:'ok',   label:'опубликовано'},
+  'Ошибка':        {icon:'⚠️', cls:'bad',  label:'ошибка'}
+};
+function devMeta(st){ return DEV_STATUS_META[st] || {icon:'•', cls:'', label: st}; }
+function renderDevBox(){
+  if(!team || !team.is_owner){ const b=document.getElementById('devBox'); if(b) b.innerHTML=''; return; }
+  const box = document.getElementById('devBox'); if(!box) return;
+  const ordered = [...DEV_TASKS].sort((a,b) => (a.status==='В работе'?0:1) - (b.status==='В работе'?0:1) || b.id - a.id);
+  box.innerHTML = ordered.length ? `<div class="card" style="background:var(--card2)">
+    <div class="row"><b style="flex:1">🛠 Задачи для Kimi</b>
+      <span class="mut" style="font-size:11px">${ordered.filter(t=>t.status==='В работе').length ? '⏳ идёт исполнение' : 'следит автоматически'}</span></div>
+    ${ordered.map(t=>{
+      const m = devMeta(t.status);
+      if(t.status === 'Черновик'){
+        return `<div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+          <div class="row" style="cursor:pointer" onclick="devDetail(${t.id})"><b style="flex:1;font-size:13.5px">📋 ${esc(t.title)}</b><span class="badge warn">${m.label}</span></div>
+          <textarea id="dev_${t.id}" rows="3" style="margin-top:6px;font-size:13px">${esc(t.body)}</textarea>
+          <div class="row" style="margin-top:6px">
+            <button class="pri" style="flex:1" id="devSend_${t.id}" onclick="devSend(${t.id})">📨 Отправить Kimi</button>
+            <button class="dng" onclick="devDel(${t.id})">🗑</button>
+          </div></div>`;
+      }
+      return `<div class="mrow" style="cursor:pointer" onclick="devDetail(${t.id})">
+        <div class="inf"><b style="font-size:13px">${m.icon} ${esc(t.title)}</b><br>
+          <span class="mut" style="font-size:11px">${fmtT(t.sent_at || t.created_at)}${t.agent_note ? ' · ' + esc(t.agent_note) : ''}</span></div>
+        <span class="badge ${m.cls}">${m.label}</span>
+      </div>`;
+    }).join('')}
+  </div>` : '';
+}
+function devDetail(id){
+  const t = DEV_TASKS.find(x=>x.id===id); if(!t) return;
+  const m = devMeta(t.status);
+  const canRetry = (t.status==='Ошибка' || t.status==='Отправлено');
+  $('#sheet').innerHTML = `<h2>${m.icon} ${esc(t.title)}</h2><div class="card">
+    <p><span class="badge ${m.cls}">${esc(t.status)} — ${m.label}</span></p>
+    <p class="mut" style="margin-top:6px">Создана: ${fmtT(t.created_at)}${t.sent_at ? ' · Отправлена: ' + fmtT(t.sent_at) : ''}</p>
+    <p style="margin-top:8px;white-space:pre-wrap;background:var(--card2);border-radius:8px;padding:10px;font-size:13px">${esc(t.body)}</p>
+    ${t.agent_note ? `<p style="margin-top:8px;font-size:13px">📝 ${esc(t.agent_note)}</p>` : ''}
+    ${t.status==='В работе' ? `<p class="mut" style="margin-top:8px">⏳ Конвейер работает: Kimi готовит патч → проверка синтаксиса → публикация на GitHub. Обычно 1–3 минуты. Статус обновится автоматически.</p>` : ''}
+    <div style="height:12px"></div>
+    <div class="row" style="flex-wrap:wrap">
+      ${canRetry ? `<button class="pri" style="flex:1" onclick="devRetry(${t.id})">🔄 ${t.status==='Ошибка' ? 'Повторить исполнение' : 'Запустить исполнение'}</button>` : ''}
+      ${t.status==='Готово' ? `<button class="sec" style="flex:1" onclick="alert('Обновление уже опубликовано. Перезапустите приложение, чтобы увидеть изменение.')">📲 Как применить</button>` : ''}
+      <button class="dng" onclick="devDel(${t.id})">🗑 Удалить</button>
+    </div>
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="renderAgentMenu(); document.querySelector('#overlay').style.display='flex'">← К списку</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+async function devRetry(id){
+  await sb.from('dev_tasks').update({status:'Отправлено', sent_at: new Date().toISOString(), agent_note: null}).eq('id', id);
+  await loadDevTasks(); renderDevBox();
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/dev-executor', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id: id, owner: me.name})
+    });
+    const j = await r.json().catch(()=>({}));
+    await loadDevTasks(); renderDevBox();
+    if(document.getElementById('sheet')) devDetail(id);
+    if(j && j.ok) alert('✅ Исполнено и опубликовано (v' + j.version + ')');
+  }catch(e){
+    alert('⏳ Задача поставлена в очередь. Статус обновится автоматически.');
+  }
+}
+/* ---------- Ответы на вопросы (перехват обращений к владельцу) ---------- */
+let qaScanTimer = null;
+async function loadQa(){
+  if(!SYNC) return;
+  const {data} = await sb.from('qa_queue').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(30);
+  QA_ITEMS = data || [];
+}
+async function qaScanNow(){
+  if(!SYNC || !team || !team.is_owner) return;
+  try{
+    await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/qa-scan', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({team_id: tid(), owner: me.name})
+    });
+  }catch(e){}
+  await loadQa(); renderQaBox();
+}
+function renderQaBox(){
+  if(!team || !team.is_owner){ const b=document.getElementById('qaBox'); if(b) b.innerHTML=''; return; }
+  const box = document.getElementById('qaBox'); if(!box) return;
+  const pend = QA_ITEMS.filter(x=>x.status==='На согласовании');
+  const done = QA_ITEMS.filter(x=>x.status!=='На согласовании');
+  box.innerHTML = (pend.length || done.length) ? `<div class="card" style="background:#f7f2e4">
+    <div class="row"><b style="flex:1">❓ Ответы на вопросы</b><button class="sec" style="padding:5px 10px;font-size:12px" onclick="qaScanNow()">🔍 Проверить сейчас</button></div>
+    ${pend.map(t=>`<div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+      <b style="font-size:13px">${esc(t.author)}</b> <span class="badge ${t.is_dm?'':'warn'}">${t.is_dm?'личное':'в чате'}</span>
+      <p style="font-size:13px;margin-top:4px;background:var(--card2);border-radius:8px;padding:8px">${esc(t.question)}</p>
+      <textarea id="qa_${t.id}" rows="3" style="margin-top:6px;font-size:13px" placeholder="Черновик ответа…">${esc(t.draft||'')}</textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="pri" style="flex:1" onclick="qaReply(${t.id})">✉️ Ответить</button>
+        <button class="sec" onclick="qaSkip(${t.id})">⊘ Пропустить</button>
+      </div></div>`).join('')}
+    ${done.slice(0,5).map(t=>`<div class="row" style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+      <div style="flex:1"><span style="font-size:13px"><b>${esc(t.author)}</b>: ${esc(t.question.slice(0,50))}${t.question.length>50?'…':''}</span></div>
+      <span class="badge ${t.status==='Отвечено'?'ok':''}">${esc(t.status)}</span></div>`).join('')}
+  </div>` : '';
+}
+async function qaReply(id){
+  const text = (document.getElementById('qa_'+id) || {}).value.trim();
+  if(!text) return alert('Введите текст ответа');
+  const item = QA_ITEMS.find(x=>x.id===id); if(!item) return;
+  // Отправка автору вопроса: личное сообщение в приложении (push придёт автоматически)
+  await sb.from('messages').insert({dm: dmKey(me.name, item.author), author: me.name, role: me.role, body: text, client_id: cid});
+  await sb.from('qa_queue').update({status:'Отвечено', draft: text, answered_at: new Date().toISOString()}).eq('id', id);
+  await loadQa(); renderQaBox();
+  alert('✅ Ответ отправлен ' + item.author);
+}
+async function qaSkip(id){
+  await sb.from('qa_queue').update({status:'Пропущено'}).eq('id', id);
+  await loadQa(); renderQaBox();
+}
+async function devSend(id){
+  const btn = document.getElementById('devSend_'+id);
+  const body = (document.getElementById('dev_'+id) || {}).value || '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Принято…'; }
+  await sb.from('dev_tasks').update({body, status: 'Отправлено', sent_at: new Date().toISOString()}).eq('id', id);
+  await loadDevTasks(); renderDevBox();
+  // Авто-исполнение: разработка → проверка → публикация
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/dev-executor', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id: id, owner: me.name})
+    });
+    const j = await r.json().catch(()=>({}));
+    await loadDevTasks(); renderDevBox();
+    if(j && j.ok) alert('✅ Задача исполнена автоматически и опубликована (v' + j.version + '). Перезапустите приложение, чтобы увидеть изменение.');
+    else alert('⚠️ Авто-исполнение: ' + ((j && j.error) || 'ошибка') + '\nСтатус задачи обновлён — попробуйте «Отправить Kimi» ещё раз после правки ТЗ.');
+  }catch(e){
+    alert('📨 Задача принята. Авто-исполнение временно недоступно (' + e.message + ') — повторите отправку.');
+  }
+}
+async function devDel(id){
+  if(!confirm('Удалить задачу?')) return;
+  await sb.from('dev_tasks').delete().eq('id', id);
+  await loadDevTasks(); renderDevBox();
+}
+function renderAgentLogin(){
+  $('#sheet').innerHTML = `<h2>🔒 Защищённый режим владельца</h2>
+   <p class="mut" style="margin-bottom:8px">Данные агента защищены. Войдите, чтобы получить доступ. Первый вход — регистрация по email.</p>
+   <div class="card">
+     <input id="alEmail" type="email" placeholder="Email" autocomplete="email"><div style="height:8px"></div>
+     <input id="alPass" type="password" placeholder="Пароль (минимум 6 символов)" autocomplete="current-password"><div style="height:12px"></div>
+     <button class="pri" style="width:100%" onclick="agentLogin(false)">🔓 Войти</button>
+     <div style="height:8px"></div>
+     <button class="sec" style="width:100%" onclick="agentLogin(true)">✨ Первый вход — создать защищённый доступ</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+async function agentLogin(isNew){
+  const email = $('#alEmail').value.trim(), pass = $('#alPass').value;
+  if(!email || pass.length < 6) return alert('Укажите email и пароль (от 6 символов)');
+  try{
+    let res;
+    if(isNew){
+      res = await sb.auth.signUp({ email, password: pass, options: { data: { member: me.name } } });
+      if(res.error) throw res.error;
+      await sb.from('agent_access').insert({ member: me.name });
+    } else {
+      res = await sb.auth.signInWithPassword({ email, password: pass });
+      if(res.error) throw res.error;
+    }
+    $('#overlay').style.display='none';
+    agentSheet();
+  }catch(e){ alert('Ошибка входа: ' + (e.message || e.error_description || e)); }
+}
+async function agentLogout(){
+  await sb.auth.signOut();
+  $('#overlay').style.display='none';
+}
+async function loadAgentThreads(){
+  if(!SYNC) return;
+  const {data} = await sb.from('agent_threads').select('*').eq('team_id', tid()).order('created_at', {ascending:false}).limit(50);
+  AGENT_THREADS = data || [];
+}
+function renderAgentMenu(){
+  const menu = $('#sheet');
+  menu.innerHTML = `<h2>🤖 Управление командой</h2>
+   <p class="mut" style="margin-bottom:8px">Агент владельца: полное управление командой голосом и текстом. История обсуждений сохраняется — возвращайтесь и продолжайте.</p>
+   <div class="row" style="margin-bottom:10px">
+     <button class="pri" style="flex:1" onclick="agentNewThread()">＋ Новое обсуждение</button>
+     <button class="sec" style="padding:10px 12px" onclick="agentLogout()" title="Выйти из защищённого режима">🔒</button>
+   </div>
+   <div id="qaBox"></div>
+   <div id="devBox"></div>
+   <p class="mut" style="margin-bottom:6px">История обсуждений (${AGENT_THREADS.length}) — все диалоги сохраняются:</p>
+   ${''}
+  ${AGENT_THREADS.map(t=>`<div class="mrow" style="cursor:pointer" onclick="agentOpenThread(${t.id})">
+     <div class="av" style="background:var(--acc)">🤖</div>
+     <div class="inf"><b>${esc(t.title)}</b><br><span class="mut" style="font-size:11.5px">${fmtT(t.created_at)}</span></div>
+     <button class="dng" style="padding:6px 10px" onclick="event.stopPropagation();agentDelThread(${t.id})">🗑</button>
+   </div>`).join('') || '<p class="mut">Обсуждений пока нет — начните новое.</p>'}`;
+  renderDevBox(); renderQaBox();
+  $('#overlay').style.display='flex';
+}
+function agentNewThread(){ curThread = null; renderAgentChat([]); }
+async function agentDelThread(id){
+  if(!confirm('Удалить обсуждение?')) return;
+  await sb.from('agent_threads').delete().eq('id', id);
+  await loadAgentThreads(); renderAgentMenu();
+}
+async function agentOpenThread(id){
+  curThread = id;
+  const {data} = await sb.from('agent_messages').select('*').eq('thread_id', id).order('created_at').limit(100);
+  AGENT_MSGS = data || [];
+  renderAgentChat(AGENT_MSGS);
+}
+function renderAgentChat(msgs){
+  const pendingWork = msgs.length && msgs[msgs.length-1].role === 'user';
+  $('#sheet').innerHTML = `<div class="row" style="margin-bottom:8px">
+     <button class="sec" style="padding:6px 12px" onclick="agentSheet()">← К меню</button>
+     <b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${curThread ? esc((AGENT_THREADS.find(t=>t.id===curThread)||{}).title || 'Обсуждение') : 'Новое обсуждение'}</b>
+     <button class="sec" style="padding:6px 10px" onclick="agentVoiceToggle()" id="agentVBtn">🔊 ${agentVoice?'вкл':'выкл'}</button>
+   </div>
+   <div id="agentLog" style="max-height:42vh;overflow-y:auto;margin-bottom:8px">
+     ${msgs.map(m=>{
+       if(m.role === 'tool'){
+         return `<div class="mut" style="font-size:11.5px;margin:6px 0 0 14px;padding-left:10px;border-left:2px solid var(--brd2)">${m.mode==='step' ? '⏳' : '⚙️'} ${esc(m.text)}</div>`;
+       }
+       return `<div class="msg ${m.role==='user'?'me':''}" style="max-width:100%;margin-top:8px"><b>${m.role==='user'?'Вы':'🤖 Агент'}</b>${m.role==='assistant' ? (m.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>') : ''}<div style="white-space:pre-wrap">${esc(m.text)}</div></div>`;
+     }).join('')}
+     ${pendingWork ? '<div class="msg" style="max-width:100%;margin-top:8px" id="agentPending"><b>🤖 Агент</b> <span class="badge warn">⏳ работает…</span><div>Задача выполняется в фоне. Можете закрыть окно — ответ сохранится в истории, вы получите уведомление.</div></div>' : ''}
+   </div>
+   <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
+     <span class="struct-chip" onclick="agentAsk('Статус по этапам')">📊 Этапы</span>
+     <span class="struct-chip" onclick="agentAsk('Список задач')">✅ Задачи</span>
+     <span class="struct-chip" onclick="agentAsk('Состав команды')">👥 Состав</span>
+     <span class="struct-chip" onclick="agentAsk('Итоги работы')">📈 Сводка</span>
+     <span class="struct-chip" onclick="agentAsk('Создай задачу: ')" title="Допишите название">＋ Задача</span>
+     <span class="struct-chip" onclick="agentAsk('Опубликуй объявление: ')" title="Допишите текст">📢 Объявление</span>
+   </div>
+   <div class="row">
+     <button class="sec" style="flex:none;padding:10px 12px" id="agentMic" onclick="agentToggleMic()" title="Голосовой ввод">🎙</button>
+     <input id="agentInp" placeholder="Команда или вопрос…" style="flex:1" onkeydown="if(event.key==='Enter')agentSend()">
+     <button class="pri" onclick="agentSend()">➤</button>
+   </div>
+   <p class="mut" style="font-size:11px;margin-top:6px">Команды: «Создай задачу: …», «Назначь задачу … на …», «Этап 3 в работу», «Опубликуй объявление: …», «Добавь участника …», «Запиши в журнал: …»</p>`;
+  const log = document.getElementById('agentLog'); if(log) log.scrollTop = log.scrollHeight;
+  $('#overlay').style.display='flex';
+}
+function agentLogAdd(role, text){
+  const log = document.getElementById('agentLog'); if(!log) return;
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role==='me'?'me':'');
+  d.style.maxWidth = '100%'; d.style.marginTop = '8px';
+  d.innerHTML = `<b>${role==='me'?'Вы':'🤖 Агент'}</b><div style="white-space:pre-wrap">${esc(text)}</div>`;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+function agentSpeak(text){
+  if(!agentVoice || !('speechSynthesis' in window)) return;
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/[✅📊👥📈•*_#]/g,''));
+    u.lang = 'ru-RU'; u.rate = 1.05;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+function agentVoiceToggle(){ agentVoice = !agentVoice; store.set('agentVoice', agentVoice); const b=document.getElementById('agentVBtn'); if(b) b.textContent = '🔊 Голос ответов: ' + (agentVoice?'вкл':'выкл'); }
+async function agentSend(text){
+  if(!team || !team.is_owner){ return; }
+  const inp = document.getElementById('agentInp');
+  const q = (text || (inp ? inp.value : '')).trim(); if(!q) return;
+  if(inp) inp.value = '';
+  const log = document.getElementById('agentLog');
+  if(!log) return;
+  log.insertAdjacentHTML('beforeend', `<div class="msg me" style="max-width:100%;margin-top:8px"><b>Вы</b><div>${esc(q)}</div></div><div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b><div>⏳ …</div></div>`);
+  log.scrollTop = log.scrollHeight;
+  const pending = log.lastElementChild.querySelector('div');
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/agent', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({team_id: tid(), owner: me.name, text: q, thread_id: curThread})
+    });
+    const j = await r.json().catch(()=>({}));
+    if(j && j.thread_id && !curThread){
+      curThread = j.thread_id;
+      if(!AGENT_THREADS.find(t=>t.id===curThread)) await loadAgentThreads();
+    }
+    const ans = (j && j.text) ? j.text : ('Ошибка: ' + ((j && j.error) || r.status));
+    pending.textContent = ans;
+    agentSpeak(ans);
+    loadTasks();
+  }catch(e){
+    pending.textContent = 'Нет связи с агентом: ' + e.message;
+  }
+  log.scrollTop = log.scrollHeight;
+}
+function agentAsk(q){ agentSend(q); }
+function agentToggleMic(){
+  if(!team || !team.is_owner){ return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById('agentMic');
+  if(!SR){ alert('Голосовой ввод не поддерживается этим браузером (используйте Chrome)'); return; }
+  if(agentRec){ try{ agentRec.stop(); }catch(e){} agentRec = null; if(btn) btn.textContent='🎙'; return; }
+  agentRec = new SR();
+  agentRec.lang = 'ru-RU'; agentRec.interimResults = false; agentRec.maxAlternatives = 1;
+  agentRec.onresult = (e) => { const t = e.results[0][0].transcript; if(btn) btn.textContent='🎙'; agentRec=null; agentSend(t); };
+  agentRec.onerror = () => { if(btn) btn.textContent='🎙'; agentRec=null; };
+  agentRec.onend = () => { if(btn) btn.textContent='🎙'; agentRec=null; };
+  agentRec.start();
+  if(btn) btn.textContent = '🔴';
+}
+$('#agentBtn').onclick = () => agentSheet();
+
+
+/* ================= АКТЫ И ДОКУМЕНТЫ (АОСР + реестр) ================= */
+let ACTS = [];
+// Виды скрытых работ строго по проекту Ф-2024-НОК-ДТ-0424-КР (укрепление грунтов основания дымовой трубы)
+const ACT_WORKS = [
+ {name:'Закрепление геодезической разбивочной основы и осей инъекционных скважин', section:'ПЗ, раздел «Конструктивные и объемно-планировочные решения»', doc:'Исполнительная геодезическая схема разбивки; журнал геодезических работ'},
+ {name:'Бурение инъекционных скважин (до закрытия устья / начала инъектирования)', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Журнал бурения; паспорта буровых растворов (при применении); исполнительная схема расположения скважин'},
+ {name:'Установка обсадных (фильтровых) труб в скважинах', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Сертификаты на трубы; исполнительная схема'},
+ {name:'Приёмка цемента и приготовление инъекционных смесей (входной контроль материалов)', section:'ПЗ, раздел технологии; ТУ на материалы', doc:'Сертификаты/паспорта цемента; протоколы лабораторных испытаний смеси (В/Ц, сроки схватывания)'},
+ {name:'Инъектирование (цементация) грунтов по скважинам', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Журнал инъектирования по скважинам (давление, расход, объёмы); протоколы опытного инъектирования'},
+ {name:'Устройство дренажа (укладка дренажных труб с обратной засыпкой фильтрующим материалом)', section:'ПЗ, раздел «Инженерное оборудование» (при наличии в объёме работ)', doc:'Сертификаты на дренажные трубы и фильтрующий материал; исполнительная схема; фото'},
+ {name:'Обратная засыпка котлованов и траншей с послойным уплотнением', section:'ПЗ, раздел технологии', doc:'Акты на скрытые работы по уплотнению; исполнительная схема; фото'},
+ {name:'Устройство контрольных (наблюдательных) точек мониторинга крена и осадок трубы', section:'ПЗ, раздел мониторинга', doc:'Исполнительная схема закрепления точек; геодезический журнал'}
+];
+const ACT_NORM = 'Форма акта — РД-11-02-2006. Освидетельствование до закрытия работ: СП 70.13330.2012, п. 4.5. Исполнительная документация: ГОСТ Р 21.101-2020, СП 48.13330.2019.';
+
+async function loadActs(){
+  if(!SYNC) return;
+  const {data} = await sb.from('acts').select('*').eq('team_id', tid()).order('num');
+  ACTS = data || [];
+}
+async function ensureActsDefaults(){
+  // подставляем представителей из известных данных
+  const m = MEMBERS.find(x => x.name === me.name) || {};
+  return {
+    customer: team && team.is_owner ? me.name : '',
+    contractor: '', designer: 'Керимов А.Г. (ООО «НПО Фундамент»)', control: ''
+  };
+}
+function renderActs(v){
+  if(!SYNC){ v.innerHTML = '<h2 class="pt">📄 Акты и документы</h2><p class="mut">Требуется подключение.</p>'; return; }
+  if(ACTS === null){ v.innerHTML='<p class="mut">Загрузка…</p>'; loadActs().then(render); return; }
+  const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
+  const isOwner = team && team.is_owner;
+  v.innerHTML = `<h2 class="pt">📄 Акты и документы</h2>
+   <p class="mut" style="margin-bottom:8px">Акты освидетельствования скрытых работ (АОСР) по видам работ проекта ${esc(azc.project_code||'Ф-2024-НОК-ДТ-0424-КР')}. ${esc(ACT_NORM)}</p>
+   <div class="card"><b>Объект:</b> ${esc(azc.object||'—')}<br><span class="mut">Застройщик: ${esc(azc.customer||'—')} · Проектировщик: ${esc(azc.designer||'ООО «НПО Фундамент»')}</span></div>
+   <div class="row" style="margin-bottom:8px">
+     <button class="pri" style="flex:1" onclick="actForm()">＋ Новый акт (АОСР)</button>
+   </div>
+   ${ACTS.length ? ACTS.map(a => `<div class="card" style="cursor:pointer" onclick="actView(${a.id})">
+     <div class="row"><b style="flex:1">АОСР-${String(a.num).padStart(3,'0')} · ${esc(a.work_name)}</b></div>
+     <p class="mut" style="margin-top:4px">${a.date_act ? 'от ' + a.date_act : 'дата не указана'} · ${esc(a.created_by||'')}</p>
+   </div>`).join('') : '<p class="mut">Актов нет — создайте первый.</p>'}
+   <h2 class="pt" style="margin-top:14px">🗂 Реестр исполнительной документации (формируется автоматически)</h2>
+   <div class="card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
+     <tr style="text-align:left;color:var(--mut)"><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">№</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Наименование документа</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Номер/дата</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Источник</th></tr>
+     ${actsRegistryRows()}
+   </table></div>
+   <p class="mut" style="font-size:11px">Реестр автоматически пополняется по мере создания актов, загрузки документов и выполнения работ по техплану.</p>`;
+}
+function actsRegistryRows(){
+  const rows = [];
+  ACTS.forEach(a => rows.push(['АОСР-' + String(a.num).padStart(3,'0'), 'Акт освидетельствования скрытых работ: ' + a.work_name, (a.date_act||'—'), 'Акты']));
+  (rDocs || []).forEach(d => rows.push(['', 'Документ: ' + d.name, (d.created_at||'').slice(0,10), 'Файлы команды']));
+  (PLAN_ROWS || []).filter(r => r.status === 'Выполнено').forEach(r => rows.push(['', 'Исполнена работа: ' + r.work, (r.done_at||'').slice(0,10), 'Техплан']));
+  (AZ_ENTRIES || []).forEach(e => rows.push(['', 'Запись журнала авторского надзора: ' + e.works.slice(0,60), e.entry_date, 'Журнал АН']));
+  if(!rows.length) return '<tr><td colspan="4" class="mut" style="padding:8px">Документов пока нет.</td></tr>';
+  return rows.map((r,i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${i+1}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[1])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[2])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)" class="mut">${esc(r[3])}</td></tr>`).join('');
+}
+function actForm(){
+  const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
+  $('#sheet').innerHTML = `<h2>＋ Акт освидетельствования скрытых работ</h2>
+   <div class="card">
+     <p class="mut" style="margin-bottom:6px">Вид работы (по проекту):</p>
+     <select id="acW">${ACT_WORKS.map((w,i)=>`<option value="${i}">${esc(w.name)}</option>`).join('')}</select>
+     <div style="height:8px"></div>
+     <div class="row"><input type="date" id="acD" style="flex:1" title="Дата акта"><input id="acFrom" type="date" style="flex:1" title="Начало работ"><input id="acTo" type="date" style="flex:1" title="Окончание работ"></div>
+     <div style="height:8px"></div>
+     <input id="acCust" placeholder="Представитель застройщика (техзаказчика)" value="${esc(azc.customer||'ООО «НОК»')}">
+     <div style="height:8px"></div>
+     <input id="acContr" placeholder="Представитель подрядчика (лицо, осуществляющее строительство)">
+     <div style="height:8px"></div>
+     <input id="acDes" placeholder="Представитель проектировщика (авторский надзор)" value="Керимов А.Г. — ООО «НПО Фундамент»">
+     <div style="height:8px"></div>
+     <input id="acCtrl" placeholder="Представитель строительного контроля">
+     <div style="height:8px"></div>
+     <textarea id="acAttach" rows="2" placeholder="Приложения (исполнительные схемы, протоколы испытаний, сертификаты — вручную)"></textarea>
+     <div style="height:8px"></div>
+     <select id="acConc"><option selected>Работы выполнены в соответствии с проектной документацией, техническими регламентами и технологическими картами. Разрешается производство последующих работ.</option><option>Замечания: (указать в приложении). Последующие работы — после устранения.</option></select>
+     <div style="height:12px"></div>
+     <button class="pri" style="width:100%" onclick="actSave()">💾 Сформировать акт</button>
+     <p class="mut" style="font-size:11px;margin-top:8px">${esc(ACT_NORM)}</p>
+   </div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function actSave(){
+  const w = ACT_WORKS[parseInt($('#acW').value)];
+  const num = (ACTS.length ? Math.max(...ACTS.map(a=>a.num)) : 0) + 1;
+  const row = {
+    team_id: tid(), num,
+    work_name: w.name,
+    basis_project: w.section,
+    basis_quality: w.doc,
+    date_act: $('#acD').value || null, date_from: $('#acFrom').value || null, date_to: $('#acTo').value || null,
+    conclusion: $('#acConc').value,
+    rep_customer: $('#acCust').value || null, rep_contractor: $('#acContr').value || null,
+    rep_designer: $('#acDes').value || null, rep_control: $('#acCtrl').value || null,
+    attach: $('#acAttach').value || null, created_by: me.name
+  };
+  const {error} = await sb.from('acts').insert(row);
+  if(error) return alert(error.message);
+  $('#overlay').style.display = 'none';
+  ACTS = null; render();
+}
+function actView(id){
+  const a = ACTS.find(x => x.id === id); if(!a) return;
+  $('#sheet').innerHTML = `<h2>АОСР-${String(a.num).padStart(3,'0')}</h2><div class="card">
+    <p><b>${esc(a.work_name)}</b></p>
+    <p class="mut" style="margin-top:6px">Дата акта: ${a.date_act||'—'} · Работы: ${a.date_from||'—'} — ${a.date_to||'—'}</p>
+    <p style="margin-top:6px">Основание: ${esc(a.basis_project||'—')}</p>
+    <p style="margin-top:4px">Документы о качестве: ${esc(a.basis_quality||'—')}</p>
+    <p style="margin-top:6px">Застройщик: ${esc(a.rep_customer||'—')}<br>Подрядчик: ${esc(a.rep_contractor||'—')}<br>Проектировщик: ${esc(a.rep_designer||'—')}<br>Стройконтроль: ${esc(a.rep_control||'—')}</p>
+    <p style="margin-top:6px">Заключение: ${esc(a.conclusion)}</p>
+    ${a.attach ? `<p style="margin-top:4px">Приложения: ${esc(a.attach)}</p>` : ''}
+    <div class="row" style="margin-top:8px">
+      <button class="sec" onclick="navigator.clipboard && navigator.clipboard.writeText(document.querySelector('#sheet .card').innerText).then(()=>alert('Акт скопирован'))">📋 Копировать текст</button>
+      <button class="dng" onclick="actDel(${a.id})">🗑</button>
+    </div></div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function actDel(id){
+  if(!confirm('Удалить акт?')) return;
+  await sb.from('acts').delete().eq('id', id);
+  ACTS = null; render();
+}
+
+
+/* ================= ГЛАВНОЕ ОКНО (приветствие) ================= */
+function renderHome(v){
+  const az = TABS.find(x => x.kind === 'az');
+  const c = az ? az.config : {};
+  const hour = new Date().getHours();
+  const greet = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+  const openTasks = (rTasks || []).filter(t => t.status !== 'Выполнено').length;
+  const doneWorks = (PLAN_ROWS || []).filter(r => r.status === 'Выполнено').length;
+  const planTab = TABS.find(x => x.kind === 'plan');
+  const totalWorks = planTab ? (planTab.config.items || []).reduce((s, x) => s + (x.works || []).length, 0) : 0;
+  v.innerHTML = `
+  <div class="card" style="background:linear-gradient(135deg,#241a0e 0%,#3a2c14 100%);border:1px solid #4a3a1f;color:#e9dfc8">
+    <p style="font-family:Georgia,serif;font-size:17px;margin-bottom:2px">${greet}, <b>${esc(me.name)}</b></p>
+    <p style="font-size:13.5px;opacity:.9">${esc(team ? team.name : '')}</p>
+    <p style="font-size:12.5px;opacity:.75;margin-top:6px;line-height:1.5">Объект: ${esc(c.object || '—')}<br>Проект: ${esc(c.project_code || 'Ф-2024-НОК-ДТ-0424-КР')} · Застройщик: ${esc(c.customer || '—')}</p>
+  </div>
+  <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+    <span class="badge ${openTasks ? 'warn' : 'ok'}" style="padding:6px 12px">✅ Задач открыто: ${openTasks}</span>
+    <span class="badge" style="padding:6px 12px">🗺 Готовность работ: ${doneWorks}/${totalWorks || '—'}</span>
+    <span class="badge" style="padding:6px 12px">👥 В команде: ${TEAM_MEMBERS.length}</span>
+  </div>
+  <h2 class="pt">Как работать в приложении</h2>
+  <div class="card">
+    <div class="mrow"><div class="av" style="background:#8a5f16">💬</div><div class="inf"><b>Чат</b><br><span class="mut" style="font-size:12px">Общение по каналам. 📎 — фото и файлы. Личные сообщения — через 💌 или карточку участника.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#2e7d4f">✅</div><div class="inf"><b>Задачи</b><br><span class="mut" style="font-size:12px">Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#33608a">🗺</div><div class="inf"><b>Технический план</b><br><span class="mut" style="font-size:12px">Этапы и состав работ: статусы, до 3 ответственных, документы и фото. ❓ — консультация со ссылками на проект и нормативку.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#7a4a8a">📋</div><div class="inf"><b>Журнал АН</b><br><span class="mut" style="font-size:12px">Записи обходов: дата/погода автоматически, 🎙 — голосовой набор, предписания со статусами.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#8a3a2e">📄</div><div class="inf"><b>Акты и документы</b><br><span class="mut" style="font-size:12px">АОСР по видам работ проекта (форма РД-11-02-2006) и авто-реестр исполнительной документации.</span></div></div>
+    ${team && team.is_owner ? `<div class="mrow"><div class="av" style="background:#8a6a1f">🤖</div><div class="inf"><b>Агент «Управление командой»</b> (владелец)<br><span class="mut" style="font-size:12px">Голосом или текстом: «Создай задачу…», «Опубликуй объявление…». История сохраняется.</span></div></div>` : ''}
+  </div>
+  <p class="mut" style="text-align:center;font-size:11px">НИОКР Команда</p>`;
+}
+
+/* Переход в раздел по имени (для чипов верхнего меню) */
+function navGo(v){
+  view = v;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  render();
+}
+
+/* ---------- навигация ---------- */
+document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
+  view = b.dataset.v;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
+  if(SYNC && team){
+    if(view==='tasks'&&rTasks===null) loadTasks();
+    if(view==='plan') ensurePlanTab();
+    if(view==='news'&&rNews===null) loadNews();
+    if(view==='files'&&rDocs===null) loadDocs();
+    if(view==='stages'&&STAGES===null) loadStages();
+    if(view.startsWith('tab:')){ const tt=curTab(); if(tt && tt.kind==='az' && AZ_ENTRIES===null) loadAz(tt.id); if(tt && tt.kind==='plan') loadPlanRows(tt.id); }
+  }
+  render();
+});
+
+function render(){
+  try{ sessionStorage.setItem('lastView', view); }catch(e){}
+  $('#who').textContent = me ? me.name.split(' ')[0] : '';
+  $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
+  $('#chatComposer').classList.toggle('hidden', view!=='chat');
+  renderTabbar(); renderStructBar();
+  const ct = view.startsWith('tab:') ? curTab() : null;
+  const azb = $('#azBar');
+  if(ct && ct.kind==='az'){
+    const c = ct.config;
+    azb.classList.remove('hidden');
+    azb.innerHTML = `<b>📋 Журнал авторского надзора</b><span style="opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(c.object||'')}</span><span style="opacity:.7;flex:none">СП 246.1325800.2023</span>`;
+  } else azb.classList.add('hidden');
+  const v = $('#view'); v.innerHTML='';
+  if(view === 'plan'){
+    const pt = TABS.find(x => x.kind === 'plan');
+    if(pt){
+      if(!PLAN_ROWS.length) loadPlanRows(pt.id).then(() => { if(view === 'plan') render(); });
+      renderPlan(v, pt);
+    } else {
+      v.innerHTML = '<p class="mut" style="padding:20px">Загрузка плана…</p>';
+      ensurePlanTab().then(() => { if(view === 'plan') render(); });
+    }
+    return;
+  }
+  if(view.startsWith('tab:')){ renderCustomTab(v); return; }
+  if(view==='acts'){ renderActs(v); return; }
+  if(view==='home'){ renderHome(v); return; }
+  if(view==='chat') renderChat(v);
+  if(view==='stages') renderStages(v);
+  if(view==='tasks') renderTasks(v);
+  if(view==='news') renderNews(v);
+  if(view==='files') renderFiles(v);
+  if(view==='misc') renderMisc(v);
+  v.scrollTop = v.scrollHeight;
+}
+const scrollDown = () => { const v=$('#view'); v.scrollTop = v.scrollHeight; };
+const teamIds = () => TEAM_MEMBERS.map(m => m.member);
+
+/* ---------- ЧАТ ---------- */
+function msgHTML(m){
+  const mine = m.n===me.name && m.id;
+  return `<div class="msg ${m.n===me.name?'me':''}">
+    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span>${mine?` <span style="cursor:pointer" title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}<div>${linkify(m.x)}</div>
+    ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
+    <div class="t">${m.t}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div></div>`;
+}
+async function editMsg(id){
+  const m = rMsgs.find(x=>x.id===id); if(!m) return;
+  const t = prompt('Исправить сообщение:', m.x); if(t===null) return;
+  const body = t.trim(); if(!body || body===m.x) return;
+  const {error} = await sb.from('messages').update({body, edited:true}).eq('id',id);
+  if(error) alert(error.message);
+}
+function renderChat(v){
+  if(dmWith){
+    v.innerHTML = `<div class="row" style="margin-bottom:10px"><button class="sec" style="padding:6px 12px" onclick="dmWith=null;loadChan()">← Каналы</button><b>💬 Личное: ${esc(dmWith)}</b></div><div class="ch" id="msgs"></div>`;
+  } else {
+    const dmN = Object.keys(DM_PARTNERS).length;
+    const dmHasNew = Object.values(DM_PARTNERS).some(p => dmUnread(p));
+    v.innerHTML = `<div class="chans"><button onclick="dmListSheet()" style="${dmHasNew?'border-color:var(--acc);color:var(--acc);font-weight:700':''}">💌 ${dmN||''}</button>${CHANNELS.map(c =>
+      `<button class="${c===chan?'on':''}" onclick="dmWith=null;chan='${c}';store.set('chan',chan);loadChan();render()">${c}</button>`).join('')}</div>
+      <div class="ch" id="msgs"></div>`;
+  }
+  const msgs = SYNC ? rMsgs : store.get('chat_'+(team?team.id:'x')+'_'+chan, []);
+  $('#msgs').innerHTML = msgs.map(msgHTML).join('') || `<p class="mut">${SYNC?'Сообщений нет — начните обсуждение.':'Локальный режим.'}</p>`;
+  scrollDown();
+}
+function pushLocal(m){ const arr = store.get('chat_'+(team?team.id:'x')+'_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); if(!SYNC) render(); }
+async function sendMsg(){
+  const inp = $('#mText'), txt = inp.value.trim(); if(!txt) return;
+  inp.value='';
+  if(SYNC){
+    const row = dmWith
+      ? {dm: dmKey(me.name, dmWith), author:me.name, role:me.role, body:txt, client_id:cid}
+      : {team_id:tid(), channel:chan, author:me.name, role:me.role, body:txt, client_id:cid};
+    rMsgs.push({n:me.name, r:me.role, x:txt, t:now()}); render();
+    const {error} = await sb.from('messages').insert(row);
+    if(error) alert('Не отправлено: '+error.message);
+  } else pushLocal({n:me.name, r:me.role, x:txt, t:now()});
+}
+$('#mText')?.addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
+$('#fileInp').addEventListener('change', async e => {
+  const f = e.target.files[0]; if(!f) return; e.target.value='';
+  if(SYNC){
+    try{
+      const path = tid() + '/' + cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, f);
+      if(up.error) throw up.error;
+      const {data:u} = sb.storage.from('files').getPublicUrl(path);
+      const row = {team_id:tid(), channel:chan, author:me.name, role:me.role, body:'', file_name:f.name, file_url:u.publicUrl, client_id:cid};
+      rMsgs.push(rowToMsg({...row, created_at:new Date().toISOString()})); render();
+      await sb.from('messages').insert(row);
+    }catch(err){ alert('Ошибка загрузки файла: '+err.message); }
+  } else {
+    const r = new FileReader();
+    r.onload = () => pushLocal({n:me.name, r:me.role, x:'', t:now(), f:r.result, fn:f.name, img:f.type.startsWith('image/')});
+    r.readAsDataURL(f);
+  }
+});
+
+/* ---------- ЭТАПЫ ---------- */
+const NIORK_PLAN = [
+ {num:1, title:'Анализ исходных данных', subs:['Изучение проектной, эксплуатационной и инспекционной документации по всем 10 объектам ГТС (хвостохранилища, пруды-накопители, ГТ и др.)','Систематизация материалов инженерных изысканий (геологических, геокриологических, гидрологических)','Анализ метеорологических данных за исторический период (осадки, температура воздуха, скорость ветра, изменение длительности тёплого периода года) по данным Росгидромета и мировых климатических баз']},
+ {num:2, title:'Анализ результатов ежегодного мониторинга ГТС', subs:['Обработка данных ежегодного мониторинга (вертикальные и горизонтальные деформации дамб, температурный режим грунтов в теле и основании дамб, уровень грунтовых вод)','Анализ данных натурных наблюдений и отчётов по эксплуатации ГТС']},
+ {num:3, title:'Разработка актуализированных климатических моделей', subs:['Построение региональных моделей изменения климата до 2050 года для НПР','Учёт сценариев экстремальных погодных явлений (ливни, снегопады, таяние снега и др.)']},
+ {num:4, title:'Оценка устойчивости ГТС в условиях изменяющегося климата', subs:['Моделирование термического состояния многолетнемерзлых пород с использованием нестационарной физически полной модели','Расчёт мощности сезонно-талого слоя и температурного профиля грунтов','Теплофизические и напряжённо-деформированные расчёты (НДС) для ключевых створов дамб','3D-моделирование деформаций и тепловых полей с учётом прогнозных климатических условий','Калибровка моделей по данным натурных наблюдений']},
+ {num:5, title:'Анализ применимости нормативно-технической документации', subs:['Сопоставление текущих климатических и геокриологических условий с требованиями действующих нормативов','Оценка необходимости корректировки НТД в части проектирования, строительства и эксплуатации ГТС на многолетнемерзлых грунтах']},
+ {num:6, title:'Прогноз рисков и разработка рекомендаций', subs:['Количественная оценка вероятности и последствий аварийных ситуаций на ГТС под воздействием климатических изменений','Оценка рисков для объектов инфраструктуры (трубопроводы и др.) при необходимости','Выявление рисков, связанных с устареванием нормативной базы','Формирование перечня мероприятий по снижению рисков: усиление конструкций, модернизация систем дренажа и мониторинга, аварийные планы реагирования','Подготовка заключения с выводами и рекомендациями по обеспечению эксплуатационной надёжности ГТС']},
+ {num:7, title:'Уточнение результатов НИР', subs:['Выполняется при наличии должного обоснования, по согласованию с заказчиком (срок ~2 мес. с момента получения уточнённых инженерно-геологических изысканий)','Дополнительные инженерно-геологические изыскания и расчёты по створам с уточняемыми характеристиками грунтов','Подготовка пояснительной записки; при существенном влиянии — корректировка заключения по этапу 6']}
+];
+function renderStages(v){
+  if(!SYNC){ v.innerHTML = '<h2 class="pt">Этапы НИОКР</h2><p class="mut">Требуется подключение Supabase.</p>'; return; }
+  if(STAGES === null){ v.innerHTML = '<p class="mut">Загрузка…</p>'; loadStages(); return; }
+  const isOwner = team && team.is_owner;
+  let html = `<h2 class="pt">Календарный план НИОКР</h2>`;
+  if(!STAGES.length){
+    html += `<div class="card"><p class="mut" style="margin-bottom:8px">План не загружен. ${isOwner?'Загрузите 7 этапов по ТЗ (раздел 8).':'Спросите владельца команды.'}</p>
+      ${isOwner?'<button class="pri" style="width:100%" onclick="seedStages()">🗓 Загрузить календарный план НИОКР (7 этапов)</button>':''}</div>`;
+    v.innerHTML = html; return;
+  }
+  html += STAGES.map(s => `<div class="card">
+    <div class="stage-head"><h3>Этап ${s.num}. ${esc(s.title)}</h3>
+      <span class="badge ${s.status==='Выполнен'?'ok':s.status==='В работе'?'warn':''}">${esc(s.status)}</span></div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <select onchange="setStageStatus(${s.id}, this.value)" style="flex:1;min-width:110px">
+        ${['Не начат','В работе','Выполнен'].map(st => `<option ${st===s.status?'selected':''}>${st}</option>`).join('')}
+      </select>
+      <select onchange="setStageResp(${s.id}, this.value)" style="flex:1;min-width:110px">
+        <option value="">Ответственный…</option>
+        ${teamIds().map(nm => `<option ${nm===s.responsible?'selected':''}>${esc(nm)}</option>`).join('')}
+      </select>
+      <input type="date" value="${s.deadline||''}" onchange="setStageDeadline(${s.id}, this.value)" style="flex:1;min-width:110px" title="Срок">
+    </div>
+    ${s.responsible?`<p class="mut" style="margin-top:6px">👤 Ответственный: ${esc(s.responsible)}</p>`:''}
+    <details><summary>Содержание этапа (${(s.subs||[]).length})</summary><ul class="subs">${(s.subs||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>
+    <div class="row" style="margin-top:8px"><input id="note_${s.id}" placeholder="Примечание по ходу работ…" value="${esc(s.note||'')}"><button class="sec" onclick="setStageNote(${s.id})">💾</button></div>
+    ${s.note?`<p class="mut" style="margin-top:6px">📝 ${linkify(s.note)}</p>`:''}
+  </div>`).join('');
+  v.innerHTML = html;
+}
+async function seedStages(){
+  const rows = NIORK_PLAN.map(p => ({team_id:tid(), num:p.num, title:p.title, subs:p.subs, status:'Не начат'}));
+  const {error} = await sb.from('stages').insert(rows);
+  if(error) return alert(error.message);
+  loadStages();
+}
+async function setStageStatus(id, val){ await sb.from('stages').update({status:val}).eq('id',id); loadStages(); }
+async function setStageResp(id, val){ await sb.from('stages').update({responsible:val||null}).eq('id',id); loadStages(); }
+async function setStageDeadline(id, val){ await sb.from('stages').update({deadline:val||null}).eq('id',id); loadStages(); }
+async function setStageNote(id){ const val = $('#note_'+id).value; await sb.from('stages').update({note:val||null}).eq('id',id); loadStages(); }
+
+/* ---------- ЗАДАЧИ ---------- */
+function renderTasks(v){
+  const ts = SYNC ? (rTasks||[]) : store.get('tasks_'+(team?team.id:'x'), []);
+  v.innerHTML = `<h2 class="pt">Задачи</h2>
+  <div class="card"><input id="tt" placeholder="Новая задача…" style="margin-bottom:8px">
+    <div class="row"><select id="ta" style="flex:1">${teamIds().map(a=>`<option>${esc(a)}</option>`).join('')||'<option>—</option>'}</select>
+    <input id="td" type="date" style="flex:1"></div>
+    <div style="height:8px"></div><button class="pri" style="width:100%" onclick="addTask()">Добавить</button></div>
+  ${taskList(ts.slice().reverse())}`;
+}
+function taskList(ts){
+  if(!ts.length) return '<p class="mut">Задач нет.</p>';
+  return ts.map(t=>`<div class="card"><div class="row"><h3 style="flex:1">${linkify(t.title)}</h3>
+    <span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></div>
+    <p class="mut">Исполнитель: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'} · ${esc(t.author||'')}</p>
+    <div style="height:8px"></div><div class="row">
+    ${t.status!=='Выполнено'?`<button class="pri" onclick="setTask(${t.id},'В работе')">В работу</button>
+    <button class="pri" style="background:var(--ok)" onclick="setTask(${t.id},'Выполнено')">✔ Готово</button>`:''}
+    <button class="dng" onclick="delTask(${t.id})">✖</button></div></div>`).join('');
+}
+async function addTask(){
+  const t = $('#tt').value.trim(); if(!t) return;
+  if(SYNC){ await sb.from('tasks').insert({team_id:tid(), title:t, assignee:$('#ta').value, deadline:$('#td').value||null, status:'Новая', author:me.name}); loadTasks(); }
+  else { const ts = store.get('tasks_'+(team?team.id:'x'), []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks_'+(team?team.id:'x'), ts); render(); }
+}
+async function setTask(id,s){
+  if(SYNC){
+    await sb.from('tasks').update({status:s}).eq('id',id);
+    await loadTasks();
+    if(window._taskSheetId === id) taskSheet(id);
+  } else {
+    const ts = store.get('tasks_'+(team?team.id:'x'),[]);
+    const t = ts.find(x=>x.id===id);
+    if(t){ t.status=s; store.set('tasks_'+(team?team.id:'x'), ts); render(); if(window._taskSheetId === id) taskSheet(id); }
+  }
+}
+async function delTask(id){
+  if(!confirm('Удалить задачу?')) return;
+  if(SYNC){ await sb.from('tasks').delete().eq('id',id); await loadTasks(); }
+  else { store.set('tasks_'+(team?team.id:'x'), store.get('tasks_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); }
+  if(window._taskSheetId === id){ window._taskSheetId = null; document.getElementById('overlay').style.display='none'; }
+}
+
+/* ---------- ОБЪЯВЛЕНИЯ ---------- */
+function renderNews(v){
+  const ns = SYNC ? (rNews||[]) : store.get('news_'+(team?team.id:'x'), []);
+  v.innerHTML = `<h2 class="pt">Объявления</h2>
+  <div class="card"><textarea id="nt" rows="3" placeholder="Текст объявления…"></textarea>
+  <div id="annFilePrev" style="margin-top:8px"></div>
+  <div style="height:8px"></div>
+  <div class="row"><button class="sec" onclick="document.getElementById('annFileInp').click()">📎 Файл/фото</button>
+  <button class="pri" style="flex:1" onclick="addNews()">Опубликовать</button></div></div>
+  <input type="file" id="annFileInp" class="hidden" onchange="pickAnnFile(this)">
+  ${ns.map(n=>`<div class="card"><h3>${linkify(n.body)}</h3>
+  ${n.file_url ? (/\.(png|jpe?g|gif|webp)$/i.test(n.file_url) ? `<img src="${n.file_url}" style="max-width:100%;border-radius:8px;margin-top:6px">` : `<a href="${n.file_url}" download="${esc(n.file_name||'file')}" target="_blank" style="color:var(--acc)">📄 ${esc(n.file_name||'файл')}</a>`) : ''}
+  <p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p><p class="mut" style="margin-top:2px">👁 Прочтение${readReceipt('ann', n.id)}</p>
+  <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
+}
+let annFile = null;
+function pickAnnFile(inp){
+  const f = inp.files[0]; annFile = f || null;
+  const p = document.getElementById('annFilePrev');
+  if(!p) return;
+  p.innerHTML = f ? `📎 ${esc(f.name)} <span style="cursor:pointer" title="Убрать" onclick="annFile=null;document.getElementById('annFileInp').value='';document.getElementById('annFilePrev').innerHTML=''">✖</span>` : '';
+}
+async function addNews(){
+  const t = $('#nt').value.trim(); if(!t) return;
+  if(SYNC){
+    let file_name = null, file_url = null;
+    if(annFile){
+      const path = tid() + '/' + cid + '/' + Date.now() + '_' + annFile.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, annFile);
+      if(up.error) return alert('Ошибка загрузки файла: ' + up.error.message);
+      file_url = sb.storage.from('files').getPublicUrl(path).data.publicUrl;
+      file_name = annFile.name;
+    }
+    await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name, file_name, file_url});
+    annFile = null;
+    loadNews();
+  }
+  else { const ns = store.get('news_'+(team?team.id:'x'), []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news_'+(team?team.id:'x'), ns); render(); }
+}
+async function editNews(id){
+  const n = (rNews||[]).find(x=>x.id===id); if(!n) return;
+  const t = prompt('Исправить объявление:', n.body); if(t===null) return;
+  const body = t.trim(); if(!body || body===n.body) return;
+  const {error} = await sb.from('announcements').update({body, edited:true}).eq('id',id);
+  if(error) alert(error.message);
+}
+async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news_'+(team?team.id:'x'), store.get('news_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); } }
+
+/* ---------- ФАЙЛЫ ---------- */
+function renderFiles(v){
+  const fs = SYNC ? (rDocs||[]) : store.get('files_'+(team?team.id:'x'), []);
+  v.innerHTML = `<h2 class="pt">Документы команды</h2>
+  <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
+  <button class="pri" style="width:100%" onclick="addFile()">Загрузить</button></div>
+  ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
+  <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#7a5410;font-size:22px">⬇</a>
+  <button class="dng" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
+}
+async function addFile(){
+  const f = $('#projFile').files[0]; if(!f) return;
+  if(SYNC){
+    try{
+      const path = tid() + '/' + cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+      const up = await sb.storage.from('files').upload(path, f);
+      if(up.error) throw up.error;
+      const {data:u} = sb.storage.from('files').getPublicUrl(path);
+      await sb.from('documents').insert({team_id:tid(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', url:u.publicUrl, author:me.name});
+      loadDocs();
+    }catch(err){ alert('Ошибка загрузки: '+err.message); }
+  } else {
+    const r = new FileReader();
+    r.onload = () => { const fs = store.get('files_'+(team?team.id:'x'), []); fs.unshift({id:Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', created_at:new Date().toISOString(), d:r.result}); store.set('files_'+(team?team.id:'x'), fs); render(); };
+    r.readAsDataURL(f);
+  }
+}
+async function delFile(id){
+  if(SYNC){ await sb.from('documents').delete().eq('id',id); loadDocs(); }
+  else { store.set('files_'+(team?team.id:'x'), store.get('files_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); }
+}
+
+/* ---------- РАЗНОЕ ---------- */
+function renderMisc(v){
+  const isOwner = team && team.is_owner;
+  const others = MEMBERS.filter(m => !TEAM_MEMBERS.find(t => t.member === m.name));
+  v.innerHTML = `<h2 class="pt">Разное</h2>
+  <div class="card"><h3>Участник</h3><p class="mut" style="margin:4px 0 10px">${esc(me.name)} · ${esc(me.role||'')}</p>
+    <button class="sec" style="width:100%" onclick="switchUser()">👤 Сменить участника</button></div>
+  <div class="card"><h3>Состав команды «${esc(team?team.name:'—')}»</h3>
+    ${TEAM_MEMBERS.map(m => `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av" style="${ONLINE[m.member]?'box-shadow:0 0 0 2px var(--ok);':''}">${esc((m.member||'?')[0])}</div>
+      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc((MEMBERS.find(x=>x.name===m.member)||{}).phone||'')}</span></div>
+      ${isOwner && m.member!==me.name ? `<button class="dng" style="padding:6px 10px" onclick="removeMember('${esc(m.member)}')">✖</button>`:''}
+    </div>`).join('') || '<p class="mut">Нет участников.</p>'}
+    ${isOwner ? `<div style="height:8px"></div>
+      ${others.length?`<div class="row"><select id="addM" style="flex:1">${others.map(m=>`<option>${esc(m.name)}</option>`).join('')}</select><button class="pri" onclick="addMember()">+ В команду</button></div>`:'<p class="mut">Все зарегистрированные участники уже в команде.</p>'}
+      <div style="height:8px"></div><button class="sec" style="width:100%" onclick="newMemberForm()">＋ Создать нового участника</button>`:''}
+  </div>
+  ${isOwner ? `<div class="card"><p class="mut" style="margin-bottom:8px">Код приглашения:</p><div class="code">${esc(team.invite_code)}</div>
+    <p class="mut">По этому коду можно вступить в команду (кнопка 👥 вверху → «Вступить по коду»).</p>
+    <div style="height:10px"></div><button class="dng" style="width:100%" onclick="deleteTeam()">🗑 Удалить команду</button></div>`:''}
+  <p class="mut" style="text-align:center;margin-top:8px">НИОКР Команда · PWA v4 · Supabase Realtime</p>`;
+}
+function switchUser(){
+  if(!confirm('Выйти и выбрать другого участника?')) return;
+  store.del('user'); store.del('team'); me = null; team = null; appStarted = false; MEMBERS=[]; TEAM_MEMBERS=[];
+  init();
+}
+async function addMember(){
+  const nm = $('#addM').value; if(!nm) return;
+  await sb.from('team_members').insert({team_id:tid(), member:nm, is_owner:false});
+  await loadTeamMembers(); render();
+}
+async function removeMember(nm){
+  if(!confirm('Исключить '+nm+' из команды?')) return;
+  await sb.from('team_members').delete().eq('team_id',tid()).eq('member',nm);
+  await loadTeamMembers(); render();
+}
+async function deleteTeam(){
+  if(!confirm('Удалить команду «'+team.name+'» вместе со всеми сообщениями, задачами и файлами?')) return;
+  await sb.from('teams').delete().eq('id', tid());
+  store.del('team'); team = null; reloadAll2();
+}
+async function reloadAll2(){ MYTEAMS = await fetchMyTeams(); if(MYTEAMS.length){ team=MYTEAMS[0]; store.set('team',team); reloadAll(); } else onboarding2(); }
+
+/* ---------- Карточки участников и отправка сообщений ---------- */
+function memberCard(name){
+  const m = MEMBERS.find(x=>x.name===name) || {name};
+  const isSelf = name===me.name;
+  const tg = (m.telegram||'').replace('@','');
+  $('#sheet').innerHTML = `<h2>${esc(name)}</h2>
+   <div class="card">
+     <p class="mut">${esc(m.role||'Участник')}</p>
+     ${m.phone?`<p style="margin-top:8px">📞 <a href="tel:${esc(m.phone)}" style="color:#7a5410">${esc(m.phone)}</a></p>`:''}
+     ${m.email?`<p style="margin-top:4px">✉️ <a href="mailto:${esc(m.email)}" style="color:#7a5410">${esc(m.email)}</a></p>`:''}
+     ${m.telegram?`<p style="margin-top:4px">✈️ <a href="https://t.me/${esc(tg)}" target="_blank" style="color:#7a5410">${esc(m.telegram)}</a></p>`:''}
+     ${m.max?`<p style="margin-top:4px">Ⓜ️ <a href="${esc(/^https?:/i.test(m.max)?m.max:'https://max.ru/u/'+m.max.replace(/^u\//,''))}" target="_blank" style="color:#7a5410">${esc(m.max)}</a></p>`:''}
+     ${!m.phone&&!m.email&&!m.telegram?'<p class="mut" style="margin-top:8px">Контакты не заполнены'+(isSelf?' — нажмите «Редактировать»':'')+'.</p>':''}
+     <div style="height:12px"></div>
+     <button class="pri" style="width:100%" onclick="composeTo('${esc(name)}')">✉️ Написать сообщение…</button>
+     ${(isSelf || (team&&team.is_owner))?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="editCard('${esc(name)}')">✏️ Редактировать карточку</button>`:''}
+     ${isSelf?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="waConnectSelf()">🔗 Подключить WhatsApp (приём шлюзом)</button><div style="height:8px"></div><button class="sec" style="width:100%" onclick="window.open('https://max.ru/'+MAX_BOT_NAME+'?start=pair_'+encodeURIComponent(me.name),'_blank')">🔗 Подключить MAX (получать сообщения сюда)</button>`:''}
+     ${(team&&team.is_owner && !isSelf)?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="toggleReportRole('${esc(name)}')">📄 Отчёты: ${(TEAM_MEMBERS.find(x=>x.member===name)||{}).can_report?'разрешено → запретить':'запрещено → разрешить'}</button>`:''}
+     ${(team&&team.is_owner && !isSelf && MYTEAMS.filter(t=>t.id!==tid()).length)?`<div style="height:8px"></div><button class="sec" style="width:100%" onclick="moveMemberForm('${esc(name)}')">⇄ Переместить в другую мою команду</button>`:''}
+     <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+function composeTo(name){
+  $('#sheet').innerHTML = `<h2>Сообщение для ${esc(name)}</h2>
+   <div class="card"><textarea id="cMsg" rows="4" placeholder="Текст сообщения…"></textarea>
+   <div style="height:10px"></div>
+   <button class="pri" style="width:100%;margin-bottom:8px" onclick="deliverViaApp('${esc(name)}')">📤 Доставить через НИОКР (чат + push + SMS)</button>
+   <button class="pri" style="width:100%;margin-bottom:8px" onclick="sendToChat('${esc(name)}')">💬 В чат приложения (мгновенно)</button>
+   <div class="row" style="flex-wrap:wrap">
+     <button class="sec" style="flex:1" onclick="viaSms('${esc(name)}')">📱 SMS</button>
+     <button class="sec" style="flex:1" onclick="viaWa('${esc(name)}')">🟢 WhatsApp</button>
+     <button class="sec" style="flex:1" onclick="viaTg('${esc(name)}')">✈️ Telegram</button>
+     <button class="sec" style="flex:1" onclick="viaMax('${esc(name)}')">Ⓜ️ MAX</button>
+     <button class="sec" style="flex:1" onclick="viaMail('${esc(name)}')">✉️ Почта</button>
+   </div>
+   <p class="mut" style="margin-top:10px">SMS / WhatsApp / Telegram / MAX / Почта откроют штатное приложение устройства с готовым текстом — в одно касание. «Доставить через НИОКР» — сообщение в чат + push-уведомление + SMS на телефон (дубль при потере сети). «В чат» — только внутри приложения.</p></div>`;
+  $('#overlay').style.display='flex';
+}
+async function deliverViaApp(name){
+  const t = msgText() || ('Сообщение от ' + (me?me.name:'') + ' (НИОКР Команда)');
+  $('#overlay').style.display='none';
+  // 1. Личное сообщение в приложение (push придёт автоматически через триггер)
+  dmWith = name;
+  view = 'chat';
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  const row = {dm: dmKey(me.name, name), author:me.name, role:me.role, body:t, client_id:cid};
+  rMsgs.push({n:me.name, r:me.role, x:t, t:now()}); render();
+  const {error} = await sb.from('messages').insert(row);
+  if(error) alert('Ошибка: '+error.message);
+  // 2. SMS-дубль
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/sms-gateway', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'send', member:name, text:t})
+    });
+    const j = await r.json().catch(()=>({}));
+    if(r.ok && j.ok) alert('✅ Доставлено: чат + push + SMS');
+    else if(j && j.error === 'SMS_NOT_CONFIGURED') alert('✅ Доставлено: чат + push. SMS-шлюз не настроен (см. настройки).');
+    else if(j && j.error === 'NO_PHONE') alert('✅ Доставлено: чат + push. У участника нет телефона — SMS пропущен.');
+  }catch(e){}
+}
+function sendToChat(name){
+  const t = msgText();
+  $('#overlay').style.display='none';
+  dmWith = name;
+  view = 'chat';
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  loadChan();
+  setTimeout(() => { if(t && $('#mText')) $('#mText').value = t; }, 400);
+}
+function msgText(){ return ($('#cMsg') ? $('#cMsg').value : '').trim(); }
+function viaSms(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('У участника не указан телефон'); const t=msgText(); location.href='sms:'+m.phone.replace(/[^\d+]/g,'')+(t?'?body='+encodeURIComponent(t):''); }
+function viaWa(name){
+  const m = MEMBERS.find(x=>x.name===name); if(!m||!m.phone) return alert('Не указан телефон');
+  const t = msgText();
+  if(t && navigator.clipboard) navigator.clipboard.writeText(t).catch(()=>{});
+  const digits = m.phone.replace(/[^\d]/g,'');
+  const ua = navigator.userAgent;
+  if(/android/i.test(ua)){
+    // Нативный шлюз Android: вызов приложения напрямую, НИКАКИХ веб-адресов (не зависит от блокировок)
+    location.href = 'intent://send?phone=' + digits + (t ? '&text=' + encodeURIComponent(t) : '') + '#Intent;package=com.whatsapp;scheme=whatsapp;end';
+  } else if(/iphone|ipad|ipod/i.test(ua)){
+    // iOS: whatsapp:// не требует интернета/веб; получателя выбирает в самом приложении (текст уже в буфере)
+    location.href = 'whatsapp://send' + (t ? '?text=' + encodeURIComponent(t) : '');
+    setTimeout(() => alert('Текст сообщения скопирован в буфер обмена. В WhatsApp выберите чат с «' + name + '» и вставьте. (iOS не разрешает указать получателя извне — ограничение Apple/WhatsApp)'), 700);
+  } else {
+    window.open('https://wa.me/' + digits + (t ? '?text=' + encodeURIComponent(t) : ''), '_blank');
+  }
+}
+function viaTg(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.telegram) return alert('Не указан Telegram'); const t=msgText(); window.open('https://t.me/'+m.telegram.replace('@','')+(t?'?text='+encodeURIComponent(t):''),'_blank'); }
+const MAX_BOT_NAME = 'YOUR_MAX_BOT'; // имя бота-шлюза (подставлю после создания)
+async function waConnectSelf(){
+  const m = MEMBERS.find(x=>x.name===me.name);
+  if(!m || !m.phone) return alert('Сначала укажите телефон в карточке (Редактировать карточку)');
+  await sb.from('wa_chats').upsert({member:me.name, phone:m.phone.replace(/[^\d]/g,'')}, {onConflict:'member'});
+  alert('Телефон привязан к WhatsApp-шлюзу. Для гарантированной доставки ответьте один раз на сообщение бизнес-номера в WhatsApp — откроется 24-часовое окно переписки.');
+}
+async function viaMax(name){
+  const t = msgText() || ('Сообщение от ' + (me?me.name:'') + ' (НИОКР Команда)');
+  // ШЛЮЗ: если участник подключил MAX — отправляем напрямую, без открытия приложения
+  try{
+    const {data} = await sb.from('max_links').select('chat_id').eq('member', name).maybeSingle();
+    if(data && data.chat_id){
+      const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/max-bot', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'send', member:name, text:t})
+      });
+      const j = await r.json().catch(()=>({}));
+      if(r.ok && j.ok){ alert('Отправлено в MAX участнику «' + name + '» ✅'); return; }
+    }
+  }catch(e){}
+  const m = MEMBERS.find(x=>x.name===name);
+  if(m && m.max){
+    let l = m.max.trim();
+    if(!/^https?:/i.test(l)) l = 'https://max.ru/' + (l[0]==='@' ? l : 'u/' + l.replace(/^u\//,''));
+    window.open(l, '_blank');
+  } else {
+    alert('«' + name + '» ещё не подключил MAX. Попросите открыть свою карточку (Разное → себя) и нажать «Подключить MAX» — это одноразово, 10 секунд.');
+  }
+}
+function viaMail(name){ const m=MEMBERS.find(x=>x.name===name); if(!m||!m.email) return alert('Не указан e-mail'); const t=msgText(); location.href='mailto:'+m.email+(t?'?body='+encodeURIComponent(t):''); }
+function editCard(name){
+  const m = MEMBERS.find(x=>x.name===name) || {};
+  const canDelete = team && team.is_owner && name!==me.name;
+  $('#sheet').innerHTML = `<h2>Карточка: ${esc(name)}</h2>
+   <div class="card">
+    <input id="ec_r" placeholder="Роль" value="${esc(m.role||'')}"><div style="height:8px"></div>
+    <input id="ec_p" placeholder="Телефон" value="${esc(m.phone||'')}"><div style="height:8px"></div>
+    <input id="ec_e" placeholder="E-mail" value="${esc(m.email||'')}"><div style="height:8px"></div>
+    <input id="ec_t" placeholder="Telegram, например @ivanov" value="${esc(m.telegram||'')}"><div style="height:8px"></div>
+    <input id="ec_m" placeholder="MAX: ссылка max.ru/u/… или @ник" value="${esc(m.max||'')}">
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="saveCard('${esc(name)}')">💾 Сохранить</button>
+    ${canDelete?`<div style="height:8px"></div><button class="dng" style="width:100%" onclick="deleteMember('${esc(name)}')">🗑 Удалить участника из системы</button>`:''}
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(name)}')">← Назад</button>
+   </div>`;
+}
+async function saveCard(name){
+  const {error} = await sb.from('members').update({role:$('#ec_r').value||null, phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null, max:$('#ec_m').value||null}).eq('name', name);
+  if($('#ec_p').value) await sb.from('wa_chats').upsert({member:name, phone:$('#ec_p').value.replace(/[^\d]/g,'')}, {onConflict:'member'});
+  if(error) return alert(error.message);
+  if(name===me.name){ me.role = $('#ec_r').value; store.set('user', me); }
+  await loadMembers(); render();
+  memberCard(name);
+}
+async function deleteMember(name){
+  if(!confirm('Удалить участника «'+name+'» из системы? Он будет исключён из всех команд; история сообщений сохранится.')) return;
+  await sb.from('team_members').delete().eq('member', name);
+  const {error} = await sb.from('members').delete().eq('name', name);
+  if(error) return alert(error.message);
+  await loadMembers(); await loadTeamMembers(); render();
+  $('#overlay').style.display='none';
+}
+function newMemberForm(){
+  $('#sheet').innerHTML = `<h2>Новый участник</h2><div class="card">
+   <input id="cn" placeholder="Фамилия И.О."><div style="height:8px"></div>
+   <input id="cr" placeholder="Роль"><div style="height:8px"></div>
+   <input id="cp" placeholder="Телефон"><div style="height:8px"></div>
+   <input id="ce" placeholder="E-mail"><div style="height:8px"></div>
+   <input id="ct" placeholder="Telegram (@username)"><div style="height:8px"></div>
+   <input id="cm" placeholder="MAX: max.ru/u/…">
+   <div style="height:12px"></div><button class="pri" style="width:100%" onclick="createMember()">💾 Создать и добавить в команду</button>
+   <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Отмена</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function createMember(){
+  const n = $('#cn').value.trim(); if(!n) return alert('Введите имя');
+  const exist2 = findMemberCase(n);
+  if(exist2){ await sb.from('team_members').insert({team_id:tid(), member:exist2.name, is_owner:false}); await loadTeamMembers(); render(); $('#overlay').style.display='none'; return; }
+  const {error} = await sb.from('members').insert({name:n, role:$('#cr').value||null, phone:$('#cp').value||null, email:$('#ce').value||null, telegram:$('#ct').value||null, max:$('#cm').value||null});
+  if(error){ if(error.code==='23505') return alert('Такой участник уже зарегистрирован'); return alert(error.message); }
+  await sb.from('team_members').insert({team_id:tid(), member:n, is_owner:false});
+  await loadMembers(); await loadTeamMembers(); render();
+  $('#overlay').style.display='none';
+}
+
+/* ---------- Перемещение участника между командами ---------- */
+function moveMemberForm(name){
+  const targets = MYTEAMS.filter(t => t.id !== tid());
+  $('#sheet').innerHTML = `<h2>Переместить: ${esc(name)}</h2><div class="card">
+   <p class="mut" style="margin-bottom:8px">Из команды «${esc(team.name)}» в:</p>
+   <select id="mvT" style="width:100%">${targets.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+   <div style="height:12px"></div><button class="pri" style="width:100%" onclick="moveMember('${esc(name)}')">⇄ Переместить</button>
+   <div style="height:8px"></div><button class="sec" style="width:100%" onclick="memberCard('${esc(name)}')">← Назад</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function toggleReportRole(name){
+  const tm = TEAM_MEMBERS.find(x=>x.member===name);
+  await sb.from('team_members').update({can_report: !(tm && tm.can_report)}).eq('team_id', tid()).eq('member', name);
+  await loadTeamMembers(); memberCard(name);
+}
+async function moveMember(name){
+  const target = $('#mvT').value;
+  const tname = (MYTEAMS.find(t=>t.id===target)||{}).name || '';
+  if(!confirm('Переместить «'+name+'» в команду «'+tname+'»?')) return;
+  await sb.from('team_members').delete().eq('team_id', tid()).eq('member', name);
+  const {error} = await sb.from('team_members').insert({team_id: target, member: name, is_owner:false});
+  if(error) return alert(error.message);
+  await loadTeamMembers(); render();
+  memberCard(name);
+}
+
+/* ---------- Realtime ---------- */
+function subscribeAll(){
+  sb.channel('niokr-v4')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, p => {
+      const m = p.new;
+      if(m.dm){
+        const pair = m.dm.split('||');
+        if(pair.includes(me.name) && m.client_id!==cid && dmWith && pair.includes(dmWith)){
+          rMsgs.push(rowToMsg(m)); if(view==='chat') render();
+        }
+      } else if(m.team_id===tid() && m.channel===chan && m.client_id!==cid){
+        rMsgs.push(rowToMsg(m)); if(view==='chat') render();
+      }
+      if(m.dm && m.dm.split('||').includes(me.name)){ loadDmPartners(); if(view==='chat' && !dmWith) render(); }
+    })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'reads'}, p => {
+      const r = p.new; const k = r.kind+':'+r.ref_id+':'+r.member;
+      if(!READS.some(x => (x.kind+':'+x.ref_id+':'+x.member)===k)) READS.push(r);
+      if(view==='chat' || view==='news') render();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, p => { if(!p.new || p.new.team_id===tid() || p.old?.team_id===tid()) loadTasks(); })
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages'}, p => {
+      const m = p.new;
+      const inView = m.dm ? (dmWith && m.dm===dmKey(me.name, dmWith)) : (!dmWith && m.team_id===tid() && m.channel===chan);
+      if(inView) loadChan();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'announcements'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadNews(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'tabs'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadTabs(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'plan_works'}, () => { if(view.startsWith('tab:') && curTab() && curTab().kind==='plan'){ loadPlanRows(curTab().id).then(render); } })
+    .on('postgres_changes', {event:'*', schema:'public', table:'dev_tasks'}, () => { if(document.getElementById('devBox')) loadDevTasks().then(renderDevBox); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'qa_queue'}, () => { if(document.getElementById('qaBox')) loadQa().then(renderQaBox); })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, p => {
+      if(SYNC && team && team.is_owner && p.new.author !== me.name && !p.new.dm){
+        clearTimeout(qaScanTimer);
+        qaScanTimer = setTimeout(qaScanNow, 90000);
+      }
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'acts'}, () => { if(view==='acts'){ ACTS=null; render(); } })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'agent_messages'}, p => {
+      if(p.new.role !== 'assistant') return;
+      const overlayOpen = document.getElementById('overlay').style.display === 'flex';
+      const visible = overlayOpen && curThread === p.new.thread_id && document.getElementById('agentLog');
+      if(visible){
+        const log = document.getElementById('agentLog');
+        const pend = document.getElementById('agentPending');
+        if(pend) pend.remove();
+        if(p.new.role === 'tool'){
+          log.insertAdjacentHTML('beforeend', `<div class="mut" style="font-size:11.5px;margin:6px 0 0 14px;padding-left:10px;border-left:2px solid var(--brd2)">${p.new.mode==='step' ? '⏳' : '⚙️'} ${esc(p.new.text)}</div>`);
+        } else {
+          log.insertAdjacentHTML('beforeend', `<div class="msg" style="max-width:100%;margin-top:8px"><b>🤖 Агент</b>${p.new.mode==='llm-tools' ? ' <span class="badge" style="background:#e7ddf0;color:#6b3fa0">🧠 Kimi K2.6 · инструменты</span>' : ' <span class="badge">⚡ мгновенная команда</span>'}<div style="white-space:pre-wrap">${esc(p.new.text)}</div></div>`);
+          agentSpeak(p.new.text);
+        }
+        log.scrollTop = log.scrollHeight;
+      } else {
+        const b = document.getElementById('agentBtn');
+        if(b){ b.textContent = '🤖●'; b.title = 'Агент ответил — откройте, чтобы прочитать'; }
+        store.set('agentNotify', p.new.thread_id);
+      }
+    })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'posts'}, p => { if(view==='tab:'+p.new.tab_id) loadPosts(p.new.tab_id); })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'documents'}, p => { if(p.new.team_id===tid()) loadDocs(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'stages'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadStages(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'team_members'}, () => { loadTeamMembers(); if(view==='misc') render(); })
+    .subscribe();
+}
+
+/* ---------- утилиты ---------- */
+function linkify(s){
+  return esc(s).replace(/(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/g, function(u){
+    const href = u.indexOf('http')===0 ? u : 'https://' + u;
+    return `<a href="${href}" target="_blank" rel="noopener">${u}</a>`;
+  });
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function now(){ const d=new Date(); return d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function fmtT(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?iso:d.toLocaleDateString('ru-RU')+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function netUpd(){ const d = document.getElementById('teamDot'); if(d) d.style.background = navigator.onLine ? 'var(--ok)' : 'var(--bad)'; }
+addEventListener('online', netUpd); addEventListener('offline', netUpd); netUpd();
+
+/* ---------- PWA ---------- */
+let deferredPrompt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; $('#installBtn').classList.remove('hidden'); });
+$('#installBtn').onclick = async () => { if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('#installBtn').classList.add('hidden'); } };
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isInStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+if(isIOS && !isInStandalone && me){
+  setTimeout(()=>{
+    if($('#overlay').style.display === 'flex') return; // окно приветствия важнее
+    $('#sheet').innerHTML = `<h2>Установка на iPhone</h2><ol>
+      <li>Нажмите <b>«Поделиться»</b> в Safari.</li>
+      <li>Выберите <b>«На экран "Домой"»</b> → <b>«Добавить»</b>.</li></ol>
+      <div style="height:12px"></div><button class="pri" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Понятно</button>`;
+    $('#overlay').style.display = 'flex';
+  }, 1500);
+}
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    // Консервативная проверка обновлений: новая версия активируется штатно (кнопка ⟳ — как раньше)
+    setInterval(() => { reg.update().catch(() => {}); }, 600000);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      if(w) w.addEventListener('statechange', () => {
+        if(w.state === 'activated' && navigator.serviceWorker.controller) location.reload();
+      });
+    });
+  }).catch(()=>{});
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(!refreshing){ refreshing = true; location.reload(); }
+  });
+}
+
+/* Универсальное закрытие окон: ✕ в каждом окне + клик по фону */
+new MutationObserver(() => {
+  const s = document.getElementById('sheet');
+  if(!s || document.getElementById('sheetClose')) return;
+  if(document.getElementById('overlay').style.display !== 'flex') return;
+  // Приветственные окна не закрываются крестиком — иначе пустой экран без команды
+  if(s.innerHTML.indexOf('existSel') > -1 || s.innerHTML.indexOf('newTeamName') > -1 || s.innerHTML.indexOf('pickExisting') > -1) return;
+  const c = document.createElement('span');
+  c.id = 'sheetClose'; c.textContent = '✕'; c.title = 'Закрыть (отмена)';
+  c.onclick = (e) => { e.stopPropagation(); if(!appStarted) return; window._taskSheetId = null; document.getElementById('overlay').style.display='none'; };
+  s.appendChild(c);
+}).observe(document.getElementById('sheet'), {childList:true});
+document.getElementById('overlay').addEventListener('click', (e) => {
+  if(e.target === document.getElementById('overlay')){ if(!appStarted) return; document.getElementById('overlay').style.display='none'; }
+});
+
+init();
