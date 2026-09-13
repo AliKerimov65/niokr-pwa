@@ -1,0 +1,73 @@
+-- ============================================================================
+-- НИОКР Команда — ПОЛНЫЙ СНИМОК СХЕМЫ БАЗЫ ДАННЫХ (аудит 2026-09-14, Эксперт)
+-- Проект Supabase: lxgipzdybigdpdcmcnez
+-- Источник: интроспекция живой базы через REST API + анализ кода v104.
+--
+-- ВНИМАНИЕ: schema.sql / migration.sql / migration-fix.sql в репозитории
+-- УСТАРЕЛИ — описывают только 8 из 23 таблиц. Этот файл — полный перечень.
+-- Метки:
+--   [ЖИВАЯ]   — колонки получены из реальных строк таблицы
+--   [ПО КОДУ] — таблица пуста; перечень колонок восстановлен по коду клиента
+--   [ФУНКЦИИ] — наполняется Edge Functions (структура на стороне сервера)
+-- Не выполняйте этот файл целиком в работающей базе — он документирующий.
+-- ============================================================================
+
+-- teams [ЖИВАЯ]: id uuid pk, name text, owner text, invite_code text, created_at timestamptz
+-- members [ЖИВАЯ]: id, name text, role text, phone text, email text, telegram text, max text, created_at
+-- team_members [ЖИВАЯ]: id, team_id uuid, member text, is_owner bool, can_report bool, created_at
+-- messages [ЖИВАЯ]: id, team_id uuid, author text, body text, channel text, dm text, role text,
+--                  file_url text, file_name text, edited bool, client_id text, created_at
+-- reads [ЖИВАЯ]: id, member text, kind text, ref_id, created_at
+-- tasks [ПО КОДУ]: id, team_id uuid, title text, status text, assignee text, author text, deadline date, created_at
+-- stages [ЖИВАЯ]: id, team_id uuid, num int, title text, status text, responsible text, deadline date, note text, subs jsonb, created_at
+-- announcements [ЖИВАЯ]: id, team_id uuid, author text, body text, file_url text, file_name text, edited bool, created_at
+-- documents [ЖИВАЯ]: id bigint, team_id uuid, name text, size text, url text, author text, created_at
+-- tabs [ЖИВАЯ]: id bigint, team_id uuid, name text, icon text, kind text, config jsonb, pos int, created_by text, created_at
+-- posts [ПО КОДУ]: id, tab_id bigint, author text, body text, created_at
+-- az_entries [ЖИВАЯ]: id bigint, tab_id bigint, entry_date date, entry_time time, weather text, temp text,
+--                    works text, conformity text, remarks text, prescription text, pres_deadline date,
+--                    pres_status text, author text, author_role text, present jsonb, created_at
+-- plan_works [ЖИВАЯ]: id bigint, tab_id bigint, item_n int, work text, status text, responsible text,
+--                    responsibles jsonb, files jsonb, done_at timestamptz, created_at
+-- dev_tasks [ЖИВАЯ]: id bigint, team_id uuid, title text, body text, status text, sent_at timestamptz,
+--                    agent_note text, created_at
+-- qa_queue [ФУНКЦИИ]: id, team_id uuid, ... (наполняется qa-scan), created_at
+-- push_subs [ПО КОДУ]: id, member text, endpoint text, auth text, p256dh text, created_at
+-- agent_threads [ФУНКЦИИ]: id, team_id uuid, ..., created_at
+-- agent_messages [ФУНКЦИИ]: id, thread_id, role text, mode text, text text, created_at
+-- agent_access [ЖИВАЯ]: member text, created_at
+-- max_links [ПО КОДУ]: member text, chat_id text, created_at
+-- wa_chats [ПО КОДУ]: member text, phone text, created_at
+
+-- Storage: бакет files (public).
+--   <team_id>/...        — файлы команд (чат, объявления, документы);
+--   acts/<team_id>/*.json — акты АОСР (с версии v104, см. ниже).
+
+-- ============================================================================
+-- ТАБЛИЦА acts — УДАЛЕНА из базы (REST: 404). Аудит 2026-09-14.
+-- С версии v104 приложение хранит акты АОСР в Supabase Storage
+-- (acts/<team_id>/<id>.json) и НЕ нуждается в этой таблице.
+-- Выполняйте блок ниже ТОЛЬКО если решите вернуть реляционное хранение
+-- (потребуется и соответствующий откат кода ActsStore):
+-- ============================================================================
+-- create table if not exists acts (
+--   id bigint generated always as identity primary key,
+--   team_id uuid references teams(id) on delete cascade,
+--   num integer not null,
+--   work_name text not null,
+--   basis_project text,
+--   basis_quality text,
+--   date_act date,
+--   date_from date,
+--   date_to date,
+--   conclusion text,
+--   rep_customer text,
+--   rep_contractor text,
+--   rep_designer text,
+--   rep_control text,
+--   attach text,
+--   created_by text,
+--   created_at timestamptz default now()
+-- );
+-- alter table acts enable row level security;
+-- create policy "acts all" on acts for all to anon using (true) with check (true);
