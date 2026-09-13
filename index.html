@@ -16,42 +16,79 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column}
-/* Канонический каркас PWA: колонка фиксированной высоты, скролл только в main */
-html,body{height:100%;margin:0}
-body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
-header{flex:none;background:var(--card);border-bottom:1px solid var(--brd);z-index:5}
-.hrow{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 8px 4px;width:100%}
-main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
-/* ==== ВЕРХНЕЕ МЕНЮ (tmenu) ==== */
-.tmenu{flex:none;display:flex;gap:6px;align-items:center;overflow-x:auto;background:#241a0e;border-bottom:1px solid #4a3a1f;padding:6px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.tmenu::-webkit-scrollbar{display:none}
-.tchip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid #5a4a2a;border-radius:3px;background:transparent;color:#e6d9bd;font-size:12.5px;font-family:Georgia,'Times New Roman',serif;white-space:nowrap;cursor:pointer;user-select:none}
-.tchip.on{background:#b98a2f;border-color:#b98a2f;color:#1c1408;font-weight:700}
-.tchip.done{opacity:.45;text-decoration:line-through}
-.tver{margin-left:auto;flex:none;font-size:10px;color:#8a7a5c;font-family:monospace;padding-left:8px}
-/* ==== НИЖНЕЕ МЕНЮ (bmenu) ==== */
-.bmenu{flex:none;display:flex;background:#241a0e;border-top:1px solid #4a3a1f;padding:4px 2px calc(4px + env(safe-area-inset-bottom));z-index:6}
-.bmenu button{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;background:none;border:0;color:#c9b78f;font-size:10px;font-weight:600;padding:4px 0;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
-.bmenu button i{font-style:normal;font-size:19px;line-height:1.2;filter:grayscale(.3)}
-.bmenu button.on{color:#e9c46a}
-.bmenu button.on i{filter:none;transform:translateY(-1px)}
-/* ==== Компактация панелей (высота смартфона) ==== */
-.hrow{gap:5px;padding:calc(8px + env(safe-area-inset-top)) 8px 4px}
-.hrow h1{font-size:14px}
-#menuBtn{padding:7px 9px !important;font-size:15px !important}
-#teamBtn{font-size:12px;padding:5px 9px !important}
-#hdrRight{gap:4px;max-width:60vw}
-#hdrRight button{padding:5px 7px !important;font-size:13px !important}
-#syncBadge{font-size:9.5px;padding:2px 6px}
-#who{font-size:11px}
-.composer{padding:6px 8px calc(6px + env(safe-area-inset-bottom)) !important}
-.composer input,.composer button{min-height:40px}
-.composer button{width:42px}
-main{padding:8px 8px 10px}
-.card{margin-bottom:8px;padding:10px}
-.chans button{padding:5px 12px;font-size:12px}
+header{background:var(--card);border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:5}
+.hrow{display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 6px;width:100%}
+main{min-height:0}
+.tabbar{position:sticky;bottom:0}
+#structBar::-webkit-scrollbar{display:none}
+.struct-chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:16px;padding:5px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer}
+.struct-chip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+.struct-chip.done{opacity:.55;text-decoration:line-through}
+header .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
+header .dot.off{background:var(--bad)}
+header h1{font-size:16px;flex:none}
+#teamBtn{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:18px;padding:6px 12px;font-size:13px;font-weight:600;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#syncBadge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--card2);color:var(--mut);flex:none;cursor:pointer}
+#syncBadge.on{background:#e6f4ec;color:#1e7a43}
+header small{color:var(--mut);flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+header #installBtn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:600;flex:none}
+main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
+.tabbar{display:flex;background:var(--card);border-top:1px solid var(--brd);padding-bottom:env(safe-area-inset-bottom)}
+.tabbar button{flex:1;background:none;border:0;color:var(--mut);padding:8px 1px 10px;font-size:10.5px;cursor:pointer}
+.tabbar button .ic{display:block;font-size:20px;margin-bottom:2px}
+.tabbar button.on{color:var(--acc);font-weight:700}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:12px;margin-bottom:10px}
+.card h3{font-size:15px;margin-bottom:4px;word-break:break-word}
+.mut{color:var(--mut);font-size:12.5px}
+.row{display:flex;gap:8px;align-items:center}
+input,textarea,select{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px;font:inherit;width:100%}
+button.pri{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
+button.sec{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
+button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
+.ch{display:flex;flex-direction:column;gap:8px}
+.msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid var(--brd)}
+.msg.me{align-self:flex-end;background:#eeddb2;border-color:#d6ba76}
+.msg b{font-size:12.5px;color:#5f3f0a}
+.msg .t{font-size:11px;color:var(--mut);margin-top:3px}
+.msg img{max-width:100%;border-radius:8px;margin-top:6px}
+.msg a{color:#7a5410}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--mut)}
+.badge.ok{background:#e6f4ec;color:#1e7a43} .badge.warn{background:#fdf2df;color:#a06a00} .badge.bad{background:#fbe7e5;color:#b3261e}
+.composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid var(--brd)}
+.composer input{flex:1}
+.composer button{background:var(--acc);color:#fff;border:0;border-radius:10px;width:46px;font-size:18px}
+.chans{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px}
+.chans button{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px}
+.chans button.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:none;align-items:flex-end}
+#overlay .sheet{position:relative;background:var(--card);border-radius:18px 18px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-height:90vh;overflow-y:auto}
+#overlay h2{font-size:18px;margin-bottom:12px;padding-right:34px}
+#sheetClose{position:absolute;top:10px;right:12px;width:30px;height:30px;border-radius:50%;background:var(--card2);color:var(--mut);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;z-index:6}
+#sheetClose:hover{color:var(--bad);background:#fbe7e5}
+ol{padding-left:20px} ol li{margin:8px 0}
+ul.subs{padding-left:18px;margin-top:6px} ul.subs li{margin:5px 0;font-size:13.5px;color:#3a3f4a}
+.hidden{display:none!important}
+h2.pt{font-size:16px;margin:4px 0 10px}
+/* --- Выпадающее меню команд --- */
+.dropdown{position:absolute;top:calc(100% + 6px);left:8px;background:var(--card);border:1px solid var(--brd);border-radius:12px;box-shadow:0 10px 28px rgba(31,25,14,.22);z-index:60;min-width:230px;overflow:hidden}
+.dropdown .di{padding:12px 14px;cursor:pointer;display:flex;gap:8px;align-items:center;font-size:14px}
+.dropdown .di:hover{background:var(--card2)}
+.dropdown .di.on{font-weight:700;color:var(--acc)}
+/* --- Мобильная оптимизация --- */
+html,body{height:100%}
+body{height:100dvh}
+input,textarea,select{font-size:16px}
+.tabbar{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tabbar::-webkit-scrollbar{display:none}
+.tabbar button{flex:0 0 auto;min-width:58px;padding:8px 6px 10px}
+.composer{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+header h1{font-size:15px}
+#teamBtn{max-width:30vw}
+.sheet input,.sheet select,.sheet textarea{font-size:16px}
+@media (max-width:380px){.tabbar button{min-width:50px;font-size:10px}.card{padding:10px}}
 /* ==== ИНСПЕКЦИЯ: автоадаптация окон под смартфон ==== */
-main{padding:10px 10px 12px}
+html,body{overflow-x:hidden}
+main{overflow-x:hidden;padding:10px 10px 12px}
 .card, .mrow, .msg, .inf{overflow-wrap:anywhere;min-width:0}
 .msg div{overflow-wrap:anywhere;word-break:break-word}
 pre{overflow-x:auto;max-width:100%}
@@ -60,9 +97,6 @@ input[type=date],input[type=time]{min-height:44px}
 #overlay .sheet{max-height:94dvh;overscroll-behavior:contain}
 .dropdown{max-width:calc(100vw - 16px);left:4px}
 select{appearance:auto}
-@media (max-height:700px){
-  .hrow{padding-top:calc(6px + env(safe-area-inset-top))}
-    }
 /* Узкие экраны: компактная шапка и кнопки */
 @media (max-width:420px){
   .hrow{gap:5px;padding-left:8px;padding-right:8px}
@@ -70,9 +104,12 @@ select{appearance:auto}
   .hrow button{padding:5px 7px !important;font-size:13px !important}
   #teamBtn{max-width:26vw;font-size:12px}
   header small{font-size:11px}
-      h2.pt{font-size:15px}
+  .tabbar button{min-width:52px;font-size:10px;padding:7px 3px 9px}
+  .tabbar button .ic{font-size:19px}
+  h2.pt{font-size:15px}
   .card{padding:10px}
-    button.pri,button.sec,button.dng{padding:9px 12px}
+  .struct-chip{padding:4px 10px;font-size:12px}
+  button.pri,button.sec,button.dng{padding:9px 12px}
   .composer input,.composer button{min-height:44px}
   #sheetClose{top:8px;right:10px;width:34px;height:34px}
 }
@@ -86,6 +123,7 @@ select{appearance:auto}
   #agentLog,#consLog{max-height:30vh !important}
 }
 /* Безопасные зоны: нижняя панель и композер */
+.tabbar{padding-bottom:calc(6px + env(safe-area-inset-bottom))}
 .stage-head{display:flex;align-items:flex-start;gap:8px}
 .stage-head h3{flex:1}
 details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
@@ -100,21 +138,22 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 </head>
 <body>
 <header><div class="hrow">
-  <button id="menuBtn" title="Меню" style="background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:16px;font-weight:700;flex:none">☰</button>
   <span class="dot" id="net"></span>
-  <span id="teamIco" title="Команда" style="width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none">🏗</span>
-  <button id="teamBtn" class="hidden" style="max-width:26vw">👥 Команда</button>
-  <span style="flex:1"></span>
-  <span id="hdrRight" style="display:flex;align-items:center;gap:5px;flex:none;max-width:58vw;overflow-x:auto;scrollbar-width:none">
-    <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
-    <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
-    <span id="syncBadge" title="Обновить данные">Локальный</span>
-    <small id="who"></small>
-    <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
-  </span>
+  <h1>НИОКР</h1>
+  <button id="teamBtn" class="hidden">👥 Команда</button>
+  <button id="agentBtn" class="hidden" title="Управление командой" style="background:var(--card2);border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🤖</button>
+  <button id="tabsBtn" class="hidden" title="Вкладки">🧩</button>
+  <button id="membersBtn" class="hidden" title="Участники команды">👤</button>
+  <button id="cacheBtn" class="hidden" title="Очистить кэш приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🧹</button>
+  <button id="setBtn" title="Настройки" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⚙</button>
+  <button id="pushBtn" class="hidden" title="Пуш-уведомления" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">🔔</button>
+  <button id="autoBtn" title="Автообновление" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⟳</button>
+  <button id="exitBtn" title="Выход из приложения" style="background:none;border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none">⎋</button>
+  <span id="syncBadge" title="Обновить данные">Локальный</span>
+  <small id="who"></small>
   <button id="installBtn" class="hidden">Установить</button></div>
+<div id="structBar" class="hidden" style="display:flex;gap:6px;overflow-x:auto;padding:0 10px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
 </header>
-<div id="tmenu" class="tmenu hidden"></div>
 <div id="azBar" class="hidden" style="background:var(--acc);color:#fff;padding:8px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(31,25,14,.25)"></div>
 <main id="view"></main>
 <div id="chatComposer" class="composer hidden">
@@ -123,14 +162,15 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
   <input id="mText" placeholder="Сообщение…" autocomplete="off">
   <button onclick="sendMsg()">➤</button>
 </div>
-<nav id="bmenu" class="bmenu">
-  <button data-v="chat"><i>💬</i><span>Чат</span></button>
-  <button data-v="stages"><i>🗓</i><span>Этапы</span></button>
-  <button data-v="tasks"><i>✅</i><span>Задачи</span></button>
-  <button data-v="news"><i>📢</i><span>Объявл.</span></button>
-  <button data-v="files"><i>📁</i><span>Файлы</span></button>
-  <button data-v="plan"><i>🗺</i><span>План</span></button>
-  <button data-v="misc"><i>🔧</i><span>Разное</span></button>
+<nav class="tabbar">
+  <button data-v="chat" class="on"><span class="ic">💬</span>Чат</button>
+  <button data-v="stages"><span class="ic">🗓</span>Этапы</button>
+  <button data-v="tasks"><span class="ic">✅</span>Задачи</button>
+  <button data-v="news"><span class="ic">📢</span>Объявл.</button>
+  <button data-v="files"><span class="ic">📁</span>Файлы</button>
+  <button data-v="plan"><span class="ic">🗺</span>План</button>
+  <button data-v="misc"><span class="ic">🔧</span>Разное</button>
+  <span id="dynTabs" style="display:contents"></span>
 </nav>
 <div id="overlay"><div class="sheet" id="sheet"></div></div>
 
@@ -175,18 +215,14 @@ let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [], QA_IT
 let sb = null, SYNC = false;
 try{
   if(typeof SUPABASE_URL!=='undefined' && SUPABASE_URL.indexOf('YOUR_')===-1){
-    // Заглушка WebSocket для браузеров без него (экономия трафика/mini-режимы):
-    // REST-запросы работают всегда, realtime — где доступен
     if(typeof WebSocket === 'undefined'){
-      const WSStub = function(){ this.readyState = 0; this.send = function(){}; this.close = function(){}; };
+      const WSStub = function(){ this.readyState=0; this.send=function(){}; this.close=function(){}; };
       try{ self.WebSocket = WSStub; window.WebSocket = WSStub; }catch(_){}
     }
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     SYNC = true;
   }
-}catch(e){
-  try{ dbg && dbg('CLIENT INIT FAIL: ' + e.message); }catch(_){}
-}
+}catch(e){}
 const cid = store.get('cid', null) || (function(){ const c = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random()); store.set('cid', c); return c; })();
 function syncBadge(){ const b = $('#syncBadge'); b.textContent = SYNC ? 'Синхрон' : 'Локально'; b.classList.toggle('on', SYNC); }
 async function sbList(table, eqs){
@@ -235,7 +271,7 @@ function openDm(name){
   $('#overlay').style.display='none';
   dmWith = name;
   view = 'chat';
-  document.querySelectorAll('#bmenu button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
   loadChan();
 }
 function dmKey(a,b){ return [a,b].sort().join('||'); }
@@ -326,7 +362,7 @@ function rowToMsg(m){
   return { id:m.id, n:m.author, r:m.role||'', x:m.body||'', t:fmtT(m.created_at), edited:m.edited,
     f:m.file_url||null, fn:m.file_name||'', img:m.file_url && /\.(png|jpe?g|gif|webp)$/i.test(m.file_url||'') };
 }
-async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); renderTmenu(); if(view==='tasks') render(); }
+async function loadTasks(){ if(!SYNC) return; rTasks = await sbList('tasks', [['team_id', tid()]]); renderStructBar(); if(view==='tasks') render(); }
 async function loadNews(){
   if(!SYNC) return;
   rNews = (await sbList('announcements', [['team_id', tid()]])).reverse();
@@ -367,7 +403,6 @@ async function init(){
 }
 function start(){
   appStarted = true;
-  if(!navReady){ navReady = true; try{ history.pushState({inApp:1}, ''); }catch(e){} }
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
@@ -453,13 +488,7 @@ function onboarding2(){
     <div class="av" style="width:40px;height:40px;background:var(--acc)">👥</div>
     <div style="flex:1"><b style="font-size:15px">${esc(t.name)}</b><br><span class="mut">${t.is_owner?'вы владелец':'участник'}</span></div>
     ${team&&team.id===t.id?'<span style="color:var(--ok);font-size:20px">✓</span>':''}</div>`).join('');
-  fetch('sw.js').then(r=>r.text()).then(t=>{
-    const v=(t.match(/niokr-pwa-v(\d+)/)||[])[1];
-    const el=document.getElementById('welcomeVer');
-    if(el&&v) el.textContent='Версия приложения: v'+v;
-  }).catch(()=>{});
   $('#sheet').innerHTML = `<h2>Ваши команды</h2><p class="mut" style="margin-bottom:10px">Вы вошли как: <b style="color:var(--txt)">${esc(me.name)}</b>. Выберите команду для работы:</p>
-  <p id="welcomeVer" class="mut" style="font-size:11px;margin:-4px 0 10px 0;font-family:monospace;color:var(--mut)">Версия приложения: …</p>
     ${list || `<div class="card" style="border-color:var(--warn);margin-bottom:10px">
       <p>⚠️ Под именем <b>${esc(me.name)}</b> команд не найдено.</p>
       <p class="mut" style="margin-top:6px">Если вы раньше создавали команды — вы вошли под другим написанием имени. Вернитесь и выберите себя точно (<b>Керимов А.Г</b> — без точки в конце).</p>
@@ -535,11 +564,11 @@ document.addEventListener('click', e => {
 });
 
 /* ---------- динамические вкладки (владелец) ---------- */
-document.getElementById('bmenu').addEventListener('click', e => {
+document.querySelector('.tabbar').addEventListener('click', e => {
   const b = e.target.closest('button');
   if(b && b.dataset.tid){
     view = 'tab:' + b.dataset.tid;
-    document.querySelectorAll('#bmenu button').forEach(x => x.classList.toggle('on', x===b));
+    document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
     render();
   }
 });
@@ -547,22 +576,28 @@ async function loadTabs(){
   if(!SYNC || !team) return;
   TABS = await sbList('tabs', [['team_id', tid()]]);
   if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
-  updateBmenu();
+  renderTabbar();
   if(view.startsWith('tab:') || view === 'plan') render();
 }
-function updateBmenu(){
-  document.querySelectorAll('#bmenu button').forEach(x => {
-    x.classList.toggle('on', x.dataset.v === view);
-  });
-  const tico = document.getElementById('teamIco');
-  if(tico){ tico.textContent = team ? (team.name||'?').trim().charAt(0).toUpperCase() : '🏗'; tico.title = team ? team.name : 'Команда'; }
+function renderTabbar(){
+  const c = $('#dynTabs'); if(!c) return;
+  c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
+  if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
+  if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
   if($('#agentBtn')){
     $('#agentBtn').classList.toggle('hidden', !(team && team.is_owner));
     if(team && team.is_owner && store.get('agentNotify')) $('#agentBtn').textContent = '🤖●';
   }
-  if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
-  if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#cacheBtn')) $('#cacheBtn').classList.toggle('hidden', !(team && team.is_owner));
+}
+function membersSheet(){
+  if(!team) return;
+  $('#sheet').innerHTML = `<h2>${esc(team.name)} · ${TEAM_MEMBERS.length} чел.</h2>` +
+    TEAM_MEMBERS.map(m => { const mm = MEMBERS.find(x=>x.name===m.member)||{}; const on = ONLINE[m.member];
+      return `<div class="mrow" style="cursor:pointer" onclick="memberCard('${esc(m.member)}')"><div class="av" style="${on?'box-shadow:0 0 0 2px var(--ok);':''}">${esc((m.member||'?')[0])}</div>
+      <div class="inf"><b>${esc(m.member)}</b>${m.is_owner?' <span class="pill">владелец</span>':''}<br><span class="mut" style="font-size:11.5px">${esc(mm.role||'Участник')}${on?' · 🟢 онлайн':''}</span></div></div>`; }).join('') +
+    `<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display='flex';
 }
 function curTab(){ return TABS.find(t => 'tab:'+t.id === view); }
 function manageTabs(){
@@ -704,7 +739,7 @@ async function ensurePlanTab(){
   planTabLock = (async () => {
     try{
       const ins = await sb.from('tabs').insert({team_id: tid(), name:'Технический план реализации', icon:'🗺', kind:'plan', config: DEFAULT_PLAN, pos: 5, created_by:'Система'}).select().single();
-      if(ins.data){ TABS.push(ins.data); updateBmenu(); renderTmenu(); return ins.data; }
+      if(ins.data){ TABS.push(ins.data); renderTabbar(); renderStructBar(); return ins.data; }
       // конфликт уникального индекса — подхватываем существующую
       const { data } = await sb.from('tabs').select('*').eq('team_id', tid()).eq('kind','plan').maybeSingle();
       if(data && !TABS.find(x=>x.id===data.id)) TABS.push(data);
@@ -782,7 +817,7 @@ async function planWorkUpsert(tabId, n, work, patch){
     const {data} = await sb.from('plan_works').insert({tab_id: tabId, item_n: n, work, ...patch}).select().single();
     row = data; if(row) PLAN_ROWS.push(row);
   }
-  renderTmenu();
+  renderStructBar();
   return row;
 }
 async function planWorkStatus(tabId, n, work){
@@ -826,7 +861,7 @@ function planConsultSheet(i){
   $('#sheet').innerHTML = `<h2>❓ Пункт ${it.n}: ${esc(it.title)}</h2>
    <p class="mut" style="margin-bottom:8px">Ответ формируется строго по этому пункту: сначала анализ вопроса, затем поиск по проекту и нормативке, затем ответ со ссылками на источники. Без домыслов.</p>
    <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
-     ${['Что проверять на этом этапе?','Какие документы оформить?','Типичные нарушения и как их избежать','Как контролируется качество?'].map(x=>`<span class="tchip" onclick="planAsk(${i},'${x}')">${x}</span>`).join('')}
+     ${['Что проверять на этом этапе?','Какие документы оформить?','Типичные нарушения и как их избежать','Как контролируется качество?'].map(x=>`<span class="struct-chip" onclick="planAsk(${i},'${x}')">${x}</span>`).join('')}
    </div>
    <div id="consLog" style="max-height:42vh;overflow-y:auto"></div>
    <div class="row" style="margin-top:8px">
@@ -1182,7 +1217,7 @@ function autoSet(){
     }, 300000);
   }
 }
-if($('#autoBtn')) $('#autoBtn').onclick = () => { AUTO = !AUTO; store.set('auto', AUTO); autoSet(); };
+$('#autoBtn').onclick = () => { AUTO = !AUTO; store.set('auto', AUTO); autoSet(); };
 $('#syncBadge').onclick = async () => {
   const b = $('#syncBadge');
   if(!SYNC){ location.reload(); return; }
@@ -1252,15 +1287,15 @@ function settingsInstall(){
     : 'Android (Chrome):<br>1. Меню «⋮» (три точки).<br>2. «Установить приложение» / «Добавить на главный экран».<br>3. Или дождитесь баннера «Установить» внизу экрана.';
   $('#sheet').innerHTML = `<h2>📲 Установка</h2><div class="card">${text}</div><button class="sec" style="width:100%" onclick="settingsSheet()">← Назад</button>`;
 }
-if($('#setBtn')) $('#setBtn').onclick = () => settingsSheet();
-async function clearAppCache(){
+$('#setBtn').onclick = () => settingsSheet();
+$('#cacheBtn').onclick = async () => {
   if(!team || !team.is_owner) return;
   if(!confirm('🧹 Очистить кэш приложения?\n\nУдалятся закэшированные файлы (приложение загрузится заново с сервера). Данные входа и команды сохранятся.')) return;
   try{ const ks = await caches.keys(); for(const k of ks){ await caches.delete(k); } }catch(e){}
   try{ const r = await navigator.serviceWorker.getRegistration(); if(r) await r.unregister(); }catch(e){}
   location.reload();
-}
-if($('#pushBtn')) $('#pushBtn').onclick = async () => {
+};
+$('#pushBtn').onclick = async () => {
   if(!('Notification' in window)) return alert('Уведомления не поддерживаются этим браузером');
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
@@ -1287,27 +1322,21 @@ $('#exitBtn').onclick = () => {
 };
 
 /* ---------- Верхнее меню структуры команды (авто) ---------- */
-function renderTmenu(){
-  const bar = document.getElementById('tmenu'); if(!bar) return;
+function renderStructBar(){
+  const bar = document.getElementById('structBar'); if(!bar) return;
   if(!team){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
   bar.classList.remove('hidden');
   const items = [];
-  const azTab = TABS.find(t => t.kind === 'az');
-  if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:'openTabView(' + azTab.id + ')', on: view === 'tab:' + azTab.id});
-  items.push({icon:'🗺', label:'Технический план', fn:"navGo('plan')", on: view === 'plan'});
-  TABS.filter(t => t.kind !== 'az' && t.kind !== 'plan').forEach(t => items.push({icon:t.icon||'📄', label:t.name, fn:'openTabView(' + t.id + ')', on: view === 'tab:' + t.id}));
-  (rTasks || []).slice().reverse().forEach(t => items.push({icon:'✅', label:t.title, fn:'taskSheet(' + t.id + ')', done:t.status === 'Выполнено'}));
-  bar.innerHTML = items.map(x => '<span class="tchip' + (x.on ? ' on' : '') + (x.done ? ' done' : '') + '" onclick="' + x.fn + '">' + x.icon + ' ' + esc(x.label) + '</span>').join('')
-    + '<span class="tver" id="verTag"></span>';
-  fetch('sw.js').then(r => r.text()).then(t => {
-    const v = (t.match(/niokr-pwa-v(\d+)/) || [])[1];
-    const el = document.getElementById('verTag');
-    if(el) el.textContent = (v ? 'v' + v : '?') + ' · ' + (SYNC ? 'связь OK' : 'СВЯЗИ НЕТ');
-  }).catch(() => {});
+  const azTab = TABS.find(t=>t.kind==='az');
+  if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
+  TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
+  (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
+  bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
+    || '<span class="mut" style="font-size:12px;padding:5px 2px">Структура команды появится здесь: журнал, задачи, вкладки</span>';
 }
 function openTabView(id){
   view = 'tab:'+id;
-  document.querySelectorAll('#bmenu button').forEach(x => x.classList.toggle('on', x.dataset.tid==String(id)));
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.tid==String(id)));
   render();
 }
 function taskSheet(id){
@@ -1610,12 +1639,12 @@ function renderAgentChat(msgs){
      ${pendingWork ? '<div class="msg" style="max-width:100%;margin-top:8px" id="agentPending"><b>🤖 Агент</b> <span class="badge warn">⏳ работает…</span><div>Задача выполняется в фоне. Можете закрыть окно — ответ сохранится в истории, вы получите уведомление.</div></div>' : ''}
    </div>
    <div class="row" style="flex-wrap:wrap;margin-bottom:8px">
-     <span class="tchip" onclick="agentAsk('Статус по этапам')">📊 Этапы</span>
-     <span class="tchip" onclick="agentAsk('Список задач')">✅ Задачи</span>
-     <span class="tchip" onclick="agentAsk('Состав команды')">👥 Состав</span>
-     <span class="tchip" onclick="agentAsk('Итоги работы')">📈 Сводка</span>
-     <span class="tchip" onclick="agentAsk('Создай задачу: ')" title="Допишите название">＋ Задача</span>
-     <span class="tchip" onclick="agentAsk('Опубликуй объявление: ')" title="Допишите текст">📢 Объявление</span>
+     <span class="struct-chip" onclick="agentAsk('Статус по этапам')">📊 Этапы</span>
+     <span class="struct-chip" onclick="agentAsk('Список задач')">✅ Задачи</span>
+     <span class="struct-chip" onclick="agentAsk('Состав команды')">👥 Состав</span>
+     <span class="struct-chip" onclick="agentAsk('Итоги работы')">📈 Сводка</span>
+     <span class="struct-chip" onclick="agentAsk('Создай задачу: ')" title="Допишите название">＋ Задача</span>
+     <span class="struct-chip" onclick="agentAsk('Опубликуй объявление: ')" title="Допишите текст">📢 Объявление</span>
    </div>
    <div class="row">
      <button class="sec" style="flex:none;padding:10px 12px" id="agentMic" onclick="agentToggleMic()" title="Голосовой ввод">🎙</button>
@@ -1690,112 +1719,10 @@ function agentToggleMic(){
 }
 $('#agentBtn').onclick = () => agentSheet();
 
-/* ---------- Меню в шапке ---------- */
-function mainMenuToggle(ev){
-  ev.stopPropagation();
-  const old = document.getElementById('mainMenu');
-  if(old){ old.remove(); return; }
-  const items = [];
-  items.push(['💬 Чат', "navGo('chat')"]);
-  items.push(['🗺 Технический план', "navGo('plan')"]);
-  items.push(['✅ Задачи', "navGo('tasks')"]);
-  items.push(['📢 Объявления', "navGo('news')"]);
-  items.push(['📁 Файлы', "navGo('files')"]);
-  items.push(['🔧 Разное', "navGo('misc')"]);
-  const azT = TABS.find(t=>t.kind==='az');
-  if(azT) items.push(['📋 ' + azT.name, `navGo('tab:${azT.id}')`]);
-  TABS.filter(t=>t.kind!=='az').forEach(t=>items.push([(t.icon||'📄')+' '+t.name, `navGo('tab:${t.id}')`]));
-  const m = document.createElement('div');
-  m.id = 'mainMenu'; m.className = 'dropdown';
-  m.style.left = 'auto'; m.style.right = '8px'; m.style.maxHeight = '60vh'; m.style.overflowY = 'auto';
-  m.innerHTML = items.map(x => `<div class="di" onclick="document.getElementById('mainMenu').remove();${x[1]}">${esc(x[0])}</div>`).join('');
-  document.querySelector('header').appendChild(m);
-}
-document.addEventListener('click', e => {
-  const m = document.getElementById('mainMenu');
-  if(m && !e.target.closest('#mainMenu') && !e.target.closest('#menuBtn')) m.remove();
-});
-$('#menuBtn').onclick = (ev) => mainMenuToggle(ev);
-
-/* ---------- Навигация «назад» (кнопка смартфона) ---------- */
-/* Навигация «назад»: простая и предсказуемая */
-let lastExitPress = 0, navReady = false;
-function navGo(v){
-  view = v;
-  document.querySelectorAll('#bmenu button').forEach(x => x.classList.toggle('on',
-    (x.dataset.v && x.dataset.v === v) || (x.dataset.tid && ('tab:' + x.dataset.tid) === v)));
-  render();
-}
-function backIntercept(){
-  if(!navReady) return;
-  const ov = document.getElementById('overlay');
-  if(ov && ov.style.display === 'flex' && appStarted){
-    ov.style.display = 'none'; window._taskSheetId = null;
-    history.pushState({inApp:1}, '');
-    return;
-  }
-  const now = Date.now();
-  if(now - lastExitPress < 2500){ return; } // второе нажатие — выход
-  lastExitPress = now;
-  history.pushState({inApp:1}, '');
-  const t = document.createElement('div');
-  t.textContent = '↩ Нажмите «Назад» ещё раз для выхода';
-  t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2400);
-}
-window.addEventListener('popstate', backIntercept);
-
-/* ---------- ДИАГНОСТИКА + СТОРОЖ ВЕРСИЙ ---------- */
-let dbgCount = 0;
-function dbg(msg){
-  try{
-    if(dbgCount++ > 120) return;
-    fetch('https://lxgipzdybigdpdcmcnez.supabase.co/rest/v1/debug_log', {
-      method:'POST',
-      headers:{ 'apikey':'sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Authorization':'Bearer sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw', 'Content-Type':'application/json' },
-      body: JSON.stringify({ member: me ? me.name : '?', msg: String(msg).slice(0, 200) })
-    }).catch(()=>{});
-  }catch(e){}
-}
-window.addEventListener('error', e => dbg('ERROR: ' + e.message + ' @' + (e.filename||'').split('/').pop() + ':' + e.lineno));
-window.addEventListener('unhandledrejection', e => dbg('REJECTION: ' + (e.reason && e.reason.message || e.reason)));
-document.addEventListener('click', e => {
-  const b = e.target.closest && e.target.closest('button, .tchip');
-  if(b) dbg('CLICK: ' + (b.id || b.dataset.v || b.dataset.tid || b.className || b.textContent || '?').toString().slice(0,60));
-}, true);
-// Диагностика касаний: фиксируем pointerdown ВЕЗДЕ + видимый индикатор
-let touchN = 0;
-document.addEventListener('pointerdown', e => {
-  touchN++;
-  dbg('TOUCH #' + touchN + ' @' + (e.target.id || e.target.className || e.target.tagName).toString().slice(0,40));
-  const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;left:' + (e.clientX-18) + 'px;top:' + (e.clientY-18) + 'px;width:36px;height:36px;border-radius:50%;border:2px solid #d33;z-index:999;pointer-events:none;transition:opacity .5s';
-  document.body.appendChild(d);
-  setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 500); }, 300);
-}, {capture:true, passive:true});
-dbg('DIAG v82 armed');
-dbg('BOOT v79 view=' + (typeof view !== 'undefined' ? view : '?'));
-setTimeout(() => dbg('ALIVE 5s view=' + view + ' SYNC=' + SYNC), 5000);
-(function(){
-  try{
-    const APP_VERSION = 'v79';
-    fetch('sw.js?v=' + Date.now(), {cache:'no-store'}).then(r => r.text()).then(t => {
-      const srv = (t.match(/niokr-pwa-v(\d+)/) || [0,'0'])[1];
-      dbg('WATCHDOG server=v' + srv + ' local=' + APP_VERSION);
-      if(parseInt(srv) > parseInt(APP_VERSION.replace('v',''))){
-        caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).finally(() => {
-          navigator.serviceWorker && navigator.serviceWorker.getRegistration().then(reg => reg && reg.unregister()).finally(() => location.reload());
-        });
-      }
-    }).catch(()=>{});
-  }catch(e){}
-})();
-
 /* ---------- навигация ---------- */
-document.querySelectorAll('#bmenu button').forEach(b => b.onclick = () => {
+document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
-  document.querySelectorAll('#bmenu button').forEach(x => x.classList.toggle('on', x===b));
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
   if(SYNC && team){
     if(view==='tasks'&&rTasks===null) loadTasks();
     if(view==='plan') ensurePlanTab();
@@ -1811,7 +1738,7 @@ function render(){
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
   $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
   $('#chatComposer').classList.toggle('hidden', view!=='chat');
-  updateBmenu(); renderTmenu();
+  renderTabbar(); renderStructBar();
   const ct = view.startsWith('tab:') ? curTab() : null;
   const azb = $('#azBar');
   if(ct && ct.kind==='az'){
@@ -2167,7 +2094,7 @@ async function deliverViaApp(name){
   // 1. Личное сообщение в приложение (push придёт автоматически через триггер)
   dmWith = name;
   view = 'chat';
-  document.querySelectorAll('#bmenu button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
   const row = {dm: dmKey(me.name, name), author:me.name, role:me.role, body:t, client_id:cid};
   rMsgs.push({n:me.name, r:me.role, x:t, t:now()}); render();
   const {error} = await sb.from('messages').insert(row);
@@ -2189,7 +2116,7 @@ function sendToChat(name){
   $('#overlay').style.display='none';
   dmWith = name;
   view = 'chat';
-  document.querySelectorAll('#bmenu button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v==='chat'));
   loadChan();
   setTimeout(() => { if(t && $('#mText')) $('#mText').value = t; }, 400);
 }
