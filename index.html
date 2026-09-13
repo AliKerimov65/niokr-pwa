@@ -606,6 +606,7 @@ async function loadTabs(){
   if(!SYNC || !team) return;
   TABS = await sbList('tabs', [['team_id', tid()]]);
   if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
+  if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) { view = 'chat'; }
   renderTabbar();
   if(view.startsWith('tab:') || view === 'plan') render();
 }
@@ -724,7 +725,8 @@ async function addPost(tabId){
   await sb.from('posts').insert({tab_id:tabId, author:me.name, body:b});
 }
 function renderCustomTab(v){
-  const t = curTab(); if(!t){ view='chat'; render(); return; }
+  const t = curTab();
+  if(!t){ view = 'chat'; v.innerHTML=''; renderChat(v); return; } if(!t){ view='chat'; render(); return; }
   const isOwner = team && team.is_owner;
   if(t.kind === 'link'){
     const url = t.config.url || '';
@@ -1963,6 +1965,8 @@ document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
 
 function render(){
   try{ sessionStorage.setItem('lastView', view); }catch(e){}
+  if(!view || (!['chat','tasks','news','files','misc','stages','home','acts','plan'].includes(view) && !view.startsWith('tab:'))) view = 'chat';
+  if(view.startsWith('tab:') && TABS.length && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
   $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
   $('#chatComposer').classList.toggle('hidden', view!=='chat');
