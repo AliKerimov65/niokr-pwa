@@ -134,6 +134,8 @@ details summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:6px}
 .mrow .inf b{font-size:14px}
 .pill{font-size:10px;background:var(--acc);color:#fff;border-radius:8px;padding:1px 6px;font-weight:700}
 .code{font-family:monospace;font-size:18px;letter-spacing:3px;background:var(--card2);border:1px dashed #7a541088;border-radius:10px;padding:10px;text-align:center;margin:8px 0}
+main{overscroll-behavior-y:contain}
+body{overscroll-behavior-y:contain}
 </style>
 </head>
 <body>
@@ -413,10 +415,19 @@ async function init(){
     store.set('user', me);
   }
   MYTEAMS = await fetchMyTeams();
-  onboarding2();
+  const resumed = sessionStorage.getItem('sess') === '1';
+  if(resumed && team && MYTEAMS.find(t => t.id === team.id)){
+    const lv = sessionStorage.getItem('lastView');
+    if(lv) view = lv;
+    start();
+  } else {
+    sessionStorage.removeItem('sess');
+    onboarding2();
+  }
 }
 function start(){
   appStarted = true;
+  try{ sessionStorage.setItem('sess','1'); }catch(e){}
   syncBadge();
   initPresence();
   $('#teamBtn').classList.remove('hidden');
@@ -1330,7 +1341,8 @@ $('#pushBtn').onclick = async () => {
 };
 $('#exitBtn').onclick = () => {
   if(!confirm('Выйти из приложения?\nПотребуется повторный выбор участника.')) return;
-  store.del('user'); store.del('team'); me = null; team = null; appStarted = false;
+  store.del('user'); store.del('team'); me = null; team = null;
+  try{ sessionStorage.removeItem('sess'); sessionStorage.removeItem('lastView'); }catch(e){} appStarted = false;
   try{ window.close(); }catch(e){}
   $('#sheet').innerHTML = `<h2>Выход выполнен</h2><div class="card">
     <p class="mut">Сеанс завершён. Приложение можно закрыть (смахнуть из списка задач), либо войдите снова:</p>
@@ -1922,6 +1934,7 @@ document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
 });
 
 function render(){
+  try{ sessionStorage.setItem('lastView', view); }catch(e){}
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
   $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
   $('#chatComposer').classList.toggle('hidden', view!=='chat');
