@@ -1389,9 +1389,14 @@ function taskSheet(id){
   if(!t){ window._taskSheetId = null; document.getElementById('overlay').style.display='none'; return; }
   window._taskSheetId = id;
   const isOwner = team && team.is_owner;
+  const member = t.assignee ? findMemberCase(t.assignee) : null;
+  const phone = member && member.phone ? String(member.phone).replace(/[^\d+]/g, '') : '';
+  const callBtn = phone
+    ? `<a class="call-btn" href="tel:${phone}" aria-label="Позвонить исполнителю" title="Позвонить" style="margin-left:6px;display:inline-block;color:inherit;text-decoration:none;font-size:1.1em;line-height:1;vertical-align:middle">📞</a>`
+    : `<span class="call-btn disabled" title="Номер не указан" aria-label="Номер не указан" style="margin-left:6px;display:inline-block;color:inherit;opacity:.4;cursor:not-allowed;font-size:1.1em;line-height:1;vertical-align:middle">📞</span>`;
   $('#sheet').innerHTML = `<h2>✅ ${esc(t.title)}</h2><div class="card">
     <p><span class="badge ${t.status==='Выполнено'?'ok':t.status==='В работе'?'warn':''}">${esc(t.status)}</span></p>
-    <p class="mut" style="margin-top:8px">Исполнитель: ${esc(t.assignee||'—')} · Срок: ${t.deadline||'—'}<br>Постановщик: ${esc(t.author||'—')}</p>
+    <p class="mut" style="margin-top:8px">Исполнитель: ${esc(t.assignee||'—')}${callBtn} · Срок: ${t.deadline||'—'}<br>Постановщик: ${esc(t.author||'—')}</p>
     <div style="height:12px"></div>
     <div class="row" style="flex-wrap:wrap">
       ${t.status!=='В работе'&&t.status!=='Выполнено'?`<button class="pri" onclick="setTask(${id},'В работе');taskSheet(${id})">▶ В работу</button>`:''}
