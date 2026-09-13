@@ -1899,6 +1899,13 @@ function renderHome(v){
   <p class="mut" style="text-align:center;font-size:11px">НИОКР Команда</p>`;
 }
 
+/* Переход в раздел по имени (для чипов верхнего меню) */
+function navGo(v){
+  view = v;
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  render();
+}
+
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   view = b.dataset.v;
