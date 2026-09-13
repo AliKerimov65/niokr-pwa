@@ -21,8 +21,8 @@ const SB_KEY  = process.env.SB_KEY  || '';
 const GH_TOK  = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
 const REPO    = process.env.REPO    || process.env.GITHUB_REPOSITORY || 'AliKerimov65/niokr-pwa';
 const BRANCH  = process.env.BRANCH  || 'main';
-const LLM_BASE  = (process.env.LLM_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/$/, '');
-const LLM_MODEL = process.env.LLM_MODEL || 'kimi-k2-0905-preview';
+const LLM_BASE  = (process.env.LLM_BASE_URL || 'https://api.moonshot.ai/v1').replace(/\/$/, '');
+const LLM_MODEL = process.env.LLM_MODEL || 'kimi-k2.7-code';
 const DRY_RUN = !!process.env.DRY_RUN;
 
 const log = (...a) => console.log('[dev-executor]', ...a);
@@ -92,7 +92,7 @@ async function llm(system, user, maxTokens = 8000) {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.LLM_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: LLM_MODEL, temperature: 0.2, max_tokens: maxTokens,
+      model: LLM_MODEL, max_tokens: maxTokens,
       response_format: { type: 'json_object' },
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
     }),

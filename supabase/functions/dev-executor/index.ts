@@ -9,8 +9,8 @@
 // Секреты (Dashboard → Edge Functions → Secrets):
 //   GITHUB_TOKEN  — PAT с правом Contents: write на репозиторий (обязателен)
 //   LLM_API_KEY   — ключ Moonshot/Kimi (обязателен)
-//   LLM_BASE_URL  — необязательно, по умолчанию https://api.moonshot.cn/v1
-//   LLM_MODEL     — необязательно, по умолчанию kimi-k2-0905-preview
+//   LLM_BASE_URL  — необязательно, по умолчанию https://api.moonshot.ai/v1
+//   LLM_MODEL     — необязательно, по умолчанию kimi-k2.7-code
 //   GITHUB_REPO   — необязательно, по умолчанию AliKerimov65/niokr-pwa
 // Системные SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (или SUPABASE_SECRET_KEYS)
 // уже встроены в проект.
@@ -18,8 +18,8 @@
 
 const REPO   = Deno.env.get('GITHUB_REPO')   || 'AliKerimov65/niokr-pwa';
 const BRANCH = Deno.env.get('GITHUB_BRANCH') || 'main';
-const LLM_BASE  = (Deno.env.get('LLM_BASE_URL') || 'https://api.moonshot.cn/v1').replace(/\/$/, '');
-const LLM_MODEL = Deno.env.get('LLM_MODEL') || 'kimi-k2-0905-preview';
+const LLM_BASE  = (Deno.env.get('LLM_BASE_URL') || 'https://api.moonshot.ai/v1').replace(/\/$/, '');
+const LLM_MODEL = Deno.env.get('LLM_MODEL') || 'kimi-k2.7-code';
 const SB_URL = Deno.env.get('SUPABASE_URL') || '';
 
 function serviceKey(): string {
@@ -118,7 +118,7 @@ async function llm(system: string, user: string, maxTokens = 8000): Promise<stri
     method: 'POST',
     headers: { Authorization: `Bearer ${Deno.env.get('LLM_API_KEY')}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: LLM_MODEL, temperature: 0.2, max_tokens: maxTokens,
+      model: LLM_MODEL, max_tokens: maxTokens,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: system },
