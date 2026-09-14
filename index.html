@@ -45,6 +45,7 @@ main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 input,textarea,select{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px;font:inherit;width:100%}
 button.pri{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
 button.sec{background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
+a.sec{display:inline-block;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap;text-decoration:none}
 button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;white-space:nowrap}
 .ch{display:flex;flex-direction:column;gap:8px}
 .msg{background:var(--card);border-radius:12px;padding:9px 11px;max-width:88%;align-self:flex-start;border:1px solid var(--brd)}
@@ -95,6 +96,12 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 .msg img{max-width:100%;border-radius:10px;margin-top:6px}
 .daysep{display:flex;justify-content:center;margin:6px 0 2px}
 .daysep span{background:var(--card2);border:1px solid var(--brd2);color:var(--mut);font-size:11.5px;padding:3px 12px;border-radius:14px}
+.xlsv-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.xlsv-tabs button{padding:5px 12px;border-radius:14px;border:1px solid var(--brd);background:var(--card2);font-size:12.5px;color:var(--ink)}
+.xlsv-tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.xlsv{overflow:auto;max-height:62vh;border:1px solid var(--brd);border-radius:10px;background:#fff}
+.xlsv table{border-collapse:collapse;width:100%;font-size:12px}
+.xlsv td{border:1px solid #d8cfbc;padding:4px 7px;white-space:pre-wrap;vertical-align:top;color:#241a0e}
 #replyBar{display:none;padding:8px 12px;background:var(--card2);border-top:1px solid var(--brd);border-left:3px solid var(--acc);font-size:12.5px;color:var(--mut);align-items:center;gap:8px}
 #replyBar .rb-t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #replyBar b{color:#5f3f0a}
@@ -2711,7 +2718,7 @@ function msgHTML(m, i, grp){
       ${grp?'':`<div class="hd"><b ${isMe?'':`style="color:${avNameColor(m.n)}"`}>${esc(m.n)}</b>${m.r?` <span class="mut">${esc(m.r)}</span>`:''}</div>`}
       ${qte}
       ${pr.text?`<div class="bd">${mentionify(linkify(pr.text))}</div>`:''}
-      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
+      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>${isSheetFile(m.fn)?` <a href="javascript:void(0)" onclick="viewFileAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:''}`) : ''}
       ${ansd}
       <div class="t">${tm}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div>
     </div></div>`;
@@ -2926,13 +2933,62 @@ async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq
 /* ---------- ФАЙЛЫ ---------- */
 function renderFiles(v){
   const fs = SYNC ? (rDocs||[]) : store.get('files_'+(team?team.id:'x'), []);
+  window._filesList = fs;
   v.innerHTML = `<h2 class="pt">Документы команды</h2>
   <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
   <button class="pri" id="upBtn" style="width:100%" onclick="addFile()">Загрузить</button>
   <p class="mut" style="font-size:11.5px;margin-top:6px">Лимит хранилища — 48 МБ на файл. Загрузка идёт в фоне: индикатор внизу экрана покажет процент и оставшееся время — можно переходить в другие окна, загрузка не прервётся.</p></div>
-  ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
+  ${fs.map((f,i)=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
+  ${isSheetFile(f.name)?`<button class="sec" style="padding:6px 11px;font-size:16px" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:''}
   <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#7a5410;font-size:22px">⬇</a>
   <button class="dng" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
+}
+/* ---------- ПРОСМОТР ТАБЛИЦ (xlsx/xls/csv) ВНУТРИ ПРИЛОЖЕНИЯ.
+   SheetJS подгружается один раз по требованию; при неудаче — кнопка «Скачать». ---------- */
+let _xlsxLibP = null, _xlsWb = null, _xlsUrl = '', _xlsName = '';
+function isSheetFile(n){ return /\.(xlsx|xls|csv)$/i.test(String(n||'')); }
+function loadXLSX(){
+  if(window.XLSX) return Promise.resolve();
+  if(_xlsxLibP) return _xlsxLibP;
+  _xlsxLibP = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    s.onload = () => res();
+    s.onerror = () => { _xlsxLibP = null; rej(new Error('lib')); };
+    document.head.appendChild(s);
+  });
+  return _xlsxLibP;
+}
+function viewFileIdx(i){ const f = (window._filesList||[])[i]; if(f) viewFile(f.url||f.d, f.name); }
+function viewFileAt(u, n){ viewFile(decodeURIComponent(u), decodeURIComponent(n)); }
+function xlsSheetHTML(idx){
+  const sn = _xlsWb.SheetNames[idx];
+  return XLSX.utils.sheet_to_html(_xlsWb.Sheets[sn], {header:'', footer:'', editable:false});
+}
+function xlsRender(idx){
+  const tabs = _xlsWb.SheetNames.length > 1
+    ? `<div class="xlsv-tabs">${_xlsWb.SheetNames.map((sn,i)=>`<button class="${i===idx?'on':''}" onclick="xlsRender(${i})">${esc(sn)}</button>`).join('')}</div>` : '';
+  document.getElementById('xlsBody').innerHTML = tabs + `<div class="xlsv">${xlsSheetHTML(idx)}</div>`;
+}
+async function viewFile(url, name){
+  if(!url) return;
+  _xlsUrl = url; _xlsName = name || 'таблица';
+  $('#sheet').innerHTML = `<h2>📊 ${esc(_xlsName)}</h2><div id="xlsBody"><p class="mut">Загрузка таблицы…</p></div>
+    <div style="height:10px"></div><div class="row">
+    <a class="sec" style="flex:1;text-align:center" href="${url}" download="${esc(_xlsName)}" target="_blank">⬇ Скачать</a>
+    <button class="sec" style="flex:1" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button></div>`;
+  $('#overlay').style.display='flex';
+  try{
+    await loadXLSX();
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    if(/\.csv$/i.test(_xlsName)) _xlsWb = XLSX.read(await r.text(), {type:'string'});
+    else _xlsWb = XLSX.read(await r.arrayBuffer(), {type:'array'});
+    xlsRender(0);
+  }catch(e){
+    const b = document.getElementById('xlsBody');
+    if(b) b.innerHTML = `<p class="mut">Не удалось открыть таблицу в приложении (нет сети или формат не поддержан). Файл можно скачать кнопкой ниже.</p>`;
+  }
 }
 /* ---------- ФОНОВАЯ ЗАГРУЗКА ФАЙЛОВ: XHR с прогрессом и обратным отсчётом.
    Индикатор живёт вне <main> — переходы по окнам загрузку НЕ прерывают. ---------- */
