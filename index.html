@@ -900,7 +900,7 @@ function renderCustomTab(v){
    конфигов (пользовательские значения не трогает). Версия _tpl
    позволяет докатывать обновления шаблона на существующие команды. */
 const TEAM_TEMPLATE = {
-  version: 9,
+  version: 10,
   /* Контракт оболочки для каждой новой команды (самовосстанавливается кодом, не данными).
      Подтверждение №1 (Да): Рабочее окно включает график готовности работ по неделям и погодные
      предупреждения для наружных работ. Также в контракте: навигация со стеком и двойным «Назад»=выход;
@@ -929,7 +929,15 @@ const TEAM_TEMPLATE = {
      Подтверждение №11 (Да): внутренний просмотрщик Word — docx открывается внутри приложения
      постранично (кнопка 👁 в Файлах и у вложений чата, масштаб страницы под ширину экрана,
      кнопка «Скачать»); устаревший doc — извлечение текста без оформления (UTF-16 / Windows-1251)
-     с пометкой и кнопкой «Скачать». */
+     с пометкой и кнопкой «Скачать».
+     Подтверждение №9 (Да): вкладка «🎬 Модель» в нижнем меню — мультипликация реализации проекта:
+     базовый режим (строгая последовательность работ) и режим воспроизведения по датам этапов.
+     Главное требование: автономное создание модели из проекта с ручным вводом файла — конструктор
+     (кнопка «🏗 Создать модель из файла проекта») принимает файл из Файлов команды, с устройства
+     или ручной ввод; текст извлекается (PDF.js / DOCX через JSZip / DOC / TXT), порядок работ и этапы
+     разбираются умным парсером (раздел «Порядок производства работ», нумерованные пункты, пометки
+     «Этап N»), показываются на проверку с ручной правкой и сохраняются в config.model техплана;
+     для таких моделей — схематичный изометрический рендер (столбцы этапов по готовности). */
   shell: {root:'home', navigation:'stack+back+double-back-exit', sheetClose:['x','backdrop','esc','swipe-down','back'],
           dashboard:['summary','since-last-visit','my-tasks','due-7d','weekly-readiness-chart','weather-outdoor-warnings'],
           actsWord:'АОСР РД-11-02-2006 из реестра', uploads:'background-xhr-eta',
@@ -937,7 +945,9 @@ const TEAM_TEMPLATE = {
           chat:['reply-quote-jump','mention-highlight','bubbles-avatars','msg-grouping','day-separators',
                 'colored-authors','gradient-avatars','gradient-own-bubbles','reply-bar','pill-composer','msg-animation',
                 'answered-mark'],
-          misc:['meeting-protocol-tool']},
+          misc:['meeting-protocol-tool'],
+          model:['base-sequence-playback','date-stage-playback','project-file-builder','manual-file-input',
+                 'smart-script-extraction','preview-before-save','schematic-iso-render']},
   tabs: [
     {name:'Журнал авторского надзора', icon:'📋', kind:'az', pos:4,
      config:{object:'', address:'', customer:'', designer:'', contract:'', project_code:'', az_head:'', gip:'', lat:null, lon:null, works:[], act_works:[]}},
@@ -3140,14 +3150,28 @@ async function protoToFiles(id){
 let MDL = {mode:'base', cur:0, prog:0, playing:false, dplay:false, speed:1, day:0, last:0, raf:0};
 const MDL_STAGE_MAP = [[1],[2,3,4,5],[6],[7,8,9,10],[11,12,13,14],[15],[16],[]]; // работы АН (1-based) по этапам техплана
 const MDL_STAGE_FALLBACK = ['Подготовительный этап','Земляные работы и подготовка основания','Гидроизоляция основания и акты скрытых работ','Балочная система из шпал','Настил и коминг','Светосигнальное оборудование','Навигационное и вспомогательное оборудование','Исполнительная документация и приёмка'];
-function mdlWorks(){ const azt = TABS.find(x=>x.kind==='az'); const w = azt && azt.config ? (azt.config.works||[]) : []; return w.filter(Boolean); }
+/* Модель может быть создана автономно из файла проекта — тогда работы/этапы хранятся
+   в config.model вкладки «Технический план реализации» ({works:[], stages:[{title,a,b,start,end}], source}).
+   Без config.model — прежняя схема: перечень работ журнала АН + этапы техплана (Затундра). */
+function mdlCfg(){ const pt = TABS.find(x=>x.kind==='plan'); const m = pt && pt.config ? pt.config.model : null;
+  return (m && Array.isArray(m.works) && m.works.length >= 2 && Array.isArray(m.stages) && m.stages.length) ? m : null; }
+function mdlWorks(){ const c = mdlCfg(); if(c) return c.works.filter(Boolean);
+  const azt = TABS.find(x=>x.kind==='az'); const w = azt && azt.config ? (azt.config.works||[]) : []; return w.filter(Boolean); }
 function mdlStages(){
+  const c = mdlCfg();
+  if(c) return c.stages.map((s, i) => ({n: i+1, title: s.title || ('Этап ' + (i+1)), start: s.start || '', end: s.end || ''}));
   const pt = TABS.find(x=>x.kind==='plan'); const items = pt && pt.config ? (pt.config.items||[]) : [];
   const arr = items.map(it => ({n: it.n, title: it.title || ('Этап ' + it.n), start: it.start || '', end: it.end || ''}));
   if(!arr.length) MDL_STAGE_FALLBACK.forEach((t, i) => arr.push({n: i+1, title: t, start: '', end: ''}));
   return arr;
 }
-function mdlWorkStageIdx(){ const m = {}; MDL_STAGE_MAP.forEach((ws, si) => ws.forEach(w1 => { m[w1-1] = si; })); return m; }
+function mdlStageMap(){
+  const c = mdlCfg();
+  if(c) return c.stages.map(s => { const r = []; const a = Math.max(1, (s.a||0)+1), b = Math.min(c.works.length, (s.b == null ? s.a : s.b)+1);
+    for(let w = a; w <= b; w++) r.push(w); return r; });
+  return MDL_STAGE_MAP;
+}
+function mdlWorkStageIdx(){ const m = {}; mdlStageMap().forEach((ws, si) => ws.forEach(w1 => { m[w1-1] = si; })); return m; }
 function mdlStageIntervals(){
   return mdlStages().map(s => {
     const a = s.start ? Date.parse(s.start + 'T00:00:00') : NaN;
@@ -3167,9 +3191,9 @@ function mdlProgArray(){
     if(MDL.cur >= N) out.fill(1);
     return out;
   }
-  const map = mdlWorkStageIdx(), iv = mdlStageIntervals();
+  const map = mdlWorkStageIdx(), iv = mdlStageIntervals(), SM = mdlStageMap();
   for(let i = 0; i < N; i++){
-    const si = map[i] || 0, inStage = MDL_STAGE_MAP[si] || [], pos = inStage.indexOf(i+1);
+    const si = map[i] || 0, inStage = SM[si] || [], pos = inStage.indexOf(i+1);
     const it = iv[si];
     if(!it || pos < 0){ out[i] = 0; continue; }
     const sub = (it.e - it.s) / Math.max(1, inStage.length);
@@ -3227,6 +3251,19 @@ function mdlToday(){
 }
 async function modelSaveDates(){
   const pt = TABS.find(x=>x.kind==='plan'); if(!pt) return alert('Вкладка «Технический план реализации» не найдена.');
+  const c = mdlCfg();
+  if(c){
+    const stages = c.stages.map((s, ix) => ({...s,
+      start: (document.getElementById('mds_'+ix)||{}).value || '',
+      end: (document.getElementById('mde_'+ix)||{}).value || ''}));
+    let baseCfg = pt.config;
+    try{ const fr = await sb.from('tabs').select('config').eq('id', pt.id).single(); if(fr.data && fr.data.config) baseCfg = fr.data.config; }catch(e){}
+    pt.config = {...baseCfg, model: {...(baseCfg.model || c), stages}};
+    try{ await updTabCfg(pt.id, pt.config); }
+    catch(e){ return alert('Не удалось сохранить даты: ' + (e && e.message || e)); }
+    const rg2 = mdlDateRange(); MDL.day = rg2 ? rg2.s : 0;
+    render(); return;
+  }
   const items = (pt.config.items||[]).map((it, ix) => ({...it,
     start: (document.getElementById('mds_'+ix)||{}).value || '',
     end: (document.getElementById('mde_'+ix)||{}).value || ''}));
@@ -3263,7 +3300,7 @@ function mdlSyncUI(){
   if(MDL.mode === 'base'){
     const i = Math.min(MDL.cur, W.length-1), si = map[i]||0;
     st.innerHTML = MDL.cur >= W.length
-      ? '<b>Сборка завершена.</b> Этап 8 «' + esc(ST[7] ? ST[7].title : '') + '».'
+      ? '<b>Сборка завершена.</b> ' + (ST.length ? 'Этап ' + ST[ST.length-1].n + ' «' + esc(ST[ST.length-1].title) + '».' : '')
       : '<b>Шаг ' + (i+1) + '/' + W.length + '</b> · Этап ' + ST[si].n + ' «' + esc(ST[si].title) + '»<br>' + esc(W[i]);
     const bar = document.getElementById('mdlBar'); if(bar) bar.value = Math.round((MDL.cur + (MDL.cur >= W.length ? 0 : MDL.prog)) * 100);
     const btn = document.getElementById('mdlPlayBtn'); if(btn) btn.textContent = MDL.playing ? '⏸' : '▶';
@@ -3281,8 +3318,9 @@ function mdlSyncUI(){
       : 'Укажите даты начала и окончания каждого этапа ниже' + ((team && team.is_owner) ? ' и нажмите «Сохранить даты».' : ' (это делает владелец команды).');
     const bar = document.getElementById('mdlBarD'); if(bar && rg) bar.value = Math.round((MDL.day - rg.s)/(rg.e - rg.s)*1000);
     const btn = document.getElementById('mdlPlayBtnD'); if(btn) btn.textContent = MDL.dplay ? '⏸' : '▶';
+    const SMd = mdlStageMap();
     document.querySelectorAll('.mdl-sbar i').forEach((el, ix) => {
-      const inStage = MDL_STAGE_MAP[ix] || [];
+      const inStage = SMd[ix] || [];
       const p = inStage.length ? inStage.reduce((a,w1)=>a+(prog[w1-1]||0),0)/inStage.length : (iv[ix] && MDL.day >= iv[ix].e ? 1 : 0);
       el.style.width = Math.round(p*100) + '%';
     });
@@ -3311,8 +3349,8 @@ function mdlFitSeg(start, end, d, a, b, endA, endB, DAY){
 }
 async function mdlSmartFill(){
   if(!(team && team.is_owner)) return;
-  const ST = mdlStages(), n = ST.length, DAY = 864e5;
-  const wcnt = ST.map((s, ix) => Math.max(1, (MDL_STAGE_MAP[ix]||[]).length));
+  const ST = mdlStages(), n = ST.length, DAY = 864e5, SMf = mdlStageMap();
+  const wcnt = ST.map((s, ix) => Math.max(1, (SMf[ix]||[]).length));
   let cal = [];
   try{ const r = await sb.from('stages').select('*').eq('team_id', tid()).order('num'); cal = r.data || []; }catch(e){}
   // 1) фиксированные сроки: дедлайны календарного плана (по названию → по номеру) + уже заданные в техплане
@@ -3373,7 +3411,11 @@ async function mdlSmartFill(){
 async function mdlSyncStages(){
   if(!(team && team.is_owner)) return;
   const pt = TABS.find(x=>x.kind==='plan'); if(!pt) return alert('Вкладка «Технический план реализации» не найдена.');
-  const items = pt.config.items || [];
+  const c = mdlCfg();
+  const items = c
+    ? c.stages.map((s, i) => ({n: i+1, title: s.title || ('Этап ' + (i+1)), end: s.end || '',
+        works: c.works.slice(Math.max(0, s.a||0), (s.b == null ? s.a : s.b) + 1)}))
+    : (pt.config.items || []);
   let exist = [];
   try{ const r = await sb.from('stages').select('*').eq('team_id', tid()); exist = r.data || []; }
   catch(e){ return alert('Не удалось прочитать календарный план: ' + (e.message || e)); }
@@ -3398,22 +3440,237 @@ async function mdlSyncStages(){
   alert('Календарный план («Этапы»): добавлено этапов — ' + made + ', дополнено — ' + upd + (skip ? ', без изменений — ' + skip : '') + '.');
 }
 
+/* ================= КОНСТРУКТОР МОДЕЛИ ИЗ ФАЙЛА ПРОЕКТА =================
+   Автономное создание модели: файл проекта (из 📁 Файлов команды, с устройства
+   или ручной ввод) → текст документа (PDF.js / DOCX через JSZip / DOC / TXT)
+   → умный разбор (раздел «Порядок производства работ», нумерованные пункты,
+   пометки «Этап N») → предпросмотр с ручной правкой → config.model техплана.
+   Модель строится строго по подтверждённым пользователем данным. */
+let _pdfjsP = null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve();
+  if(_pdfjsP) return _pdfjsP;
+  _pdfjsP = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    s.onload = () => { try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; }catch(e){} res(); };
+    s.onerror = () => { _pdfjsP = null; rej(new Error('lib')); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsP;
+}
+async function mdlFileText(name, buf){
+  const ext = (String(name || '').split('.').pop() || '').toLowerCase();
+  if(ext === 'pdf'){
+    await loadPdfJs();
+    const pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+    const out = [];
+    for(let p = 1; p <= pdf.numPages; p++){
+      const pg = await pdf.getPage(p);
+      const tc = await pg.getTextContent();
+      let line = '';
+      tc.items.forEach(it => {
+        line += (line && !/\s$/.test(line) && !/^\s/.test(it.str) ? ' ' : '') + it.str;
+        if(it.hasEOL){ out.push(line); line = ''; }
+      });
+      if(line) out.push(line);
+    }
+    return out.join('\n');
+  }
+  if(ext === 'docx'){
+    await loadDocxLib(); // подгружает JSZip (тот же механизм, что у просмотрщика Word)
+    const zip = await window.JSZip.loadAsync(buf);
+    const f = zip.file('word/document.xml');
+    if(!f) throw new Error('в файле нет word/document.xml');
+    const xml = await f.async('string');
+    return xml.split(/<w:p[ >]/).map(p => p.replace(/<[^>]+>/g, '')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&'))
+      .filter(x => x.trim()).join('\n');
+  }
+  if(ext === 'doc') return docRawText(buf);
+  let t = new TextDecoder('utf-8').decode(buf);
+  const bad = (t.match(/�/g) || []).length;
+  if(bad > t.length * 0.02) t = new TextDecoder('windows-1251').decode(buf);
+  return t;
+}
+/* Разбор текста проекта: раздел с порядком работ → нумерованные пункты;
+   пункты «Этап N. Название» становятся границами этапов. Ничего не выдумываем:
+   всё, что попало в модель, взято из текста файла и показано пользователю. */
+function mdlExtractScript(text){
+  const L = (text || '').split(/\r?\n/).map(x => x.replace(/\s+/g, ' ').trim()).filter(x => x.length > 1);
+  const headRe = /^(?:\d{1,2}[.\)]\s*)?(порядок (производства|выполнения|ведения) работ|последовательность (производства|выполнения)( работ)?|технологическая последовательность|очерёдность (производства|выполнения)( работ)?|очередность (производства|выполнения)( работ)?|этапы (строительства|производства работ|выполнения работ)|основные (виды|этапы) работ|состав (основных )?работ|перечень (основных )?работ|организация производства работ|технология производства работ)/i;
+  const itemRe = /^(?:п\s*[.,]?\s*)?(\d{1,2})[.\)]\s*(.+)$/;
+  const capsRe = /^[А-ЯЁA-Z0-9 ,.\-()«»%\/]{10,}$/;
+  const stageRe = /^этап\s+([IVX\d]{1,4})[.\):]?\s*(.*)$/i;
+  const works = [], stages = [];
+  const pushWork = t => { t = t.replace(/\s*;+\s*$/, '.').trim(); if(t.length > 2) works.push(t[0].toUpperCase() + t.slice(1)); };
+  const addItem = t => {
+    const sm = t.match(stageRe);
+    if(sm){ stages.push({title: (sm[2] || ('Этап ' + sm[1])).trim(), a: works.length, b: works.length - 1}); }
+    else pushWork(t);
+  };
+  let st = -1;
+  for(let i = 0; i < L.length; i++){ if(headRe.test(L[i])){ st = i + 1; break; } }
+  if(st >= 0){
+    let miss = 0;
+    for(let i = st; i < L.length && works.length < 60; i++){
+      const ln = L[i], m = ln.match(itemRe);
+      if(m && m[2] && capsRe.test(m[2].trim())) break; // нумерованный ЗАГОЛОВОК нового раздела
+      if(m && m[2] && m[2].length > 2){ miss = 0; addItem(m[2].trim()); continue; }
+      // перенос длинного пункта на следующую строку (в PDF строки рвутся)
+      if(works.length && /^[а-яa-zё(«]/.test(ln) && !capsRe.test(ln)){ works[works.length-1] += ' ' + ln; continue; }
+      if(capsRe.test(ln)) break; // начался новый раздел ЗАГЛАВНЫМИ
+      if(++miss >= 3) break;
+    }
+  }
+  if(works.length < 3){
+    // запасной вариант: самый длинный нумерованный список во всём документе
+    works.length = 0; stages.length = 0;
+    let best = [], cur = [], exp = 1;
+    for(let i = 0; i < L.length; i++){
+      const m = L[i].match(itemRe);
+      if(m && +m[1] === exp){ cur.push(m[2].trim()); exp++; }
+      else if(m && +m[1] === 1){ if(cur.length > best.length) best = cur; cur = [m[2].trim()]; exp = 2; }
+    }
+    if(cur.length > best.length) best = cur;
+    best.forEach(addItem);
+  }
+  stages.forEach((s2, ix) => { s2.b = (ix + 1 < stages.length ? stages[ix+1].a : works.length) - 1; });
+  const st2 = stages.filter(s2 => s2.b >= s2.a);
+  const ok = st2.length && st2[0].a === 0 && st2[st2.length-1].b === works.length - 1;
+  return {works, stages: ok ? st2 : []};
+}
+async function mdlBuilderOpen(){
+  if(!(team && team.is_owner)) return;
+  const sh = $('#sheet');
+  sh.innerHTML = '<h2>🏗 Модель из файла проекта</h2><p class="mut">Загрузка списка файлов…</p>';
+  $('#overlay').style.display = 'flex';
+  let docs = [];
+  try{
+    const r = await sb.from('documents').select('id,name,url').eq('team_id', tid()).order('created_at', {ascending: false}).limit(100);
+    docs = (r.data || []).filter(d => /\.(pdf|docx?|txt)$/i.test(d.name || ''));
+  }catch(e){}
+  let h = '<h2>🏗 Модель из файла проекта</h2>'
+    + '<p class="mut" style="font-size:12.5px">Выберите файл проекта — порядок работ и этапы будут извлечены из него автоматически и показаны для проверки. Поддерживаются PDF, DOCX, DOC, TXT. Скан без текстового слоя не читается — тогда работы вводятся вручную.</p>';
+  if(docs.length){
+    window._mdlBldDocs = docs;
+    h += '<h3 style="margin:10px 0 6px">📁 Из Файлов команды</h3>'
+      + docs.slice(0, 20).map((d, i) => '<button class="sec" style="width:100%;margin-bottom:6px;text-align:left" onclick="mdlBuildFromUrl(' + i + ')">📄 ' + esc(d.name) + '</button>').join('');
+  }
+  h += '<h3 style="margin:10px 0 6px">⬆ С устройства</h3><input type="file" id="mdlBldInp" accept=".pdf,.docx,.doc,.txt" onchange="mdlBuildFromInput(this)">'
+    + '<h3 style="margin:10px 0 6px">✍️ Без файла</h3><button class="sec" style="width:100%" onclick="mdlBuilderPreview([], [], \'\')">Ввести работы и этапы вручную</button>'
+    + '<div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector(\'#overlay\').style.display=\'none\'">Отмена</button>';
+  sh.innerHTML = h;
+}
+async function mdlBuildFromUrl(i){
+  const d = (window._mdlBldDocs || [])[i]; if(!d) return;
+  await mdlBuildExtract(d.url, d.name, null);
+}
+async function mdlBuildFromInput(inp){
+  const f = inp && inp.files && inp.files[0]; if(!f) return;
+  try{ const buf = await f.arrayBuffer(); await mdlBuildExtract(null, f.name, buf); }
+  catch(e){ alert('Не удалось прочитать файл: ' + (e && e.message || e)); }
+}
+async function mdlBuildExtract(url, name, buf){
+  const sh = $('#sheet');
+  sh.innerHTML = '<h2>🏗 ' + esc(name) + '</h2><p class="mut">Извлечение текста и разбор документа…</p>';
+  try{
+    if(!buf){
+      const r = await fetch(url);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      buf = await r.arrayBuffer();
+    }
+    const text = await mdlFileText(name, buf);
+    const ex = mdlExtractScript(text || '');
+    if(!ex.works.length) alert('Не удалось найти перечень работ в тексте документа (возможно, скан без текстового слоя). Откроется форма ручного ввода.');
+    mdlBuilderPreview(ex.works, ex.stages, name);
+  }catch(e){
+    alert('Не удалось прочитать файл: ' + (e && e.message || e) + '. Откроется форма ручного ввода.');
+    mdlBuilderPreview([], [], name);
+  }
+}
+function mdlBuilderPreview(works, stages, srcName){
+  const stLines = stages.length
+    ? stages.map(s2 => s2.title + ' | ' + (s2.a + 1) + '-' + (s2.b + 1))
+    : (works.length ? ['Все работы | 1-' + works.length] : []);
+  window._mdlBld = {src: srcName || ''};
+  $('#sheet').innerHTML = '<h2>🏗 Проверка модели</h2>'
+    + (srcName
+      ? '<p class="mut" style="font-size:12px">Источник: 📄 ' + esc(srcName) + '</p>'
+      : '<p class="mut" style="font-size:12px">Ручной ввод (без файла).</p>')
+    + '<p class="mut" style="font-size:12.5px">Модель будет построена строго по этим данным — проверьте и при необходимости поправьте.</p>'
+    + '<h3 style="margin:8px 0 4px">Работы — по одной в строке, в порядке выполнения</h3>'
+    + '<textarea id="mdlBldW" rows="8" placeholder="Разбивка площадки&#10;Земляные работы&#10;…">' + esc(works.join('\n')) + '</textarea>'
+    + '<h3 style="margin:10px 0 4px">Этапы — по одному в строке: Название | с-по</h3>'
+    + '<textarea id="mdlBldS" rows="4" placeholder="Подготовительный этап | 1-3&#10;Основные работы | 4-8">' + esc(stLines.join('\n')) + '</textarea>'
+    + '<p class="mut" style="font-size:11px;margin-top:4px">Номера работ сплошные, без пропусков и наложений: первый этап начинается с работы №1, каждый следующий — с номера, следующего за предыдущим.</p>'
+    + '<div style="height:10px"></div><button class="pri" style="width:100%" onclick="mdlBuilderSave()">✅ Создать модель</button>'
+    + '<div style="height:8px"></div><button class="sec" style="width:100%" onclick="mdlBuilderOpen()">← Выбрать другой файл</button>';
+}
+async function mdlBuilderSave(){
+  const W = (document.getElementById('mdlBldW').value || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if(W.length < 2) return alert('Нужно минимум две работы.');
+  const S = [];
+  const linesS = (document.getElementById('mdlBldS').value || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  for(const ln of linesS){
+    const m = ln.match(/^(.+?)\s*\|\s*(\d+)\s*[-–—]\s*(\d+)\s*$/);
+    if(!m) return alert('Не понял строку этапа: «' + ln + '». Формат: Название | с-по, например: Основные работы | 4-8');
+    S.push({title: m[1].trim(), a: +m[2] - 1, b: +m[3] - 1});
+  }
+  if(!S.length) return alert('Задайте хотя бы один этап.');
+  for(let i = 0; i < S.length; i++){
+    const s = S[i];
+    if(s.a < 0 || s.b < s.a || s.b >= W.length) return alert('Этап «' + s.title + '»: номера работ вне диапазона 1-' + W.length + '.');
+    if(i && s.a !== S[i-1].b + 1) return alert('Этап «' + s.title + '» должен начинаться с работы №' + (S[i-1].b + 2) + ' — без пропусков и наложений.');
+  }
+  if(S[0].a !== 0) return alert('Первый этап должен начинаться с работы №1.');
+  if(S[S.length-1].b !== W.length - 1) return alert('Последний этап должен заканчиваться работой №' + W.length + '.');
+  const pt = TABS.find(x=>x.kind==='plan'); if(!pt) return alert('Вкладка «Технический план реализации» не найдена.');
+  const model = {works: W, stages: S, source: {name: (window._mdlBld && window._mdlBld.src) || '', by: me.name, at: new Date().toISOString()}};
+  // читаем свежий конфиг перед записью — чтобы не затереть параллельные изменения (миграция шаблона и пр.)
+  let baseCfg = pt.config;
+  try{ const fr = await sb.from('tabs').select('config').eq('id', pt.id).single(); if(fr.data && fr.data.config) baseCfg = fr.data.config; }catch(e){}
+  pt.config = {...baseCfg, model};
+  try{ await updTabCfg(pt.id, pt.config); }
+  catch(e){ return alert('Не удалось сохранить модель: ' + (e && e.message || e)); }
+  document.querySelector('#overlay').style.display = 'none';
+  mdlStop(); MDL.cur = 0; MDL.prog = 0; MDL.day = 0;
+  render();
+  alert('✅ Модель создана' + (model.source.name ? ' из файла «' + model.source.name + '»' : ' (ручной ввод)') + ': работ — ' + W.length + ', этапов — ' + S.length + '.');
+}
+
 /* --- Экран «Модель» --- */
 function renderModel(v){
-  const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
+  const isOwner = team && team.is_owner;
+  const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx(), SM = mdlStageMap(), cfgM = mdlCfg();
   if(!W.length){
-    v.innerHTML = '<h2 class="pt">🎬 Модель</h2><div class="card"><p class="mut">Перечень работ пуст. Заполните виды работ во вкладке «Журнал авторского надзора» — модель строится строго по ним.</p></div>';
+    v.innerHTML = '<h2 class="pt">🎬 Модель реализации</h2><div class="card"><p class="mut">Модель ещё не создана.'
+      + (isOwner
+        ? ' Создайте её автономно из файла проекта (PDF, DOCX, DOC, TXT) — порядок работ и этапы извлекаются из документа автоматически и показываются для проверки. Либо заполните виды работ во вкладке «Журнал авторского надзора».'
+        : ' Создание модели выполняет владелец команды — из файла проекта или через журнал авторского надзора.')
+      + '</p>'
+      + (isOwner ? '<button class="pri" style="width:100%" onclick="mdlBuilderOpen()">🏗 Создать модель из файла проекта</button>' : '')
+      + '</div>';
     return;
   }
-  const isOwner = team && team.is_owner;
   const base = MDL.mode === 'base';
   const rg = mdlDateRange();
-  let h = '<h2 class="pt">🎬 Модель реализации</h2><div class="card">'
+  let h = '<h2 class="pt">🎬 Модель реализации</h2>';
+  h += '<div class="card" style="padding:10px 12px"><div class="row" style="gap:6px;align-items:center">'
+    + '<span class="mut" style="flex:1;font-size:11.5px">'
+    + (cfgM
+      ? '📄 ' + esc((cfgM.source && cfgM.source.name) || 'файл проекта') + ' · работ ' + W.length + ' · этапов ' + ST.length + (cfgM.source && cfgM.source.at ? ' · ' + mdlFmtDate(Date.parse(cfgM.source.at)) : '')
+      : 'Модель по перечню работ журнала АН и этапам техплана')
+    + '</span>'
+    + (isOwner ? '<button class="sec" style="flex:none;font-size:12px;padding:7px 10px" title="Создать модель из файла проекта" onclick="mdlBuilderOpen()">🏗 ' + (cfgM ? 'Пересоздать' : 'Из файла') + '</button>' : '')
+    + '</div></div>';
+  h += '<div class="card">'
     + '<div class="mdl-modes">'
     + '<button class="' + (base ? 'on' : '') + '" onclick="mdlMode(\'base\')">🧱 Базовая последовательность</button>'
     + '<button class="' + (!base ? 'on' : '') + '" onclick="mdlMode(\'dates\')">🗓 По датам и этапам</button>'
     + '</div>'
     + '<canvas id="mdlCv"></canvas>'
+    + (cfgM ? '<p class="mut" style="font-size:11px;margin:4px 2px 0">Схематичная модель по файлу проекта: столбцы — этапы, высота столбца — готовность этапа, подпись «Э+номер» — номер этапа.</p>' : '')
     + '<div class="mdl-status" id="mdlStatus"></div>';
   const spd = [0.5,1,2,4].map(x => '<option value="' + x + '" ' + (MDL.speed === x ? 'selected' : '') + '>×' + x + '</option>').join('');
   if(base){
@@ -3439,8 +3696,10 @@ function renderModel(v){
           return '<div class="mdl-step" data-w="' + i + '" onclick="mdlSeek(' + i + ')"><span class="n">' + (i+1) + '</span>'
             + '<span>' + esc(w) + '<span class="stg">Этап ' + ST[si].n + ' · ' + esc(ST[si].title) + '</span></span></div>';
         }).join('')
-      + '<div class="mdl-step" style="cursor:default"><span class="n">✓</span><span>Исполнительная документация и приёмка'
-      + (ST[7] ? '<span class="stg">Этап 8 · ' + esc(ST[7].title) + '</span>' : '') + '</span></div>'
+      + (SM.length && !(SM[SM.length-1] || []).length
+        ? '<div class="mdl-step" style="cursor:default"><span class="n">✓</span><span>' + esc(ST[ST.length-1].title)
+          + '<span class="stg">Этап ' + ST[ST.length-1].n + ' · документальный этап</span></span></div>'
+        : '')
       + '</div>';
   } else {
     h += '<div class="card"><h3>Этапы и сроки выполнения работ</h3>';
@@ -3450,7 +3709,7 @@ function renderModel(v){
       + '<div class="mdl-note" id="mdlSmartNote"></div>';
     if(!rg) h += '<p class="mut" style="font-size:12px;margin-bottom:8px">Для воспроизведения по датам задайте начало и окончание каждого этапа' + (isOwner ? ' вручную или нажмите «🪄 Умное заполнение» — модель сама подставит сроки из календарного плана и техплана, а пробелы рассчитает по объёмам работ.' : ' (это делает владелец команды).') + '</p>';
     h += ST.map((s, ix) => {
-        const cnt = (MDL_STAGE_MAP[ix]||[]).length;
+        const cnt = (SM[ix]||[]).length;
         const dt = isOwner
           ? '<div class="dt"><span>с</span><input type="date" id="mds_' + ix + '" value="' + s.start + '"><span>по</span><input type="date" id="mde_' + ix + '" value="' + s.end + '"></div>'
           : '<div class="dt">' + (s.start && s.end ? '📅 ' + s.start.split('-').reverse().join('.') + ' — ' + s.end.split('-').reverse().join('.') : 'даты не заданы') + '</div>';
@@ -3746,6 +4005,45 @@ const MDL_STEPS = [
     }
   }
 ];
+/* --- Схематичная отрисовка модели, созданной из файла проекта:
+   столбцы этапов на площадке, высота столбца = готовность этапа --- */
+function mdlDrawGeneric(ctx, P, s, W, H, prog){
+  const ST = mdlStages(), SM = mdlStageMap(), S = ST.length;
+  if(!S) return;
+  const cols = Math.ceil(Math.sqrt(S)), rows = Math.ceil(S / cols);
+  const zw = MDL_HH*2 / cols, zd = MDL_HH*2 / rows, pad = Math.min(zw, zd) * 0.12;
+  mdlQuad(ctx, P, [[-MDL_HH,-MDL_HH],[MDL_HH,-MDL_HH],[MDL_HH,MDL_HH],[-MDL_HH,MDL_HH]], '#e2d8ba', '#c0b28a');
+  const allDone = prog.length && prog.every(x => x >= 1);
+  const C_GHOST = {t:'rgba(148,132,100,0.28)', l:'rgba(120,106,80,0.28)', r:'rgba(104,92,70,0.28)'};
+  const C_DONE  = {t:'#8fb06b', l:'#6d8c4e', r:'#5d7a40'};
+  const C_ACT   = {t:'#d9a755', l:'#b3863a', r:'#9c7430'};
+  ST.forEach((st, i) => {
+    const sm = SM[i] || [];
+    let p = sm.length ? sm.reduce((a, w1) => a + (prog[w1-1] || 0), 0) / sm.length : (allDone ? 1 : 0);
+    p = Math.max(0, Math.min(1, p));
+    const r = Math.floor(i / cols), c = i % cols;
+    const x0 = -MDL_HH + c*zw + pad, x1 = -MDL_HH + (c+1)*zw - pad;
+    const y0 = -MDL_HH + r*zd + pad, y1 = -MDL_HH + (r+1)*zd - pad;
+    if(p <= 0){
+      mdlBox(ctx, P, x0, y0, x1, y1, 0, 0.06, C_GHOST);
+      const gp = P((x0+x1)/2, (y0+y1)/2, 0.06);
+      ctx.save();
+      ctx.fillStyle = 'rgba(61,47,28,0.55)'; ctx.font = '700 10px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Э' + st.n, gp[0], gp[1] - 4);
+      ctx.restore();
+      return;
+    }
+    const hFull = Math.min(zw, zd) * 0.26;
+    const hgt = 0.06 + p * hFull;
+    mdlBox(ctx, P, x0, y0, x1, y1, 0, hgt, p >= 1 ? C_DONE : C_ACT);
+    const tp = P((x0+x1)/2, (y0+y1)/2, hgt);
+    ctx.save();
+    ctx.fillStyle = '#3d2f1c'; ctx.font = '700 10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Э' + st.n, tp[0], tp[1] - 4);
+    ctx.restore();
+  });
+}
+
 function mdlDraw(){
   const cv = document.getElementById('mdlCv'); if(!cv) return;
   const dpr = window.devicePixelRatio || 1;
@@ -3764,7 +4062,8 @@ function mdlDraw(){
   mdlQuad(ctx, P, [[-14.5,-14.5],[14.5,-14.5],[14.5,14.5],[-14.5,14.5]], '#cbd8b8');
   mdlQuad(ctx, P, [[-MDL_HH-1,-MDL_HH-1],[MDL_HH+1,-MDL_HH-1],[MDL_HH+1,MDL_HH+1],[-MDL_HH-1,MDL_HH+1]], '#d8cba8');
   const prog = mdlProgArray();
-  prog.forEach((p, i) => { if(p > 0 && MDL_STEPS[i]) MDL_STEPS[i](ctx, P, s, Math.min(1, p)); });
+  if(mdlCfg()) mdlDrawGeneric(ctx, P, s, W, H, prog);
+  else prog.forEach((p, i) => { if(p > 0 && MDL_STEPS[i]) MDL_STEPS[i](ctx, P, s, Math.min(1, p)); });
   // завершение — документальный этап
   if(prog.length && prog.every(x => x >= 1)){
     ctx.save();
@@ -3778,7 +4077,8 @@ function mdlDraw(){
     ctx.fillStyle = '#5c4526'; ctx.font = '700 12.5px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('✅ Объект собран по проекту', W/2, by + 18);
     ctx.font = '11px sans-serif'; ctx.fillStyle = '#7a6a4d';
-    ctx.fillText('Этап 8 · Исполнительная документация и приёмка', W/2, by + 34);
+    const STb = mdlStages(), Lb = STb[STb.length-1];
+    ctx.fillText(Lb ? ('Этап ' + Lb.n + ' · ' + String(Lb.title).slice(0, 46)) : 'Готово', W/2, by + 34);
     ctx.restore();
   }
 }
