@@ -155,6 +155,11 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 .xlsv{overflow:auto;max-height:62vh;border:1px solid var(--brd);border-radius:10px;background:#fff}
 .xlsv table{border-collapse:collapse;width:100%;font-size:12px}
 .xlsv td{border:1px solid #d8cfbc;padding:4px 7px;white-space:pre-wrap;vertical-align:top;color:#241a0e}
+.docv{overflow:auto;max-height:62vh;border:1px solid var(--brd);border-radius:10px;background:#8a8378}
+.docv .docx-wrapper{padding:10px}
+.docv .docx-wrapper>section.docx{margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,.35)}
+.docv-raw{background:#fff;padding:4px}
+.docv-raw pre{white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.55;color:#241a0e;margin:0;padding:8px 10px;font-family:inherit}
 #replyBar{display:none;padding:8px 12px;background:var(--card2);border-top:1px solid var(--brd);border-left:3px solid var(--acc);font-size:12.5px;color:var(--mut);align-items:center;gap:8px}
 #replyBar .rb-t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #replyBar b{color:#5f3f0a}
@@ -3894,7 +3899,7 @@ function msgHTML(m, i, grp){
       ${grp?'':`<div class="hd"><b ${isMe?'':`style="color:${avNameColor(m.n)}"`}>${esc(m.n)}</b>${m.r?` <span class="mut">${esc(m.r)}</span>`:''}</div>`}
       ${qte}
       ${pr.text?`<div class="bd">${mentionify(linkify(pr.text))}</div>`:''}
-      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy" style="cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'фото')}')">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>${isSheetFile(m.fn)?` <a href="javascript:void(0)" onclick="viewFileAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:''}`) : ''}
+      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy" style="cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'фото')}')">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>${isSheetFile(m.fn)?` <a href="javascript:void(0)" onclick="viewFileAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:isDocFile(m.fn)?` <a href="javascript:void(0)" onclick="viewDocAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:''}`) : ''}
       ${ansd}
       <div class="t">${tm}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div>
     </div></div>`;
@@ -4114,7 +4119,7 @@ function renderFiles(v){
   <div class="card" style="padding:10px 12px"><div class="row" style="gap:6px"><input type="file" id="projFile" style="flex:1;min-width:0;padding:8px"><button class="pri" id="upBtn" style="flex:none;padding:9px 14px" onclick="addFile()">Загрузить</button></div>
   <p class="mut" style="font-size:11px;margin-top:6px">Лимит 48 МБ на файл · загрузка идёт в фоне, индикатор внизу экрана.</p></div>
   ${fs.map((f,i)=>`<div class="frow"><div class="finf"><b>📄 ${esc(f.name)}</b><span>${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</span></div>
-  <div class="fbtns">${isSheetFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:isImgFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewPhotoIdx(${i})">👁</button>`:''}
+  <div class="fbtns">${isSheetFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:isDocFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewDocIdx(${i})">👁</button>`:isImgFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewPhotoIdx(${i})">👁</button>`:''}
   <a class="fbtn" href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" title="Скачать">⬇</a>
   <button class="fbtn del" title="Удалить" onclick="delFile(${f.id})">✖</button></div></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
@@ -4207,6 +4212,110 @@ async function viewFile(url, name){
     const b = document.getElementById('xlsBody');
     if(b) b.innerHTML = `<p class="mut">Не удалось открыть таблицу в приложении (нет сети или формат не поддержан). Файл можно скачать кнопкой ниже.</p>`;
   }
+}
+/* ---------- ПРОСМОТР WORD (docx/doc) ВНУТРИ ПРИЛОЖЕНИЯ.
+   docx рендерится библиотекой docx-preview (подгружается один раз по требованию,
+   как и SheetJS для таблиц); страницы масштабируются под ширину экрана (zoom).
+   Для устаревшего .doc — извлечение текста (UTF-16LE / Windows-1251) без оформления.
+   При неудаче — понятное сообщение и кнопка «Скачать». ---------- */
+let _docxLibP = null;
+function isDocFile(n){ return /\.docx?$/i.test(String(n||'')); }
+function loadDocxLib(){
+  if(window.JSZip && window.docx) return Promise.resolve();
+  if(_docxLibP) return _docxLibP;
+  const add = src => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => res(); s.onerror = () => rej(new Error('lib'));
+    document.head.appendChild(s);
+  });
+  _docxLibP = add('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js')
+    .then(() => add('https://cdn.jsdelivr.net/npm/docx-preview@0.4.0/dist/docx-preview.min.js'))
+    .catch(e => { _docxLibP = null; throw e; });
+  return _docxLibP;
+}
+function viewDocIdx(i){ const f = (window._filesList||[])[i]; if(f) viewDocFile(f.url||f.d, f.name); }
+function viewDocAt(u, n){ viewDocFile(decodeURIComponent(u), decodeURIComponent(n)); }
+async function viewDocFile(url, name){
+  if(!url) return;
+  const nm = name || 'документ';
+  $('#sheet').innerHTML = `<h2>📝 ${esc(nm)}</h2><div id="docBody"><p class="mut">Загрузка документа…</p></div>
+    <div style="height:10px"></div><div class="row">
+    <a class="sec" style="flex:1;text-align:center" href="${url}" download="${esc(nm)}" target="_blank">⬇ Скачать</a>
+    <button class="sec" style="flex:1" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button></div>`;
+  $('#overlay').style.display='flex';
+  const body = document.getElementById('docBody');
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const buf = await r.arrayBuffer();
+    if(/\.docx$/i.test(nm)){
+      await loadDocxLib();
+      body.innerHTML = '<div class="docv" id="docvBox"></div>';
+      await window.docx.renderAsync(buf, document.getElementById('docvBox'), null, {inWrapper:true, breakPages:true, ignoreHeight:true, ignoreWidth:false});
+      docvFit();
+    }else{
+      const txt = docRawText(buf);
+      if(txt.length < 80) throw new Error('empty');
+      body.innerHTML = `<p class="mut" style="font-size:12px;margin-bottom:8px">Устаревший формат .doc — показан извлечённый текст без оформления. Для точного просмотра скачайте файл.</p><div class="docv docv-raw"><pre>${esc(txt)}</pre></div>`;
+    }
+  }catch(e){
+    if(body) body.innerHTML = `<p class="mut">Не удалось открыть документ в приложении (нет сети или формат не поддержан). Файл можно скачать кнопкой ниже.</p>`;
+  }
+}
+function docvFit(){
+  const box = document.getElementById('docvBox'); if(!box) return;
+  const avail = box.clientWidth - 4;
+  box.querySelectorAll('section.docx').forEach(sec => {
+    const w = sec.offsetWidth || sec.scrollWidth;
+    if(w > avail && w > 0) sec.style.zoom = Math.max(0.35, Math.round(avail / w * 100) / 100);
+  });
+}
+function docRawText(buf){
+  const b = new Uint8Array(buf);
+  const isRu = c => (c >= 0x410 && c <= 0x44F) || c === 0x401 || c === 0x451;
+  const isLat = c => (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
+  const score = s => { let k = 0; for(let i = 0; i < s.length; i++){ const c = s.charCodeAt(i); if(isRu(c)) k += 2; else if(isLat(c)) k++; } return k; };
+  const clean = runs => runs.filter(t => {
+    let L = 0, sp = 0; const freq = {};
+    for(let i = 0; i < t.length; i++){
+      const ch = t[i], c = t.charCodeAt(i);
+      if(isRu(c) || isLat(c)){ L++; const k = ch.toLowerCase(); freq[k] = (freq[k] || 0) + 1; }
+      if(ch === ' ') sp++;
+    }
+    if(L < 3 || L / t.length < 0.3) return false;
+    if(Math.max.apply(null, Object.values(freq)) / L > 0.35) return false; // доминирующая буква — бинарный мусор («яяяя…»)
+    if(t.length >= 60 && sp / t.length < 0.03) return false; // длинный «текст» без пробелов — мусор
+    return true;
+  }).join('\n');
+  const okC = c => (c >= 0x20 && c <= 0x7E) || isRu(c) || c === 0x2013 || c === 0x2014 || c === 0x2026 || c === 0xAB || c === 0xBB || c === 0x2116 || (c >= 0x2018 && c <= 0x201D);
+  let best16 = '';
+  for(const off of [0, 1]){
+    const runs = []; let cur = [];
+    for(let i = off; i + 1 < b.length; i += 2){
+      const c = b[i] | (b[i+1] << 8);
+      if(okC(c)) cur.push(String.fromCharCode(c));
+      else { if(cur.length >= 8) runs.push(cur.join('')); cur = []; }
+    }
+    if(cur.length >= 8) runs.push(cur.join(''));
+    const t = clean(runs);
+    if(score(t) > score(best16)) best16 = t;
+  }
+  const dec = new TextDecoder('windows-1251');
+  const runs51 = []; let curB = [];
+  for(let i = 0; i < b.length; i++){
+    const x = b[i];
+    if((x >= 0x20 && x <= 0x7E) || x >= 0x80) curB.push(x);
+    else { if(curB.length >= 8) runs51.push(dec.decode(new Uint8Array(curB))); curB = []; }
+  }
+  if(curB.length >= 8) runs51.push(dec.decode(new Uint8Array(curB)));
+  const t51 = clean(runs51);
+  const best = score(t51) > score(best16) ? t51 : best16;
+  // документ русскоязычный — убрать строки-шум без кириллицы (названия стилей Word и пр.)
+  if((best.match(/[А-Яа-яЁё]/g) || []).length > 150){
+    const keep = best.split('\n').filter(t => /[А-Яа-яЁё]/.test(t) || !/[A-Za-z]/.test(t));
+    if(keep.length) return keep.join('\n');
+  }
+  return best;
 }
 /* ---------- ФОНОВАЯ ЗАГРУЗКА ФАЙЛОВ: XHR с прогрессом и обратным отсчётом.
    Индикатор живёт вне <main> — переходы по окнам загрузку НЕ прерывают. ---------- */
