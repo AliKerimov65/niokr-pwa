@@ -222,6 +222,7 @@ let team = store.get('team', null);
 let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
 let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
+let PLAN_ROWS = [];
 let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = [];
 let AUTO = store.get('auto', true), autoTimer = null;
 let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [], QA_ITEMS = [];
@@ -442,7 +443,7 @@ function start(){
   try{ sessionStorage.setItem('sess','1'); }catch(e){}
   syncBadge();
   initPresence();
-  $('#teamBtn').classList.remove('hidden');
+  const _tc0=document.getElementById('teamChip'); if(_tc0) _tc0.classList.remove('hidden');
   render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync(); refreshVerTag();
   loadTabs().then(() => {
     const pt = TABS.find(x => x.kind === 'plan');
@@ -597,7 +598,7 @@ async function teamMenuToggle(ev){
 const _tc = document.getElementById('teamChip'); if(_tc) _tc.onclick = () => teamSheet();
 document.addEventListener('click', e => {
   const m = document.getElementById('teamMenu');
-  if(m && !e.target.closest('#teamMenu') && !e.target.closest('#teamBtn')) m.remove();
+  if(m && !e.target.closest('#teamMenu') && !e.target.closest('#teamChip')) m.remove();
 });
 
 /* ---------- динамические вкладки (владелец) ---------- */
@@ -2018,7 +2019,7 @@ function render(){
   if(!view || (!['chat','tasks','news','files','misc','stages','home','acts','plan'].includes(view) && !view.startsWith('tab:'))) view = 'chat';
   if(view.startsWith('tab:') && TABS.length && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
-  $('#teamBtn').textContent = '👥 ' + (team ? team.name : '—');
+  const _tnm=document.getElementById('teamNm'); if(_tnm) _tnm.textContent = team ? team.name : '—';
   $('#chatComposer').classList.toggle('hidden', view!=='chat');
   renderTabbar(); renderStructBar();
   const ct = view.startsWith('tab:') ? curTab() : null;
