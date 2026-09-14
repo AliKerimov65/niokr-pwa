@@ -63,6 +63,7 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 .chans button.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:none;align-items:flex-end}
 #overlay .sheet{position:relative;background:var(--card);border-radius:18px 18px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-height:90vh;overflow-y:auto}
+#overlay .sheet::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--brd2);margin:-8px auto 10px}
 #overlay h2{font-size:18px;margin-bottom:12px;padding-right:34px}
 #sheetClose{position:absolute;top:10px;right:12px;width:30px;height:30px;border-radius:50%;background:var(--card2);color:var(--mut);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;z-index:6}
 #sheetClose:hover{color:var(--bad);background:#fbe7e5}
@@ -145,6 +146,7 @@ header{background:var(--card) !important}
 <body>
 <header><div class="hrow">
   
+  <button id="backBtn" class="hidden" title="Назад" onclick="navBack()" style="background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:8px;padding:6px 10px;font-size:15px;flex:none;cursor:pointer">←</button>
   <button id="teamChip" title="Команды" style="display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--brd2);border-radius:20px;padding:4px 12px 4px 4px;max-width:44vw;overflow:hidden;flex:none">
     <span id="teamAv" style="width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none">🏗</span>
     <span id="teamNm" style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Команда</span>
@@ -439,6 +441,7 @@ async function init(){
 function start(){
   appStarted = true;
   view = 'home'; // при входе в команду — сразу Рабочее окно
+  navStack = ['home']; updBackBtn();
   if(!navReady){ navReady = true; try{ history.pushState({inApp:1}, ''); }catch(e){} }
   try{ sessionStorage.setItem('sess','1'); }catch(e){}
   syncBadge();
@@ -626,6 +629,7 @@ function renderTabbar(){
   if(nm) nm.textContent = team ? team.name : 'Выбор команды';
   const c = $('#dynTabs'); if(!c) return;
   c.innerHTML = TABS.filter(t => t.kind!=='az' && t.kind!=='plan').map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
+  c.querySelectorAll('button[data-tid]').forEach(b => b.onclick = () => openTabView(+b.dataset.tid));
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
   if($('#agentBtn')){
@@ -774,7 +778,11 @@ function renderCustomTab(v){
    конфигов (пользовательские значения не трогает). Версия _tpl
    позволяет докатывать обновления шаблона на существующие команды. */
 const TEAM_TEMPLATE = {
-  version: 1,
+  version: 2,
+  /* Контракт оболочки для каждой новой команды (самовосстанавливается кодом, не данными):
+     навигация — корень home (Рабочее окно), стек переходов, «Назад»: лист→закрыть, стек→шаг назад, двойной «Назад»→выход;
+     окна-листы закрываются: ✕ · фон · Esc · свайп вниз · системная «Назад». */
+  shell: {root:'home', navigation:'stack+back+double-back-exit', sheetClose:['x','backdrop','esc','swipe-down','back']},
   tabs: [
     {name:'Журнал авторского надзора', icon:'📋', kind:'az', pos:4,
      config:{object:'', address:'', customer:'', designer:'', contract:'', project_code:'', az_head:'', gip:'', lat:null, lon:null, works:[], act_works:[]}},
@@ -1445,6 +1453,7 @@ function renderStructBar(){
 function openTabView(id){
   view = 'tab:'+id;
   document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.tid==String(id)));
+  navPush(view); try{history.pushState({inApp:1},'');}catch(e){}
   render();
 }
 function taskSheet(id){
@@ -2136,48 +2145,102 @@ async function homeDash(){
   store.set('seen_' + teamId, nowIso);
 }
 
+/* ---------- ПРОФИ-НАВИГАЦИЯ (контракт базового шаблона оболочки) ----------
+   Корень — Рабочее окно (home). Переходы пушатся в стек (navStack).
+   «Назад» (системная / ← в шапке): открыт лист?→закрыть : стек>1?→шаг назад : двойной «Назад» = выход.
+   Листы закрываются: ✕ · клик по фону · Esc · свайп вниз · системная «Назад». */
+let navStack = ['home'], navReady = false, lastExitPress = 0;
+const navCurrent = () => navStack[navStack.length - 1];
+function updBackBtn(){
+  const b = document.getElementById('backBtn');
+  if(b) b.classList.toggle('hidden', navStack.length < 2);
+}
+function navPush(v){
+  if(!v || navCurrent() === v) return;
+  navStack.push(v);
+  if(navStack.length > 30) navStack.splice(1, navStack.length - 30);
+  updBackBtn();
+}
+function navMarkOn(){
+  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === view || (x.dataset.tid && 'tab:'+x.dataset.tid === view)));
+}
 function navGo(v){
   view = v;
-  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  navMarkOn();
+  navPush(v);
+  try{ history.pushState({inApp:1}, ''); }catch(e){}
   render();
 }
-
-
-/* Кнопка «Назад»: закрывает окно; двойное нажатие на главном — выход (без touch-обработчиков) */
-let navReady = false, lastExitPress = 0;
+function navBack(){
+  if(navStack.length > 1){
+    navStack.pop();
+    view = navCurrent();
+    navMarkOn();
+    render();
+    updBackBtn();
+    return true;
+  }
+  return false;
+}
 function backIntercept(){
   if(!navReady) return;
   const ov = document.getElementById('overlay');
   if(ov && ov.style.display === 'flex' && document.getElementById('sheet').innerHTML){
-    ov.style.display = 'none'; window._taskSheetId = null;
+    window._taskSheetId = null;
+    ov.style.display = 'none';
     try{ history.pushState({inApp:1}, ''); }catch(e){}
     return;
   }
+  if(navBack()){ try{ history.pushState({inApp:1}, ''); }catch(e){} return; }
   const now = Date.now();
-  if(now - lastExitPress < 2500) return;
+  if(now - lastExitPress < 2500) return; // второй «Назад» подряд — реальный выход из приложения
   lastExitPress = now;
   try{ history.pushState({inApp:1}, ''); }catch(e){}
   const t = document.createElement('div');
   t.textContent = '↩ Ещё раз «Назад» — выход';
-  t.style.cssText = 'position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+  t.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#241a0e;color:#e9dfc8;padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.35)';
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2400);
 }
 window.addEventListener('popstate', backIntercept);
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  const ov = document.getElementById('overlay');
+  if(ov && ov.style.display === 'flex' && appStarted){
+    window._taskSheetId = null;
+    ov.style.display = 'none';
+  }
+});
+
+// свайп вниз закрывает лист (только когда лист прокручен наверх)
+(function(){
+  let _sy = null;
+  document.addEventListener('touchstart', e => {
+    const sh = document.getElementById('sheet'), ov = document.getElementById('overlay');
+    _sy = (ov && ov.style.display === 'flex' && sh && sh.contains(e.target) && sh.scrollTop <= 0) ? e.touches[0].clientY : null;
+  }, {passive:true});
+  document.addEventListener('touchend', e => {
+    if(_sy === null) return;
+    const dy = e.changedTouches[0].clientY - _sy; _sy = null;
+    const ov = document.getElementById('overlay');
+    if(dy > 90 && ov && ov.style.display === 'flex' && appStarted){
+      window._taskSheetId = null;
+      ov.style.display = 'none';
+    }
+  }, {passive:true});
+})();
 
 /* ---------- навигация ---------- */
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
-  view = b.dataset.v;
-  document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x===b));
+  const v = b.dataset.v; if(!v) return;
   if(SYNC && team){
-    if(view==='tasks'&&rTasks===null) loadTasks();
-    if(view==='plan') ensurePlanTab();
-    if(view==='news'&&rNews===null) loadNews();
-    if(view==='files'&&rDocs===null) loadDocs();
-    if(view==='stages'&&STAGES===null) loadStages();
-    if(view.startsWith('tab:')){ const tt=curTab(); if(tt && tt.kind==='az' && AZ_ENTRIES===null) loadAz(tt.id); if(tt && tt.kind==='plan') loadPlanRows(tt.id); }
+    if(v==='tasks'&&rTasks===null) loadTasks();
+    if(v==='plan') ensurePlanTab();
+    if(v==='news'&&rNews===null) loadNews();
+    if(v==='files'&&rDocs===null) loadDocs();
+    if(v==='stages'&&STAGES===null) loadStages();
   }
-  render();
+  navGo(v);
 });
 
 function render(){
