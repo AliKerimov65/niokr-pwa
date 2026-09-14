@@ -1842,6 +1842,166 @@ function agentToggleMic(){
 $('#agentBtn').onclick = () => agentSheet();
 
 
+/* ================= WORD (DOCX) ГЕНЕРАТОР АКТОВ — чистый JS, без библиотек =================
+   Минимальный валидный .docx (OOXML): ZIP без сжатия + WordprocessingML.
+   Форма АОСР — по РД-11-02-2006. Офлайн, работает на смартфоне. */
+function _xesc(t){ return String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+const _crcTbl = (() => { const t = new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1); t[n]=c>>>0; } return t; })();
+function _crc32(u8){ let c = 0xFFFFFFFF; for(let i=0;i<u8.length;i++) c = _crcTbl[(c ^ u8[i]) & 0xFF] ^ (c>>>8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function _zipStore(files){
+  const enc = new TextEncoder(), chunks = [], central = [];
+  let offset = 0;
+  const d = new Date();
+  const dtime = ((d.getHours()&31)<<11) | ((d.getMinutes()&63)<<5) | ((d.getSeconds()>>1)&31);
+  const ddate = (((d.getFullYear()-1980)&127)<<9) | (((d.getMonth()+1)&15)<<5) | (d.getDate()&31);
+  for(const f of files){
+    const nm = enc.encode(f.name), crc = _crc32(f.data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);  lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true);           lh.setUint16(10, dtime, true); lh.setUint16(12, ddate, true);
+    lh.setUint32(14, crc, true);        lh.setUint32(18, f.data.length, true); lh.setUint32(22, f.data.length, true);
+    lh.setUint16(26, nm.length, true);  lh.setUint16(28, 0, true);
+    chunks.push(new Uint8Array(lh.buffer), nm, f.data);
+    const ce = new DataView(new ArrayBuffer(46));
+    ce.setUint32(0, 0x02014b50, true);  ce.setUint16(4, 20, true); ce.setUint16(6, 20, true);
+    ce.setUint16(8, 0x0800, true);      ce.setUint16(10, 0, true); ce.setUint16(12, dtime, true);
+    ce.setUint16(14, ddate, true);      ce.setUint32(16, crc, true);
+    ce.setUint32(20, f.data.length, true); ce.setUint32(24, f.data.length, true);
+    ce.setUint16(28, nm.length, true);  ce.setUint32(42, offset, true);
+    central.push(new Uint8Array(ce.buffer), nm);
+    offset += 30 + nm.length + f.data.length;
+  }
+  let cdSize = 0; for(const c of central) cdSize += c.length;
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true);
+  eo.setUint16(8, files.length, true); eo.setUint16(10, files.length, true);
+  eo.setUint32(12, cdSize, true);      eo.setUint32(16, offset, true);
+  const out = new Uint8Array(offset + cdSize + 22);
+  let pos = 0;
+  for(const c of chunks){ out.set(c, pos); pos += c.length; }
+  for(const c of central){ out.set(c, pos); pos += c.length; }
+  out.set(new Uint8Array(eo.buffer), pos);
+  return out;
+}
+function _wp(runs, o){
+  o = o || {};
+  if(typeof runs === 'string') runs = [{t: runs}];
+  const rr = runs.map(r => {
+    const parts = String(r.t == null ? '' : r.t).split('\n');
+    return '<w:r><w:rPr>' + (r.b ? '<w:b/><w:bCs/>' : '') + (r.i ? '<w:i/><w:iCs/>' : '') +
+      (r.sz ? '<w:sz w:val="' + r.sz + '"/><w:szCs w:val="' + r.sz + '"/>' : '') + '</w:rPr>' +
+      parts.map((x, i) => (i ? '<w:br/>' : '') + '<w:t xml:space="preserve">' + _xesc(x) + '</w:t>').join('') + '</w:r>';
+  }).join('');
+  return '<w:p><w:pPr>' +
+    '<w:spacing w:after="' + (o.after != null ? o.after : 120) + '" w:line="276" w:lineRule="auto"/>' +
+    (o.ind ? '<w:ind w:firstLine="' + o.ind + '"/>' : '') +
+    (o.align ? '<w:jc w:val="' + o.align + '"/>' : '') + '</w:pPr>' + rr + '</w:p>';
+}
+function _wtbl(rows, widths){
+  const bb = n => '<w:' + n + ' w:val="single" w:sz="4" w:space="0" w:color="000000"/>';
+  return '<w:tbl><w:tblPr><w:tblW w:w="' + widths.reduce((a,b2)=>a+b2,0) + '" w:type="dxa"/><w:jc w:val="center"/>' +
+    '<w:tblBorders>' + bb('top') + bb('left') + bb('bottom') + bb('right') + bb('insideH') + bb('insideV') + '</w:tblBorders></w:tblPr>' +
+    '<w:tblGrid>' + widths.map(w => '<w:gridCol w:w="' + w + '"/>').join('') + '</w:tblGrid>' +
+    rows.map(r => '<w:tr>' + r.map((c, i) => '<w:tc><w:tcPr><w:tcW w:w="' + widths[i] + '" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>' + c + '</w:tc>').join('') + '</w:tr>').join('') +
+    '</w:tbl>';
+}
+function _ruDate(iso, long){
+  if(!iso) return long ? '«___» __________ 20___ г.' : '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if(!m) return iso;
+  const mon = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'][+m[2]-1];
+  return long ? '«' + (+m[3]) + '» ' + mon + ' ' + m[1] + ' г.' : m[3] + '.' + m[2] + '.' + m[1];
+}
+function buildActDocx(a, azc){
+  azc = azc || {};
+  const num = 'АОСР-' + String(a.num).padStart(3, '0');
+  const body = [];
+  // Шапка (организации, справа)
+  body.push(_wp([{t: 'Застройщик (технический заказчик): ' + (azc.customer || '—'), sz: 20}], {align: 'right', after: 40}));
+  body.push(_wp([{t: 'Проектировщик: ' + (azc.designer || '—'), sz: 20}], {align: 'right', after: 40}));
+  body.push(_wp([{t: 'Подрядчик: ' + (a.rep_contractor || '—'), sz: 20}], {align: 'right', after: 200}));
+  // Заголовок
+  body.push(_wp([{t: 'А К Т  № ' + num, b: true, sz: 28}], {align: 'center', after: 60}));
+  body.push(_wp([{t: 'освидетельствования скрытых работ', b: true, sz: 24}], {align: 'center', after: 200}));
+  // Объект + дата
+  body.push(_wp([{t: 'Объект капитального строительства: ', b: true}, {t: (azc.object || '—') + (azc.address ? ', ' + azc.address : '')}], {align: 'both', after: 80}));
+  body.push(_wp([{t: 'Проектная документация: ', b: true}, {t: azc.project_code || '—'}], {align: 'both', after: 160}));
+  body.push(_wp(_ruDate(a.date_act, true), {align: 'right', after: 240}));
+  // Преамбула
+  const reps = [];
+  if(a.rep_customer) reps.push('представителем застройщика (технического заказчика) ' + a.rep_customer);
+  if(a.rep_contractor) reps.push('представителем лица, осуществляющего строительство, ' + a.rep_contractor);
+  if(a.rep_designer) reps.push('представителем проектировщика (авторского надзора) ' + a.rep_designer);
+  if(a.rep_control) reps.push('представителем строительного контроля ' + a.rep_control);
+  body.push(_wp('Нами, нижеподписавшимися, ' + (reps.join(', ') || 'уполномоченными представителями') +
+    ', произведено освидетельствование скрытых работ:', {align: 'both', ind: 709, after: 160}));
+  // Пункты
+  body.push(_wp([{t: '1. Наименование скрытых работ: ', b: true}, {t: a.work_name || '—'}], {align: 'both', after: 100}));
+  body.push(_wp([{t: '2. Даты производства работ: ', b: true}, {t: 'начало — ' + _ruDate(a.date_from) + ', окончание — ' + _ruDate(a.date_to) + '.'}], {align: 'both', after: 100}));
+  body.push(_wp([{t: '3. Основание (проектная документация, раздел): ', b: true}, {t: a.basis_project || '—'}], {align: 'both', after: 100}));
+  body.push(_wp([{t: '4. Документы о качестве материалов, изделий и конструкций: ', b: true}, {t: a.basis_quality || '—'}], {align: 'both', after: 200}));
+  body.push(_wp([{t: 'Заключение: ', b: true}, {t: a.conclusion || '—'}], {align: 'both', after: 160}));
+  body.push(_wp([{t: 'Приложения: ', b: true}, {t: a.attach || '—'}], {align: 'both', after: 300}));
+  // Подписи
+  const sigHead = [_wp([{t: 'Представитель', b: true, sz: 22}], {align: 'center', after: 40}),
+                   _wp([{t: 'Подпись', b: true, sz: 22}], {align: 'center', after: 40}),
+                   _wp([{t: 'Ф.И.О.', b: true, sz: 22}], {align: 'center', after: 40})];
+  const sigRow = (role, fio) => [_wp([{t: role, sz: 22}], {after: 40}), _wp([{t: '', sz: 22}], {after: 40}), _wp([{t: fio || '', sz: 22}], {after: 40})];
+  body.push(_wtbl([sigHead,
+    sigRow('Застройщика (технического заказчика)', a.rep_customer),
+    sigRow('Лица, осуществляющего строительство', a.rep_contractor),
+    sigRow('Проектировщика (авторский надзор)', a.rep_designer),
+    sigRow('Строительного контроля', a.rep_control)
+  ], [4400, 1800, 3100]));
+  body.push(_wp([{t: 'Сформировано в системе «НИОКР Команда». Форма — РД-11-02-2006.', i: true, sz: 18}], {align: 'both', after: 0}));
+  // Пакет
+  const enc = new TextEncoder();
+  const nowIso = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    body.join('') +
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="850" w:bottom="1134" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>' +
+    '</w:body></w:document>';
+  const stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>' +
+    '<w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+  const ctXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
+    '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>';
+  const relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+    '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>';
+  const docRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+  const coreXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
+    'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+    '<dc:title>' + _xesc('Акт ' + num + ' — ' + (a.work_name || '')) + '</dc:title><dc:creator>НИОКР Команда</dc:creator>' +
+    '<dcterms:created xsi:type="dcterms:W3CDTF">' + nowIso + '</dcterms:created>' +
+    '<dcterms:modified xsi:type="dcterms:W3CDTF">' + nowIso + '</dcterms:modified></cp:coreProperties>';
+  const appXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>НИОКР Команда</Application></Properties>';
+  return _zipStore([
+    {name: '[Content_Types].xml', data: enc.encode(ctXml)},
+    {name: '_rels/.rels', data: enc.encode(relsXml)},
+    {name: 'docProps/core.xml', data: enc.encode(coreXml)},
+    {name: 'docProps/app.xml', data: enc.encode(appXml)},
+    {name: 'word/document.xml', data: enc.encode(documentXml)},
+    {name: 'word/styles.xml', data: enc.encode(stylesXml)},
+    {name: 'word/_rels/document.xml.rels', data: enc.encode(docRelsXml)}
+  ]);
+}
+
 /* ================= АКТЫ И ДОКУМЕНТЫ (АОСР + реестр) ================= */
 let ACTS = [];
 const ACT_NORM = 'Форма акта — РД-11-02-2006. Освидетельствование до закрытия работ: СП 70.13330.2012, п. 4.5. Исполнительная документация: ГОСТ Р 21.101-2020, СП 48.13330.2019.';
@@ -1916,16 +2076,16 @@ function renderActsBody(v){
      <tr style="text-align:left;color:var(--mut)"><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">№</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Наименование документа</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Номер/дата</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Источник</th></tr>
      ${actsRegistryRows()}
    </table></div>
-   <p class="mut" style="font-size:11px">Реестр автоматически пополняется по мере создания актов, загрузки документов и выполнения работ по техплану.</p>`;
+   <p class="mut" style="font-size:11px">Реестр автоматически пополняется по мере создания актов, загрузки документов и выполнения работ по техплану. Нажмите на название акта 📄 — откроется полный текст в формате Word.</p>`;
 }
 function actsRegistryRows(){
   const rows = [];
-  ACTS.forEach(a => rows.push(['АОСР-' + String(a.num).padStart(3,'0'), 'Акт освидетельствования скрытых работ: ' + a.work_name, (a.date_act||'—'), 'Акты']));
+  ACTS.forEach(a => rows.push(['АОСР-' + String(a.num).padStart(3,'0'), 'Акт освидетельствования скрытых работ: ' + a.work_name, (a.date_act||'—'), 'Акты', a.id]));
   (rDocs || []).forEach(d => rows.push(['', 'Документ: ' + d.name, (d.created_at||'').slice(0,10), 'Файлы команды']));
   (PLAN_ROWS || []).filter(r => r.status === 'Выполнено').forEach(r => rows.push(['', 'Исполнена работа: ' + r.work, (r.done_at||'').slice(0,10), 'Техплан']));
   (AZ_ENTRIES || []).forEach(e => rows.push(['', 'Запись журнала авторского надзора: ' + e.works.slice(0,60), e.entry_date, 'Журнал АН']));
   if(!rows.length) return '<tr><td colspan="4" class="mut" style="padding:8px">Документов пока нет.</td></tr>';
-  return rows.map((r,i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${i+1}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[1])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[2])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)" class="mut">${esc(r[3])}</td></tr>`).join('');
+  return rows.map((r,i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${i+1}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${r[4] ? `<a title="Открыть полный текст акта в Word" style="color:var(--acc);text-decoration:underline;cursor:pointer" onclick="actWord(${r[4]})">📄 ${esc(r[1])}</a>` : esc(r[1])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[2])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)" class="mut">${esc(r[3])}</td></tr>`).join('');
 }
 function actForm(){
   const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
@@ -1993,10 +2153,26 @@ function actView(id){
     <p style="margin-top:6px">Заключение: ${esc(a.conclusion)}</p>
     ${a.attach ? `<p style="margin-top:4px">Приложения: ${esc(a.attach)}</p>` : ''}
     <div class="row" style="margin-top:8px">
-      <button class="sec" onclick="navigator.clipboard && navigator.clipboard.writeText(document.querySelector('#sheet .card').innerText).then(()=>alert('Акт скопирован'))">📋 Копировать текст</button>
+      <button class="pri" style="flex:1" onclick="actWord(${a.id})">📄 Открыть в Word</button>
+      <button class="sec" onclick="navigator.clipboard && navigator.clipboard.writeText(document.querySelector('#sheet .card').innerText).then(()=>alert('Акт скопирован'))">📋</button>
       <button class="dng" onclick="actDel(${a.id})">🗑</button>
     </div></div>`;
   $('#overlay').style.display = 'flex';
+}
+function actWord(id){
+  const a = (ACTS || []).find(x => x.id === id); if(!a) return;
+  const t = TABS.find(x => x.kind === 'az'); const azc = t ? t.config : {};
+  let bytes;
+  try{ bytes = buildActDocx(a, azc); }
+  catch(e){ return alert('Не удалось сформировать Word-файл: ' + (e.message || e)); }
+  const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const fname = ('АОСР-' + String(a.num).padStart(3,'0') + '_' + (a.work_name || 'акт'))
+    .replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 90) + '.docx';
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement('a');
+  el.href = url; el.download = fname;
+  document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 async function actDel(id){
   if(!confirm('Удалить акт?')) return;
