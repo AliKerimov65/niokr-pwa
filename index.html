@@ -106,6 +106,13 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 .xlsv-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .xlsv-tabs button{padding:5px 12px;border-radius:14px;border:1px solid var(--brd);background:var(--card2);font-size:12.5px;color:var(--ink)}
 .xlsv-tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+#pview{position:fixed;inset:0;background:rgba(10,8,5,.94);z-index:80;display:none;flex-direction:column}
+#pvStage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+#pvImg{max-width:100%;max-height:100%;object-fit:contain;user-select:none;transition:transform .18s ease}
+#pvX{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);font-size:18px;z-index:2}
+#pvBar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:10px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));color:#e9dfc8;font-size:12.5px;background:linear-gradient(transparent,rgba(0,0,0,.6));z-index:2}
+#pvName{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pvDl{color:#ffe9b8;font-size:22px;text-decoration:none}
 .xlsv{overflow:auto;max-height:62vh;border:1px solid var(--brd);border-radius:10px;background:#fff}
 .xlsv table{border-collapse:collapse;width:100%;font-size:12px}
 .xlsv td{border:1px solid #d8cfbc;padding:4px 7px;white-space:pre-wrap;vertical-align:top;color:#241a0e}
@@ -250,6 +257,10 @@ header{background:var(--card) !important}
   <span id="dynTabs" style="display:contents"></span>
 </nav>
 <div id="overlay"><div class="sheet" id="sheet"></div></div>
+<div id="pview"><div id="pvStage"><img id="pvImg" alt=""></div>
+  <button id="pvX" onclick="closePhoto()" title="Закрыть">✕</button>
+  <div id="pvBar"><span id="pvName"></span><a id="pvDl" href="#" download title="Скачать">⬇</a></div>
+</div>
 
 <script>/**
  * Skipped minification because the original files appears to be already minified.
@@ -968,7 +979,7 @@ async function renderPlan(v, t){
                <span class="badge ${r.status==='Выполнено'?'ok':r.status==='В работе'?'warn':''}" style="cursor:pointer;flex:none" title="Нажмите — сменить статус" onclick="planWorkStatus(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">${r.status==='Выполнено' ? '✓ ' + r.status : r.status}</span>
                ${(r.responsibles||[]).filter(Boolean).length ? `<span class="mut" style="font-size:11.5px;flex:1">👥 ${(r.responsibles||[]).filter(Boolean).map(x=>x.split(' ')[0]).join(', ')}</span>` : ''}
              </div>
-             ${(r.files&&r.files.length)?`<div style="margin-top:5px">${r.files.map((f,k)=>f.img?`<img src="${f.url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;margin-right:4px" onclick="window.open('${f.url}','_blank')">`:`<a href="${f.url}" target="_blank" style="font-size:12px;color:var(--acc)">📄 ${esc(f.name)}</a>`).join(' ')}</div>`:''}
+             ${(r.files&&r.files.length)?`<div style="margin-top:5px">${r.files.map((f,k)=>f.img?`<img src="${f.url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;margin-right:4px;cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(f.url)}','${encodeURIComponent(f.name||'фото')}')">`:`<a href="${f.url}" target="_blank" style="font-size:12px;color:var(--acc)">📄 ${esc(f.name)}</a>`).join(' ')}</div>`:''}
            </div>
          </div>`;}).join('')}
      </details>
@@ -2725,7 +2736,7 @@ function msgHTML(m, i, grp){
       ${grp?'':`<div class="hd"><b ${isMe?'':`style="color:${avNameColor(m.n)}"`}>${esc(m.n)}</b>${m.r?` <span class="mut">${esc(m.r)}</span>`:''}</div>`}
       ${qte}
       ${pr.text?`<div class="bd">${mentionify(linkify(pr.text))}</div>`:''}
-      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>${isSheetFile(m.fn)?` <a href="javascript:void(0)" onclick="viewFileAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:''}`) : ''}
+      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy" style="cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'фото')}')">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>${isSheetFile(m.fn)?` <a href="javascript:void(0)" onclick="viewFileAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:''}`) : ''}
       ${ansd}
       <div class="t">${tm}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div>
     </div></div>`;
@@ -2900,7 +2911,7 @@ function renderNews(v){
   <button class="pri" style="flex:1" onclick="addNews()">Опубликовать</button></div></div>
   <input type="file" id="annFileInp" class="hidden" onchange="pickAnnFile(this)">
   ${ns.map(n=>`<div class="card"><h3>${linkify(n.body)}</h3>
-  ${n.file_url ? (/\.(png|jpe?g|gif|webp)$/i.test(n.file_url) ? `<img src="${n.file_url}" style="max-width:100%;border-radius:8px;margin-top:6px">` : `<a href="${n.file_url}" download="${esc(n.file_name||'file')}" target="_blank" style="color:var(--acc)">📄 ${esc(n.file_name||'файл')}</a>`) : ''}
+  ${n.file_url ? (/\.(png|jpe?g|gif|webp)$/i.test(n.file_url) ? `<img src="${n.file_url}" style="max-width:100%;border-radius:8px;margin-top:6px;cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(n.file_url)}','${encodeURIComponent(n.file_name||'фото')}')">` : `<a href="${n.file_url}" download="${esc(n.file_name||'file')}" target="_blank" style="color:var(--acc)">📄 ${esc(n.file_name||'файл')}</a>`) : ''}
   <p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p><p class="mut" style="margin-top:2px">👁 Прочтение${readReceipt('ann', n.id)}</p>
   <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
 }
@@ -2945,7 +2956,7 @@ function renderFiles(v){
   <div class="card" style="padding:10px 12px"><div class="row" style="gap:6px"><input type="file" id="projFile" style="flex:1;min-width:0;padding:8px"><button class="pri" id="upBtn" style="flex:none;padding:9px 14px" onclick="addFile()">Загрузить</button></div>
   <p class="mut" style="font-size:11px;margin-top:6px">Лимит 48 МБ на файл · загрузка идёт в фоне, индикатор внизу экрана.</p></div>
   ${fs.map((f,i)=>`<div class="frow"><div class="finf"><b>📄 ${esc(f.name)}</b><span>${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</span></div>
-  <div class="fbtns">${isSheetFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:''}
+  <div class="fbtns">${isSheetFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:isImgFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewPhotoIdx(${i})">👁</button>`:''}
   <a class="fbtn" href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" title="Скачать">⬇</a>
   <button class="fbtn del" title="Удалить" onclick="delFile(${f.id})">✖</button></div></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
@@ -2953,6 +2964,49 @@ function renderFiles(v){
    SheetJS подгружается один раз по требованию; при неудаче — кнопка «Скачать». ---------- */
 let _xlsxLibP = null, _xlsWb = null, _xlsUrl = '', _xlsName = '';
 function isSheetFile(n){ return /\.(xlsx|xls|csv)$/i.test(String(n||'')); }
+/* ---------- ПРОСМОТР ФОТО ВНУТРИ ПРИЛОЖЕНИЯ: двойной тап — увеличение,
+   перетаскивание — сдвиг увеличенного фото, свайп вниз / ✕ / Esc — закрыть. ---------- */
+function isImgFile(n){ return /\.(png|jpe?g|gif|webp)$/i.test(String(n||'')); }
+let _pv = {scale:1, tx:0, ty:0};
+function pvApply(){ const i=document.getElementById('pvImg'); if(i) i.style.transform = `translate(${_pv.tx}px,${_pv.ty}px) scale(${_pv.scale})`; }
+function pvToggleZoom(){ if(_pv.scale===1){ _pv.scale=2.4; } else { _pv.scale=1; _pv.tx=0; _pv.ty=0; } pvApply(); }
+function viewPhoto(url, name){
+  if(!url) return;
+  _pv = {scale:1, tx:0, ty:0};
+  const img = document.getElementById('pvImg');
+  img.style.transform = 'translate(0px,0px) scale(1)';
+  img.src = url;
+  document.getElementById('pvName').textContent = name || 'Фото';
+  const dl = document.getElementById('pvDl'); dl.href = url; dl.setAttribute('download', name || 'photo');
+  document.getElementById('pview').style.display = 'flex';
+}
+function viewPhotoAt(u, n){ viewPhoto(decodeURIComponent(u), decodeURIComponent(n)); }
+function viewPhotoIdx(i){ const f = (window._filesList||[])[i]; if(f) viewPhoto(f.url||f.d, f.name); }
+function closePhoto(){ const pv=document.getElementById('pview'); if(pv) pv.style.display='none'; const i=document.getElementById('pvImg'); if(i) i.src=''; }
+(() => {
+  const stage = document.getElementById('pvStage'), pv = document.getElementById('pview');
+  if(!stage || !pv) return;
+  let lastTap = 0, sx = 0, sy = 0, ox = 0, oy = 0, moved = false;
+  stage.addEventListener('pointerdown', e => {
+    sx = e.clientX; sy = e.clientY; ox = _pv.tx; oy = _pv.ty; moved = false;
+    try{ stage.setPointerCapture(e.pointerId); }catch(_){}
+  });
+  stage.addEventListener('pointermove', e => {
+    if(!(e.buttons & 1)) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if(Math.abs(dx) + Math.abs(dy) > 8) moved = true;
+    if(_pv.scale > 1 && moved){ _pv.tx = ox + dx; _pv.ty = oy + dy; pvApply(); }
+  });
+  stage.addEventListener('pointerup', e => {
+    const dy = e.clientY - sy;
+    if(!moved){
+      const t = Date.now();
+      if(t - lastTap < 320){ pvToggleZoom(); lastTap = 0; } else lastTap = t;
+    } else if(_pv.scale === 1 && dy > 80) closePhoto();
+    moved = false;
+  });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && pv.style.display === 'flex') closePhoto(); });
+})();
 function loadXLSX(){
   if(window.XLSX) return Promise.resolve();
   if(_xlsxLibP) return _xlsxLibP;
