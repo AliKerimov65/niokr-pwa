@@ -52,7 +52,7 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 .msg b{font-size:12.5px;color:#5f3f0a}
 .msg .t{font-size:11px;color:var(--mut);margin-top:3px}
 .msg img{max-width:100%;border-radius:8px;margin-top:6px}
-.msg a{color:#7a5410}
+.msg a{color:#7a5410} .mwrap{display:flex;gap:7px;align-items:flex-end} .mwrap.me{flex-direction:row-reverse} .mav{flex:none;width:30px;height:30px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;margin-bottom:2px} .msg{max-width:78%} .msg .hd{display:flex;align-items:center;gap:6px} .msg .acts{margin-left:auto;display:flex;gap:9px} .msg .acts span{cursor:pointer;opacity:.45;font-size:13px} .msg .acts span:active{opacity:1} .msg .qte{border-left:3px solid var(--acc);padding:3px 8px;margin:4px 0 5px;background:rgba(122,84,16,.08);border-radius:0 8px 8px 0;font-size:12.5px;color:var(--mut);cursor:pointer;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden} .msg .qte b{color:#5f3f0a} .mention{background:#ffe3a1;color:#5f3f0a;border-radius:5px;padding:0 4px;font-weight:700;box-decoration-break:clone;-webkit-box-decoration-break:clone} .mention.me{background:var(--acc);color:#fff} .msg.tome{box-shadow:0 0 0 1.5px var(--acc)} #replyBar{display:none;padding:7px 12px;background:var(--card2);border-top:1px solid var(--brd);font-size:12.5px;color:var(--mut);align-items:center;gap:8px} #replyBar .rb-t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} #replyBar b{color:#5f3f0a} #replyBar button{background:none;border:0;color:var(--mut);font-size:16px;padding:2px 6px}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--mut)}
 .badge.ok{background:#e6f4ec;color:#1e7a43} .badge.warn{background:#fdf2df;color:#a06a00} .badge.bad{background:#fbe7e5;color:#b3261e}
 .composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid var(--brd)}
@@ -169,6 +169,7 @@ header{background:var(--card) !important}
 </header>
 <div id="azBar" class="hidden" style="background:var(--acc);color:#fff;padding:8px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(31,25,14,.25)"></div>
 <main id="view"></main>
+<div id="replyBar"><span style="color:var(--acc);font-weight:700">↩</span><span class="rb-t" id="replyBarT"></span><button onclick="clearReply()" title="Отменить ответ">✕</button></div>
 <div id="chatComposer" class="composer hidden">
   <button onclick="document.getElementById('fileInp').click()" title="Прикрепить">📎</button>
   <input type="file" id="fileInp" class="hidden">
@@ -273,7 +274,7 @@ async function loadDmPartners(){
     const other = m.dm.split('||').find(x => x !== me.name);
     if(!other) return;
     if(!DM_PARTNERS[other] || m.created_at > DM_PARTNERS[other].created_at)
-      DM_PARTNERS[other] = {id:m.id, author:m.author, body:m.body, created_at:m.created_at};
+      DM_PARTNERS[other] = {id:m.id, author:m.author, body:parseReply(m.body).text, created_at:m.created_at};
   });
 }
 function dmUnread(p){ return p && p.author!==me.name && !readBy('msg', p.id).includes(me.name); }
@@ -295,6 +296,7 @@ function openDm(name){
 }
 function dmKey(a,b){ return [a,b].sort().join('||'); }
 async function loadChan(){
+  clearReply();
   if(!SYNC) return;
   if(dmWith){
     rMsgs = (await sbList('messages', [['dm', dmKey(me.name, dmWith)]])).map(rowToMsg);
@@ -586,7 +588,7 @@ async function teamSheet(){
   $('#overlay').style.display = 'flex';
 }
 function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
-function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; AZ_ENTRIES=null; PLAN_ROWS=[]; PLAN_ROWS_TAB=null; start(); }
+function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; AZ_ENTRIES=null; PLAN_ROWS=[]; PLAN_ROWS_TAB=null; clearReply(); start(); }
 async function teamMenuToggle(ev){
   ev.stopPropagation();
   if(!SYNC) return;
@@ -2575,18 +2577,79 @@ const scrollDown = () => { const v=$('#view'); v.scrollTop = v.scrollHeight; };
 const teamIds = () => TEAM_MEMBERS.map(m => m.member);
 
 /* ---------- ЧАТ ---------- */
-function msgHTML(m){
+let REPLY = null;
+function parseReply(x){
+  const m = /^↩(\{[^\n]*\})\n?([\s\S]*)$/.exec(String(x||''));
+  if(!m) return {rp:null, text:String(x||'')};
+  try{ return {rp:JSON.parse(m[1]), text:m[2]}; }catch(e){ return {rp:null, text:String(x||'')}; }
+}
+function avColor(n){ let h=0; const s=String(n||'?'); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))%360; return 'hsl('+h+',45%,45%)'; }
+function escRe(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+function mentionPatterns(){
+  const names = [...new Set(((TEAM_MEMBERS||[]).map(m=>m.member)).concat(me&&me.name?[me.name]:[]).filter(Boolean))];
+  const pats = [];
+  names.forEach(n=>{
+    const parts = String(n).trim().split(/\s+/).filter(Boolean);
+    if(!parts.length) return;
+    if(parts.length>1) pats.push(parts.join(' '));
+    pats.push(parts[0]);
+    if(parts[1] && parts[1].length>2 && !/^[А-ЯЁA-Z]\./.test(parts[1])) pats.push(parts[1]);
+  });
+  return [...new Set(pats)].filter(p=>p.length>1).sort((a,b)=>b.length-a.length);
+}
+function mentionify(html){
+  const pats = mentionPatterns();
+  if(!pats.length) return html;
+  const re = new RegExp('(^|[^\\p{L}])(' + pats.map(escRe).join('|') + ')(?=[^\\p{L}]|$)', 'gui');
+  return html.replace(re, (m, pre, nm) => pre + '<span class="mention' + (surnameKey(nm)===surnameKey(me.name)?' me':'') + '">' + nm + '</span>');
+}
+function mentionsMe(text){
+  const sur = String(me.name||'').trim().split(/\s+/)[0];
+  if(!sur) return false;
+  return new RegExp('(^|[^\\p{L}])' + escRe(sur) + '([^\\p{L}]|$)', 'iu').test(text);
+}
+function setReply(i){
+  const m = (window._chatList||[])[i]; if(!m) return;
+  const pr = parseReply(m.x);
+  REPLY = {id:m.id||0, n:m.n, t:String(pr.text||m.fn||'📎 файл').slice(0,80)};
+  const bar = document.getElementById('replyBar'); if(!bar) return;
+  bar.style.display = 'flex';
+  document.getElementById('replyBarT').innerHTML = 'Ответ <b>' + esc(m.n) + '</b>: ' + esc(REPLY.t);
+  const inp = document.getElementById('mText'); if(inp) inp.focus();
+}
+function clearReply(){
+  REPLY = null;
+  const bar = document.getElementById('replyBar'); if(bar) bar.style.display = 'none';
+}
+function jumpMsg(id){
+  if(!id) return;
+  const el = document.getElementById('m'+id);
+  if(el){ el.scrollIntoView({behavior:'smooth', block:'center'}); el.style.transition='box-shadow .3s'; el.style.boxShadow='0 0 0 2px var(--acc)'; setTimeout(()=>{ el.style.boxShadow=''; }, 1600); }
+}
+function msgHTML(m, i){
   const mine = m.n===me.name && m.id;
-  return `<div class="msg ${m.n===me.name?'me':''}">
-    <b>${esc(m.n)}</b> <span class="mut">${esc(m.r||'')}</span>${mine?` <span style="cursor:pointer" title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}<div>${linkify(m.x)}</div>
-    ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
-    <div class="t">${m.t}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div></div>`;
+  const pr = parseReply(m.x);
+  const isMe = m.n===me.name;
+  const tome = !isMe && mentionsMe(pr.text);
+  const qte = pr.rp ? `<div class="qte" onclick="jumpMsg(${pr.rp.i||0})" title="Перейти к сообщению"><b>${esc(pr.rp.a||'')}</b><br>${linkify(pr.rp.t||'')}</div>` : '';
+  return `<div class="mwrap ${isMe?'me':''}">
+    <div class="mav" style="background:${avColor(m.n)}" title="${esc(m.n)}">${esc(String(m.n||'?').trim().charAt(0).toUpperCase())}</div>
+    <div class="msg ${isMe?'me':''} ${tome?'tome':''}" ${m.id?`id="m${m.id}"`:''}>
+      <div class="hd"><b>${esc(m.n)}</b> <span class="mut" style="font-size:11px">${esc(m.r||'')}</span>
+        <span class="acts"><span title="Ответить" onclick="setReply(${i})">↩</span>${mine?`<span title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}</span></div>
+      ${qte}
+      ${pr.text?`<div>${mentionify(linkify(pr.text))}</div>`:''}
+      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
+      <div class="t">${m.t}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div>
+    </div></div>`;
 }
 async function editMsg(id){
   const m = rMsgs.find(x=>x.id===id); if(!m) return;
-  const t = prompt('Исправить сообщение:', m.x); if(t===null) return;
-  const body = t.trim(); if(!body || body===m.x) return;
-  const {error} = await sb.from('messages').update({body, edited:true}).eq('id',id);
+  const pr = parseReply(m.x);
+  const t = prompt('Исправить сообщение:', pr.text); if(t===null) return;
+  const nt = t.trim(); if(!nt || nt===pr.text) return;
+  const prefix = m.x.slice(0, m.x.length - pr.text.length);
+  const {error} = await sb.from('messages').update({body: prefix + nt, edited:true}).eq('id',id);
   if(error) alert(error.message);
 }
 function renderChat(v){
@@ -2600,21 +2663,25 @@ function renderChat(v){
       <div class="ch" id="msgs"></div>`;
   }
   const msgs = SYNC ? rMsgs : store.get('chat_'+(team?team.id:'x')+'_'+chan, []);
+  window._chatList = msgs;
   $('#msgs').innerHTML = msgs.map(msgHTML).join('') || `<p class="mut">${SYNC?'Сообщений нет — начните обсуждение.':'Локальный режим.'}</p>`;
   scrollDown();
 }
 function pushLocal(m){ const arr = store.get('chat_'+(team?team.id:'x')+'_'+chan, []); arr.push(m); store.set('chat_'+chan, arr); if(!SYNC) render(); }
 async function sendMsg(){
   const inp = $('#mText'), txt = inp.value.trim(); if(!txt) return;
+  const rp = REPLY ? '↩' + JSON.stringify({i:REPLY.id||0, a:REPLY.n, t:String(REPLY.t).slice(0,60)}) + '\n' : '';
+  const body = rp + txt;
   inp.value='';
+  clearReply();
   if(SYNC){
     const row = dmWith
-      ? {dm: dmKey(me.name, dmWith), author:me.name, role:me.role, body:txt, client_id:cid}
-      : {team_id:tid(), channel:chan, author:me.name, role:me.role, body:txt, client_id:cid};
-    rMsgs.push({n:me.name, r:me.role, x:txt, t:now()}); render();
+      ? {dm: dmKey(me.name, dmWith), author:me.name, role:me.role, body, client_id:cid}
+      : {team_id:tid(), channel:chan, author:me.name, role:me.role, body, client_id:cid};
+    rMsgs.push({n:me.name, r:me.role, x:body, t:now()}); render();
     const {error} = await sb.from('messages').insert(row);
     if(error) alert('Не отправлено: '+error.message);
-  } else pushLocal({n:me.name, r:me.role, x:txt, t:now()});
+  } else pushLocal({n:me.name, r:me.role, x:body, t:now()});
 }
 $('#mText')?.addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
 $('#fileInp').addEventListener('change', async e => {
