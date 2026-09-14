@@ -179,7 +179,6 @@ header{background:var(--card) !important}
   <button data-v="tasks" onclick="navGo('tasks')"><span class="ic">✅</span>Задачи</button>
   <button data-v="news" onclick="navGo('news')"><span class="ic">📢</span>Объявл.</button>
   <button data-v="files" onclick="navGo('files')"><span class="ic">📁</span>Файлы</button>
-  <button data-v="plan" onclick="navGo('plan')"><span class="ic">🗺</span>План</button>
   <button data-v="misc" onclick="navGo('misc')"><span class="ic">🔧</span>Разное</button>
   <span id="dynTabs" style="display:contents"></span>
 </nav>
@@ -623,7 +622,7 @@ function renderTabbar(){
   if(av) av.textContent = team ? (team.name||'?').trim().charAt(0).toUpperCase() : '🏗';
   if(nm) nm.textContent = team ? team.name : 'Выбор команды';
   const c = $('#dynTabs'); if(!c) return;
-  c.innerHTML = TABS.map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
+  c.innerHTML = TABS.filter(t => t.kind!=='az' && t.kind!=='plan').map(t => `<button data-tid="${t.id}" class="${view==='tab:'+t.id?'on':''}"><span class="ic">${t.icon||'📄'}</span>${esc(t.name)}</button>`).join('');
   if($('#tabsBtn')) $('#tabsBtn').classList.toggle('hidden', !(team && team.is_owner));
   if($('#membersBtn')) $('#membersBtn').classList.toggle('hidden', !team);
   if($('#agentBtn')){
