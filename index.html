@@ -83,6 +83,8 @@ main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 .mdl-srow .dt input{flex:1;min-width:0;padding:6px;font-size:12px}
 .mdl-sbar{height:5px;border-radius:3px;background:var(--card2);margin-top:6px;overflow:hidden}
 .mdl-sbar i{display:block;height:100%;background:var(--ok);border-radius:3px}
+.mdl-note{font-size:11.5px;color:var(--mut);background:var(--card2);border:1px dashed var(--brd2);border-radius:10px;padding:7px 9px;margin-bottom:8px;line-height:1.45;display:none}
+.mdl-srow input.flash{border-color:var(--ok);box-shadow:0 0 0 2px rgba(63,140,60,.18)}
 .card h3{font-size:15px;margin-bottom:4px;word-break:break-word}
 .mut{color:var(--mut);font-size:12.5px}
 .row{display:flex;gap:8px;align-items:center}
@@ -3279,6 +3281,114 @@ function mdlSyncUI(){
   const pc = document.getElementById('mdlPct'); if(pc) pc.textContent = pct + '%';
 }
 
+
+/* --- Умное заполнение дат этапов: из календарного плана (вкладка «Этапы») и техплана,
+       пробелы распределяются пропорционально объёмам работ этапов --- */
+function mdlNormT(s){ return (s||'').toLowerCase().replace(/ё/g,'е').replace(/[^а-яa-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+function mdlSimT(a,b){
+  const A = new Set(mdlNormT(a).split(' ').filter(x=>x.length>2)), B = new Set(mdlNormT(b).split(' ').filter(x=>x.length>2));
+  if(!A.size || !B.size) return 0;
+  let n = 0; A.forEach(w => { if(B.has(w)) n++; });
+  return n/Math.max(A.size, B.size);
+}
+function mdlIsoD(ms){ const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function mdlFitSeg(start, end, d, a, b, endA, endB, DAY){
+  const idxs = []; for(let i = a+1; i < b; i++) idxs.push(i);
+  let sum = d[b]; idxs.forEach(i => sum += d[i]);
+  let avail = endB - endA; if(avail < (idxs.length+1)*DAY) avail = (idxs.length+1)*DAY;
+  let cur = endA;
+  idxs.forEach(i => { const dur = Math.max(DAY, Math.round(d[i]*avail/sum)); start[i] = cur; end[i] = cur + dur; cur = end[i]; });
+  start[b] = cur; end[b] = endB;
+}
+async function mdlSmartFill(){
+  if(!(team && team.is_owner)) return;
+  const ST = mdlStages(), n = ST.length, DAY = 864e5;
+  const wcnt = ST.map((s, ix) => Math.max(1, (MDL_STAGE_MAP[ix]||[]).length));
+  let cal = [];
+  try{ const r = await sb.from('stages').select('*').eq('team_id', tid()).order('num'); cal = r.data || []; }catch(e){}
+  // 1) фиксированные сроки: дедлайны календарного плана (по названию → по номеру) + уже заданные в техплане
+  const fixed = new Array(n).fill(null), usedC = {};
+  cal.forEach(cs => {
+    if(!cs.deadline) return;
+    const t = Date.parse(cs.deadline + 'T00:00:00'); if(isNaN(t)) return;
+    let best = -1, bs = 0;
+    ST.forEach((ms, ix) => { const sc = mdlSimT(ms.title, cs.title); if(sc > bs){ bs = sc; best = ix; } });
+    let ix = -1, how = '';
+    if(bs >= 0.4 && best >= 0 && !usedC[best]){ ix = best; how = 'совпадение названий'; }
+    else if(cs.num >= 1 && cs.num <= n && !usedC[cs.num-1]){ ix = cs.num-1; how = 'по номеру'; }
+    if(ix >= 0){ usedC[ix] = 1; fixed[ix] = {end: t, src: 'календарный план · «' + (cs.title||'') + '» (' + how + ')'}; }
+  });
+  ST.forEach((s, ix) => {
+    if(!fixed[ix] && s.end){ const t = Date.parse(s.end + 'T00:00:00'); if(!isNaN(t)) fixed[ix] = {end: t, src: 'техплан (указано ранее)'}; }
+  });
+  // 2) длительности пропорционально объёмам работ (минимум 2 дня на этап)
+  const d = wcnt.map(w => Math.max(2, w) * DAY);
+  const start = new Array(n).fill(null), end = new Array(n).fill(null);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const fixedIdx = fixed.map((f, i) => f ? i : -1).filter(i => i >= 0);
+  if(!fixedIdx.length){
+    let cur = today.getTime();
+    for(let i = 0; i < n; i++){ start[i] = cur; end[i] = cur + d[i]; cur = end[i]; }
+  } else {
+    const f0 = fixedIdx[0];
+    end[f0] = fixed[f0].end;
+    let cur = end[f0];
+    for(let i = f0; i >= 0; i--){ if(i < f0) end[i] = cur; start[i] = end[i] - d[i]; cur = start[i]; }
+    for(let k = 0; k < fixedIdx.length; k++){
+      const a = fixedIdx[k], b = fixedIdx[k+1];
+      if(b === undefined){ let c2 = end[a]; for(let i = a+1; i < n; i++){ start[i] = c2; end[i] = c2 + d[i]; c2 = end[i]; } }
+      else { end[b] = Math.max(fixed[b].end, end[a] + DAY); mdlFitSeg(start, end, d, a, b, end[a], end[b], DAY); }
+    }
+  }
+  // 3) подставить в поля (сохранение — кнопкой «Сохранить даты»)
+  for(let i = 0; i < n; i++){
+    const es = document.getElementById('mds_'+i), ee = document.getElementById('mde_'+i);
+    if(es){ es.value = mdlIsoD(start[i]); es.classList.add('flash'); }
+    if(ee){ ee.value = mdlIsoD(end[i]); ee.classList.add('flash'); }
+  }
+  const note = document.getElementById('mdlSmartNote');
+  if(note){
+    let txt;
+    if(fixedIdx.length){
+      txt = '🪄 Фиксированные сроки: ' + fixedIdx.map(i => 'этап ' + ST[i].n + ' — ' + fixed[i].src).join('; ') + '. '
+        + 'Остальные этапы распределены пропорционально объёмам работ (расчёт).';
+    } else {
+      txt = '🪄 В календарном плане и техплане сроков нет — предложен расчётный график от сегодняшней даты, '
+        + 'длительность каждого этапа пропорциональна объёму его работ.';
+    }
+    txt += ' Проверьте даты и нажмите «💾 Сохранить даты».';
+    note.textContent = txt; note.style.display = 'block';
+  }
+}
+/* --- Перенос этапов техплана и сроков в календарный план («Этапы»): не затирает существующее --- */
+async function mdlSyncStages(){
+  if(!(team && team.is_owner)) return;
+  const pt = TABS.find(x=>x.kind==='plan'); if(!pt) return alert('Вкладка «Технический план реализации» не найдена.');
+  const items = pt.config.items || [];
+  let exist = [];
+  try{ const r = await sb.from('stages').select('*').eq('team_id', tid()); exist = r.data || []; }
+  catch(e){ return alert('Не удалось прочитать календарный план: ' + (e.message || e)); }
+  let made = 0, upd = 0, skip = 0;
+  for(let i = 0; i < items.length; i++){
+    const it = items[i], num = it.n || (i+1);
+    const ee = document.getElementById('mde_'+i);
+    const dl = (ee && ee.value) || it.end || null;
+    const row = exist.find(x => x.num === num);
+    if(row){
+      const patch = {};
+      if(!row.deadline && dl) patch.deadline = dl;
+      if(!(row.subs||[]).length && (it.works||[]).length) patch.subs = it.works;
+      if(Object.keys(patch).length){ const r2 = await sb.from('stages').update(patch).eq('id', row.id); if(!r2.error) upd++; }
+      else skip++;
+    } else {
+      const r3 = await sb.from('stages').insert({team_id: tid(), num, title: it.title || ('Этап ' + num), subs: it.works || [], status: 'Не начат', deadline: dl});
+      if(!r3.error) made++;
+    }
+  }
+  STAGES = null; loadStages();
+  alert('Календарный план («Этапы»): добавлено этапов — ' + made + ', дополнено — ' + upd + (skip ? ', без изменений — ' + skip : '') + '.');
+}
+
 /* --- Экран «Модель» --- */
 function renderModel(v){
   const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
@@ -3325,7 +3435,11 @@ function renderModel(v){
       + '</div>';
   } else {
     h += '<div class="card"><h3>Этапы и сроки выполнения работ</h3>';
-    if(!rg) h += '<p class="mut" style="font-size:12px;margin-bottom:8px">Для воспроизведения по датам задайте начало и окончание каждого этапа' + (isOwner ? ' и нажмите «Сохранить даты».' : ' (это делает владелец команды).') + '</p>';
+    if(isOwner) h += '<div class="row" style="gap:6px;margin-bottom:8px;margin-top:6px">'
+      + '<button class="sec" style="flex:1;font-size:12px;padding:8px 4px" onclick="mdlSmartFill()">🪄 Умное заполнение</button>'
+      + '<button class="sec" style="flex:1;font-size:12px;padding:8px 4px" onclick="mdlSyncStages()" title="Перенести этапы и сроки во вкладку «Этапы»">📥 В календарный план</button></div>'
+      + '<div class="mdl-note" id="mdlSmartNote"></div>';
+    if(!rg) h += '<p class="mut" style="font-size:12px;margin-bottom:8px">Для воспроизведения по датам задайте начало и окончание каждого этапа' + (isOwner ? ' вручную или нажмите «🪄 Умное заполнение» — модель сама подставит сроки из календарного плана и техплана, а пробелы рассчитает по объёмам работ.' : ' (это делает владелец команды).') + '</p>';
     h += ST.map((s, ix) => {
         const cnt = (MDL_STAGE_MAP[ix]||[]).length;
         const dt = isOwner
