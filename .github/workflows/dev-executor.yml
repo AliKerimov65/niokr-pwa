@@ -1,0 +1,31 @@
+name: dev-executor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: dev-executor
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Execute one queued dev task
+        env:
+          SB_URL: https://lxgipzdybigdpdcmcnez.supabase.co
+          SB_KEY: sb_publishable_xWP4N5YGxb2B9Lmo_tJ19Q_X-LtmqJw
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          REPO: AliKerimov65/niokr-pwa
+          BRANCH: main
+        run: node tools/dev-executor.mjs
