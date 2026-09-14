@@ -59,6 +59,30 @@ main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 .pentry .pt2{font-size:14px;line-height:1.4;white-space:pre-wrap}
 .pentry .pa{display:flex;gap:2px;margin-left:auto}
 .pentry .pa button{background:none;border:0;font-size:13px;padding:2px 4px;cursor:pointer;color:var(--mut)}
+/* --- Модель реализации проекта --- */
+.mdl-modes{display:flex;gap:6px;margin-bottom:10px}
+.mdl-modes button{flex:1;padding:9px 4px;font-size:12px;border-radius:12px;border:1px solid var(--brd2);background:var(--card2);color:var(--txt);cursor:pointer}
+.mdl-modes button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:700}
+#mdlCv{width:100%;display:block;border-radius:14px;border:1px solid var(--brd);touch-action:manipulation}
+.mdl-status{margin-top:8px;font-size:12.5px;line-height:1.4;min-height:34px}
+.mdl-status b{color:var(--acc)}
+.mdl-bar{width:100%;margin:6px 0 2px;accent-color:var(--acc)}
+.mdl-ctrl{display:flex;gap:6px;align-items:center;margin-top:6px}
+.mdl-ctrl button{padding:8px 14px;font-size:15px}
+.mdl-ctrl select{flex:none;width:82px;padding:7px 6px;font-size:12.5px}
+.mdl-pct{margin-left:auto;font-weight:700;font-size:13px;color:var(--acc)}
+.mdl-step{display:flex;gap:8px;align-items:flex-start;padding:7px 8px;border-radius:10px;cursor:pointer;font-size:12.5px;line-height:1.35;border:1px solid transparent}
+.mdl-step .n{flex:none;width:22px;height:22px;border-radius:50%;background:var(--card2);border:1px solid var(--brd2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.mdl-step.done .n{background:var(--ok);border-color:var(--ok);color:#fff}
+.mdl-step.on{background:var(--card2);border-color:var(--acc)}
+.mdl-step.on .n{background:var(--acc);border-color:var(--acc);color:#fff}
+.mdl-step .stg{display:block;font-size:10.5px;color:var(--mut)}
+.mdl-srow{padding:8px;border:1px solid var(--brd);border-radius:12px;margin-bottom:8px;background:var(--card)}
+.mdl-srow .t{font-size:12.5px;font-weight:700;margin-bottom:5px}
+.mdl-srow .dt{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--mut)}
+.mdl-srow .dt input{flex:1;min-width:0;padding:6px;font-size:12px}
+.mdl-sbar{height:5px;border-radius:3px;background:var(--card2);margin-top:6px;overflow:hidden}
+.mdl-sbar i{display:block;height:100%;background:var(--ok);border-radius:3px}
 .card h3{font-size:15px;margin-bottom:4px;word-break:break-word}
 .mut{color:var(--mut);font-size:12.5px}
 .row{display:flex;gap:8px;align-items:center}
@@ -263,6 +287,7 @@ header{background:var(--card) !important}
 <nav class="tabbar">
   <button data-v="chat" class="on" onclick="navGo('chat')"><span class="ic">💬</span>Чат</button>
   <button data-v="stages" onclick="navGo('stages')"><span class="ic">🗓</span>Этапы</button>
+  <button data-v="model" onclick="navGo('model')"><span class="ic">🎬</span>Модель</button>
   <button data-v="tasks" onclick="navGo('tasks')"><span class="ic">✅</span>Задачи</button>
   <button data-v="news" onclick="navGo('news')"><span class="ic">📢</span>Объявл.</button>
   <button data-v="files" onclick="navGo('files')"><span class="ic">📁</span>Файлы</button>
@@ -3095,9 +3120,538 @@ async function protoToFiles(id){
   }catch(e){ alert('Не удалось сохранить в Файлы: ' + (e.message || e)); }
 }
 
+
+/* ================= МОДЕЛЬ РЕАЛИЗАЦИИ ПРОЕКТА =================
+   Режим «Базовая»: мультипликация сборки объекта в строгой последовательности работ проекта.
+   Режим «По датам»: воспроизведение сборки с привязкой к датам этапов (сроки хранятся во вкладке
+   «Технический план реализации»: config.items[].start/end). Шаги анимации = перечень работ из
+   вкладки «Журнал авторского надзора» (config.works) — строго по проекту. */
+let MDL = {mode:'base', cur:0, prog:0, playing:false, dplay:false, speed:1, day:0, last:0, raf:0};
+const MDL_STAGE_MAP = [[1],[2,3,4,5],[6],[7,8,9,10],[11,12,13,14],[15],[16],[]]; // работы АН (1-based) по этапам техплана
+const MDL_STAGE_FALLBACK = ['Подготовительный этап','Земляные работы и подготовка основания','Гидроизоляция основания и акты скрытых работ','Балочная система из шпал','Настил и коминг','Светосигнальное оборудование','Навигационное и вспомогательное оборудование','Исполнительная документация и приёмка'];
+function mdlWorks(){ const azt = TABS.find(x=>x.kind==='az'); const w = azt && azt.config ? (azt.config.works||[]) : []; return w.filter(Boolean); }
+function mdlStages(){
+  const pt = TABS.find(x=>x.kind==='plan'); const items = pt && pt.config ? (pt.config.items||[]) : [];
+  const arr = items.map(it => ({n: it.n, title: it.title || ('Этап ' + it.n), start: it.start || '', end: it.end || ''}));
+  if(!arr.length) MDL_STAGE_FALLBACK.forEach((t, i) => arr.push({n: i+1, title: t, start: '', end: ''}));
+  return arr;
+}
+function mdlWorkStageIdx(){ const m = {}; MDL_STAGE_MAP.forEach((ws, si) => ws.forEach(w1 => { m[w1-1] = si; })); return m; }
+function mdlStageIntervals(){
+  return mdlStages().map(s => {
+    const a = s.start ? Date.parse(s.start + 'T00:00:00') : NaN;
+    const b = s.end ? Date.parse(s.end + 'T00:00:00') : NaN;
+    return (isNaN(a) || isNaN(b)) ? null : {s: a, e: Math.max(b, a + 864e5)};
+  });
+}
+function mdlDateRange(){
+  const st = mdlStages(), iv = mdlStageIntervals().filter(Boolean);
+  if(!st.length || iv.length !== st.length) return null; // нужны даты всех этапов
+  return {s: Math.min.apply(null, iv.map(x=>x.s)), e: Math.max.apply(null, iv.map(x=>x.e))};
+}
+function mdlProgArray(){
+  const W = mdlWorks(), N = W.length, out = new Array(N).fill(0);
+  if(MDL.mode === 'base'){
+    for(let i = 0; i < N; i++) out[i] = i < MDL.cur ? 1 : (i === MDL.cur ? MDL.prog : 0);
+    if(MDL.cur >= N) out.fill(1);
+    return out;
+  }
+  const map = mdlWorkStageIdx(), iv = mdlStageIntervals();
+  for(let i = 0; i < N; i++){
+    const si = map[i] || 0, inStage = MDL_STAGE_MAP[si] || [], pos = inStage.indexOf(i+1);
+    const it = iv[si];
+    if(!it || pos < 0){ out[i] = 0; continue; }
+    const sub = (it.e - it.s) / Math.max(1, inStage.length);
+    const ws = it.s + sub*pos, we = ws + sub;
+    out[i] = MDL.day >= we ? 1 : (MDL.day <= ws ? 0 : (MDL.day - ws)/sub);
+  }
+  return out;
+}
+function mdlOverall(prog){ return prog.length ? Math.round(prog.reduce((a,b)=>a+b,0)/prog.length*100) : 0; }
+function mdlFmtDate(ms){ const d = new Date(ms); return String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + d.getFullYear(); }
+
+/* --- Управление воспроизведением --- */
+function mdlStop(){ MDL.playing = false; MDL.dplay = false; if(MDL.raf) cancelAnimationFrame(MDL.raf); MDL.raf = 0; }
+function mdlMode(m){
+  mdlStop(); MDL.mode = m;
+  if(m === 'dates'){ const rg = mdlDateRange(); MDL.day = rg ? rg.s : 0; }
+  else { MDL.cur = 0; MDL.prog = 0; }
+  render();
+}
+function mdlPlay(){
+  const N = mdlWorks().length;
+  if(MDL.cur >= N){ MDL.cur = 0; MDL.prog = 0; }
+  MDL.playing = !MDL.playing; MDL.last = 0;
+  if(MDL.playing) MDL.raf = requestAnimationFrame(mdlTick);
+  mdlSyncUI();
+}
+function mdlReset(){ mdlStop(); MDL.cur = 0; MDL.prog = 0; mdlDraw(); mdlSyncUI(); }
+function mdlSeek(i){ mdlStop(); MDL.cur = i; MDL.prog = 0; mdlDraw(); mdlSyncUI(); }
+function mdlBar(v){
+  mdlStop();
+  const N = mdlWorks().length;
+  const x = Math.max(0, Math.min(N*100, +v));
+  MDL.cur = Math.min(N, Math.floor(x/100)); MDL.prog = MDL.cur >= N ? 0 : (x % 100)/100;
+  mdlDraw(); mdlSyncUI();
+}
+function mdlSpeedSet(v){ MDL.speed = +v || 1; }
+function mdlPlayDates(){
+  const rg = mdlDateRange(); if(!rg) return;
+  if(!MDL.day || MDL.day < rg.s || MDL.day >= rg.e) MDL.day = rg.s;
+  MDL.dplay = !MDL.dplay; MDL.last = 0;
+  if(MDL.dplay) MDL.raf = requestAnimationFrame(mdlTick);
+  mdlSyncUI();
+}
+function mdlDayBar(v){
+  const rg = mdlDateRange(); if(!rg) return;
+  mdlStop();
+  MDL.day = rg.s + (rg.e - rg.s) * (+v)/1000;
+  mdlDraw(); mdlSyncUI();
+}
+function mdlToday(){
+  const rg = mdlDateRange(); if(!rg) return;
+  mdlStop();
+  MDL.day = Math.max(rg.s, Math.min(rg.e, Date.now()));
+  mdlDraw(); mdlSyncUI();
+}
+async function modelSaveDates(){
+  const pt = TABS.find(x=>x.kind==='plan'); if(!pt) return alert('Вкладка «Технический план реализации» не найдена.');
+  const items = (pt.config.items||[]).map((it, ix) => ({...it,
+    start: (document.getElementById('mds_'+ix)||{}).value || '',
+    end: (document.getElementById('mde_'+ix)||{}).value || ''}));
+  pt.config = {...pt.config, items};
+  try{ await updTabCfg(pt.id, pt.config); }
+  catch(e){ return alert('Не удалось сохранить даты: ' + (e && e.message || e)); }
+  const rg = mdlDateRange(); MDL.day = rg ? rg.s : 0;
+  render();
+}
+function mdlTick(ts){
+  if(view !== 'model'){ mdlStop(); return; }
+  if(!MDL.playing && !MDL.dplay) return;
+  const dt = MDL.last ? Math.min(120, ts - MDL.last) : 16; MDL.last = ts;
+  if(MDL.mode === 'base'){
+    const N = mdlWorks().length;
+    MDL.prog += dt/1500 * MDL.speed;
+    while(MDL.prog >= 1 && MDL.playing){
+      MDL.prog = 0; MDL.cur++;
+      if(MDL.cur >= N){ MDL.cur = N; MDL.playing = false; }
+    }
+  } else {
+    const rg = mdlDateRange();
+    if(!rg){ MDL.dplay = false; return; }
+    MDL.day += dt/1000 * 864e5 * 1.5 * MDL.speed; // 1,5 дня/сек при скорости ×1
+    if(MDL.day >= rg.e){ MDL.day = rg.e; MDL.dplay = false; }
+  }
+  mdlDraw(); mdlSyncUI();
+  if(MDL.playing || MDL.dplay) MDL.raf = requestAnimationFrame(mdlTick);
+}
+function mdlSyncUI(){
+  const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
+  const prog = mdlProgArray(), pct = mdlOverall(prog);
+  const st = document.getElementById('mdlStatus'); if(!st) return;
+  if(MDL.mode === 'base'){
+    const i = Math.min(MDL.cur, W.length-1), si = map[i]||0;
+    st.innerHTML = MDL.cur >= W.length
+      ? '<b>Сборка завершена.</b> Этап 8 «' + esc(ST[7] ? ST[7].title : '') + '».'
+      : '<b>Шаг ' + (i+1) + '/' + W.length + '</b> · Этап ' + ST[si].n + ' «' + esc(ST[si].title) + '»<br>' + esc(W[i]);
+    const bar = document.getElementById('mdlBar'); if(bar) bar.value = Math.round((MDL.cur + (MDL.cur >= W.length ? 0 : MDL.prog)) * 100);
+    const btn = document.getElementById('mdlPlayBtn'); if(btn) btn.textContent = MDL.playing ? '⏸' : '▶';
+    document.querySelectorAll('.mdl-step[data-w]').forEach(el => {
+      const ix = +el.dataset.w;
+      el.classList.toggle('done', prog[ix] >= 1);
+      el.classList.toggle('on', ix === MDL.cur && MDL.cur < W.length);
+    });
+  } else {
+    const rg = mdlDateRange(), iv = mdlStageIntervals();
+    let curSi = -1;
+    iv.forEach((it, ix) => { if(it && MDL.day >= it.s && MDL.day <= it.e) curSi = ix; });
+    st.innerHTML = rg
+      ? '<b>📅 ' + mdlFmtDate(MDL.day) + '</b>' + (curSi >= 0 ? ' · Этап ' + ST[curSi].n + ' «' + esc(ST[curSi].title) + '»' : (MDL.day >= rg.e ? ' · <b>Сборка завершена</b>' : ''))
+      : 'Укажите даты начала и окончания каждого этапа ниже' + ((team && team.is_owner) ? ' и нажмите «Сохранить даты».' : ' (это делает владелец команды).');
+    const bar = document.getElementById('mdlBarD'); if(bar && rg) bar.value = Math.round((MDL.day - rg.s)/(rg.e - rg.s)*1000);
+    const btn = document.getElementById('mdlPlayBtnD'); if(btn) btn.textContent = MDL.dplay ? '⏸' : '▶';
+    document.querySelectorAll('.mdl-sbar i').forEach((el, ix) => {
+      const inStage = MDL_STAGE_MAP[ix] || [];
+      const p = inStage.length ? inStage.reduce((a,w1)=>a+(prog[w1-1]||0),0)/inStage.length : (iv[ix] && MDL.day >= iv[ix].e ? 1 : 0);
+      el.style.width = Math.round(p*100) + '%';
+    });
+  }
+  const pc = document.getElementById('mdlPct'); if(pc) pc.textContent = pct + '%';
+}
+
+/* --- Экран «Модель» --- */
+function renderModel(v){
+  const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
+  if(!W.length){
+    v.innerHTML = '<h2 class="pt">🎬 Модель</h2><div class="card"><p class="mut">Перечень работ пуст. Заполните виды работ во вкладке «Журнал авторского надзора» — модель строится строго по ним.</p></div>';
+    return;
+  }
+  const isOwner = team && team.is_owner;
+  const base = MDL.mode === 'base';
+  const rg = mdlDateRange();
+  let h = '<h2 class="pt">🎬 Модель реализации</h2><div class="card">'
+    + '<div class="mdl-modes">'
+    + '<button class="' + (base ? 'on' : '') + '" onclick="mdlMode(\'base\')">🧱 Базовая последовательность</button>'
+    + '<button class="' + (!base ? 'on' : '') + '" onclick="mdlMode(\'dates\')">🗓 По датам и этапам</button>'
+    + '</div>'
+    + '<canvas id="mdlCv"></canvas>'
+    + '<div class="mdl-status" id="mdlStatus"></div>';
+  const spd = [0.5,1,2,4].map(x => '<option value="' + x + '" ' + (MDL.speed === x ? 'selected' : '') + '>×' + x + '</option>').join('');
+  if(base){
+    h += '<input type="range" class="mdl-bar" id="mdlBar" min="0" max="' + (W.length*100) + '" value="0" oninput="mdlBar(this.value)">'
+      + '<div class="mdl-ctrl">'
+      + '<button class="sec" onclick="mdlReset()" title="Сначала">⏮</button>'
+      + '<button class="pri" id="mdlPlayBtn" onclick="mdlPlay()" style="min-width:56px">▶</button>'
+      + '<select onchange="mdlSpeedSet(this.value)" title="Скорость">' + spd + '</select>'
+      + '<span class="mdl-pct" id="mdlPct">0%</span></div>';
+  } else {
+    h += '<input type="range" class="mdl-bar" id="mdlBarD" min="0" max="1000" value="0" ' + (rg ? '' : 'disabled') + ' oninput="mdlDayBar(this.value)">'
+      + '<div class="mdl-ctrl">'
+      + '<button class="sec" onclick="mdlToday()" title="Сегодня" ' + (rg ? '' : 'disabled') + '>📅</button>'
+      + '<button class="pri" id="mdlPlayBtnD" onclick="mdlPlayDates()" style="min-width:56px" ' + (rg ? '' : 'disabled') + '>▶</button>'
+      + '<select onchange="mdlSpeedSet(this.value)" title="Скорость">' + spd + '</select>'
+      + '<span class="mdl-pct" id="mdlPct">0%</span></div>';
+  }
+  h += '</div>';
+  if(base){
+    h += '<div class="card"><h3>Последовательность работ (по проекту)</h3>'
+      + W.map((w, i) => {
+          const si = map[i]||0;
+          return '<div class="mdl-step" data-w="' + i + '" onclick="mdlSeek(' + i + ')"><span class="n">' + (i+1) + '</span>'
+            + '<span>' + esc(w) + '<span class="stg">Этап ' + ST[si].n + ' · ' + esc(ST[si].title) + '</span></span></div>';
+        }).join('')
+      + '<div class="mdl-step" style="cursor:default"><span class="n">✓</span><span>Исполнительная документация и приёмка'
+      + (ST[7] ? '<span class="stg">Этап 8 · ' + esc(ST[7].title) + '</span>' : '') + '</span></div>'
+      + '</div>';
+  } else {
+    h += '<div class="card"><h3>Этапы и сроки выполнения работ</h3>';
+    if(!rg) h += '<p class="mut" style="font-size:12px;margin-bottom:8px">Для воспроизведения по датам задайте начало и окончание каждого этапа' + (isOwner ? ' и нажмите «Сохранить даты».' : ' (это делает владелец команды).') + '</p>';
+    h += ST.map((s, ix) => {
+        const cnt = (MDL_STAGE_MAP[ix]||[]).length;
+        const dt = isOwner
+          ? '<div class="dt"><span>с</span><input type="date" id="mds_' + ix + '" value="' + s.start + '"><span>по</span><input type="date" id="mde_' + ix + '" value="' + s.end + '"></div>'
+          : '<div class="dt">' + (s.start && s.end ? '📅 ' + s.start.split('-').reverse().join('.') + ' — ' + s.end.split('-').reverse().join('.') : 'даты не заданы') + '</div>';
+        return '<div class="mdl-srow"><div class="t">Этап ' + s.n + '. ' + esc(s.title) + '</div>' + dt
+          + '<div class="mdl-sbar"><i style="width:0%"></i></div>'
+          + '<div style="font-size:11px;color:var(--mut);margin-top:4px">' + (cnt ? 'Работ в модели: ' + cnt : 'Документальный этап') + '</div></div>';
+      }).join('');
+    if(isOwner) h += '<button class="pri" style="width:100%" onclick="modelSaveDates()">💾 Сохранить даты</button>';
+    h += '</div>';
+  }
+  v.innerHTML = h;
+  setTimeout(() => { mdlDraw(); mdlSyncUI(); }, 30);
+}
+
+/* --- Отрисовка модели (изометрия, площадка 21×21 м) --- */
+const MDL_HH = 10.5; // половина стороны площадки, м
+function mdlRand(i){ const x = Math.sin(i*127.1 + 311.7)*43758.5453; return x - Math.floor(x); }
+function mdlQuad(ctx, P, pts, fill, stroke){
+  ctx.beginPath();
+  pts.forEach((p, i) => { const q = P(p[0], p[1], p[2]||0); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); });
+  ctx.closePath();
+  if(fill){ ctx.fillStyle = fill; ctx.fill(); }
+  if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+}
+function mdlBox(ctx, P, x0, y0, x1, y1, z0, z1, c){
+  mdlQuad(ctx, P, [[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]], c.t);
+  mdlQuad(ctx, P, [[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]], c.r);
+  mdlQuad(ctx, P, [[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1]], c.l);
+}
+const MDL_WOOD = {t:'#c89b6a', l:'#a87948', r:'#8f6538'};
+const MDL_WOOD_D = {t:'#a97f52', l:'#8a6238', r:'#75522e'};
+const MDL_KOM = {t:'#a06a3c', l:'#7d5028', r:'#684221'};
+function mdlDot(ctx, P, x, y, z, r, color, glow){
+  const q = P(x, y, z);
+  ctx.save();
+  if(glow){ ctx.shadowColor = color; ctx.shadowBlur = 7; }
+  ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, 6.2832);
+  ctx.fillStyle = color; ctx.fill();
+  ctx.restore();
+}
+
+/* Шаги сборки — по одной функции на каждую из 16 работ проекта. p — прогресс 0..1. */
+const MDL_STEPS = [
+  // 1. Геодезическая разбивка контура 21×21 м
+  (ctx, P, s, p) => {
+    const H = MDL_HH;
+    ctx.save(); ctx.globalAlpha = Math.min(1, p*1.4);
+    ctx.setLineDash([s*0.55, s*0.4]); ctx.strokeStyle = '#5a4a2f'; ctx.lineWidth = 1.4;
+    mdlQuad(ctx, P, [[-H,-H],[H,-H],[H,H],[-H,H]], null, '#5a4a2f');
+    // оси
+    ctx.globalAlpha = Math.min(1, p)*0.6; ctx.lineWidth = 1;
+    ctx.beginPath(); let a=P(-H,0), b=P(H,0); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]);
+    a=P(0,-H); b=P(0,H); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+    // обноска — крестики за углами
+    const st = [[-H-1.2,-H-1.2],[H+1.2,-H-1.2],[H+1.2,H+1.2],[-H-1.2,H+1.2]];
+    st.forEach((c, i) => {
+      if(p < 0.22*(i+1)) return;
+      const q = P(c[0], c[1]);
+      ctx.strokeStyle = '#7a3b1d'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(q[0]-4,q[1]-3); ctx.lineTo(q[0]+4,q[1]+3);
+      ctx.moveTo(q[0]+4,q[1]-3); ctx.lineTo(q[0]-4,q[1]+3); ctx.stroke();
+    });
+  },
+  // 2. Расчистка основания от растительности
+  (ctx, P, s, p) => {
+    ctx.save(); ctx.globalAlpha = Math.max(0, 1-p);
+    for(let i = 0; i < 22; i++){
+      const x = -10 + 20*mdlRand(i*2+1), y = -10 + 20*mdlRand(i*2+2);
+      const q = P(x, y);
+      ctx.strokeStyle = i%4 ? '#6d8f57' : '#557a44'; ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(q[0], q[1]); ctx.lineTo(q[0]-3, q[1]-6);
+      ctx.moveTo(q[0], q[1]); ctx.lineTo(q[0]+1, q[1]-7);
+      ctx.moveTo(q[0], q[1]); ctx.lineTo(q[0]+4, q[1]-5);
+      ctx.stroke();
+    }
+    for(let i = 0; i < 6; i++){
+      const x = -9 + 18*mdlRand(i*3+50), y = -9 + 18*mdlRand(i*3+51);
+      mdlDot(ctx, P, x, y, 0, 2.4, '#9b9b93');
+    }
+    ctx.restore();
+  },
+  // 3. Планировка с трамбовкой
+  (ctx, P, s, p) => {
+    const h = MDL_HH * Math.min(1, p*1.15);
+    if(h <= 0) return;
+    mdlQuad(ctx, P, [[-h,-h],[h,-h],[h,h],[-h,h]], '#e6d9ba');
+    if(p > 0.8){ // уклон от центра к краям
+      ctx.save(); ctx.globalAlpha = (p-0.8)*5; ctx.strokeStyle = '#b39c6d'; ctx.lineWidth = 1.3;
+      [[5.5,0],[-5.5,0],[0,5.5],[0,-5.5]].forEach(d => {
+        const a = P(d[0]*0.4, d[1]*0.4, 0.02), b = P(d[0], d[1], 0.02);
+        ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+      });
+      ctx.restore();
+    }
+  },
+  // 4. Выборка грунта вдоль осей опорных балок
+  (ctx, P, s, p) => {
+    const ys = []; for(let y = -10; y <= 10.01; y += 2) ys.push(y);
+    const K = Math.floor(p * ys.length + 1e-6);
+    for(let i = 0; i < K; i++){
+      const y = ys[i];
+      mdlQuad(ctx, P, [[-MDL_HH, y-0.35],[MDL_HH, y-0.35],[MDL_HH, y+0.35],[-MDL_HH, y+0.35]], '#8d7c60');
+    }
+  },
+  // 5. Обратная засыпка с трамбовкой
+  (ctx, P, s, p) => {
+    const ys = []; for(let y = -10; y <= 10.01; y += 2) ys.push(y);
+    const K = Math.floor(p * ys.length + 1e-6);
+    for(let i = 0; i < K; i++){
+      const y = ys[i];
+      mdlQuad(ctx, P, [[-MDL_HH, y-0.35],[MDL_HH, y-0.35],[MDL_HH, y+0.35],[-MDL_HH, y+0.35]], '#c9b88f');
+    }
+  },
+  // 6. Геомембрана 0,5 мм
+  (ctx, P, s, p) => {
+    const H = MDL_HH, q = Math.sqrt(Math.min(1, p));
+    const L = (a, b) => a + (b-a)*q;
+    mdlQuad(ctx, P, [[-H,-H],[L(-H,H),-H],[L(-H,H),L(-H,H)],[-H,L(-H,H)]], 'rgba(79,107,82,0.88)');
+    if(p > 0.5){ // швы полотнищ
+      ctx.save(); ctx.globalAlpha = (p-0.5)*1.2; ctx.strokeStyle = '#3c5440'; ctx.lineWidth = 1;
+      for(let k = -9; k <= 9; k += 3){
+        if(k > L(-H,H)) break;
+        const a = P(k, -H, 0.02), b = P(k, Math.min(L(-H,H), H), 0.02);
+        ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  },
+  // 7. Подкладки из шпал 550×180×230, шаг 400 мм
+  (ctx, P, s, p) => {
+    const pos = [];
+    for(let y = -10; y <= 10.01; y += 2)
+      for(let x = -10; x <= 10.01; x += 1.5) pos.push([x, y]);
+    const K = Math.floor(p * pos.length + 1e-6);
+    for(let i = 0; i < K; i++){
+      const x = pos[i][0], y = pos[i][1];
+      mdlBox(ctx, P, x-0.28, y-0.2, x+0.28, y+0.2, 0.02, 0.2, MDL_WOOD_D);
+    }
+  },
+  // 8. Перекрестная балочная система, два яруса
+  (ctx, P, s, p) => {
+    const ys = []; for(let y = -10; y <= 10.01; y += 2) ys.push(y);
+    const p1 = Math.min(1, p*2), p2 = Math.max(0, p*2-1);
+    const K1 = Math.floor(p1 * ys.length + 1e-6);
+    for(let i = 0; i < K1; i++){
+      const y = ys[i];
+      mdlBox(ctx, P, -MDL_HH, y-0.16, MDL_HH, y+0.16, 0.2, 0.43, MDL_WOOD);
+    }
+    const K2 = Math.floor(p2 * ys.length + 1e-6);
+    for(let i = 0; i < K2; i++){
+      const x = ys[i];
+      mdlBox(ctx, P, x-0.16, -MDL_HH, x+0.16, MDL_HH, 0.43, 0.66, MDL_WOOD);
+    }
+  },
+  // 9. Крепление скобами и нагелями Ø16
+  (ctx, P, s, p) => {
+    const pos = [];
+    for(let y = -10; y <= 10.01; y += 2)
+      for(let x = -10; x <= 10.01; x += 2) pos.push([x, y]);
+    const K = Math.floor(p * pos.length + 1e-6);
+    for(let i = 0; i < K; i++) mdlDot(ctx, P, pos[i][0], pos[i][1], 0.68, 1.7, '#3d3a35');
+  },
+  // 10. Засыпка полостей галечником
+  (ctx, P, s, p) => {
+    const K = Math.floor(p * 240 + 1e-6);
+    ctx.save(); ctx.globalAlpha = 0.85;
+    for(let i = 0; i < K; i++){
+      const x = -10.2 + 20.4*mdlRand(i*2+300), y = -10.2 + 20.4*mdlRand(i*2+301);
+      mdlDot(ctx, P, x, y, 0.66, 1.5, i%3 ? '#b0a186' : '#988a70');
+    }
+    ctx.restore();
+  },
+  // 11. Балочный нагон 150×150
+  (ctx, P, s, p) => {
+    const ys = []; for(let y = -10.4; y <= 10.41; y += 1.3) ys.push(y);
+    const K = Math.floor(p * ys.length + 1e-6);
+    for(let i = 0; i < K; i++){
+      const y = ys[i];
+      mdlBox(ctx, P, -MDL_HH, y-0.08, MDL_HH, y+0.08, 0.66, 0.81, MDL_WOOD_D);
+    }
+  },
+  // 12. Диагональный настил 45° из досок 150×50
+  (ctx, P, s, p) => {
+    const H = MDL_HH, q = Math.sqrt(Math.min(1, p));
+    const L = (a, b) => a + (b-a)*q;
+    const poly = [[-H,-H,0.86],[L(-H,H),-H,0.86],[L(-H,H),L(-H,H),0.86],[-H,L(-H,H),0.86]];
+    mdlQuad(ctx, P, poly, '#d9b380');
+    // боковая кромка настила
+    mdlQuad(ctx, P, [[-H,L(-H,H),0.81],[L(-H,H),L(-H,H),0.81],[L(-H,H),L(-H,H),0.86],[-H,L(-H,H),0.86]], '#b78f5c');
+    mdlQuad(ctx, P, [[L(-H,H),-H,0.81],[L(-H,H),L(-H,H),0.81],[L(-H,H),L(-H,H),0.86],[L(-H,H),-H,0.86]], '#a67c4c');
+    // диагональные доски
+    ctx.save();
+    ctx.beginPath();
+    poly.forEach((pt, i) => { const qq = P(pt[0], pt[1], pt[2]); i ? ctx.lineTo(qq[0], qq[1]) : ctx.moveTo(qq[0], qq[1]); });
+    ctx.closePath(); ctx.clip();
+    ctx.strokeStyle = 'rgba(150,110,66,0.55)'; ctx.lineWidth = 1;
+    for(let k = -21; k <= 21; k += 1.1){
+      const x0 = Math.max(-H, k-H), y0 = k - x0;
+      const x1 = Math.min(H, k+H), y1 = k - x1;
+      const p0 = P(x0, y0, 0.86), p1 = P(x1, y1, 0.86);
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+    }
+    ctx.restore();
+  },
+  // 13. Коминг по периметру
+  (ctx, P, s, p) => {
+    const H = MDL_HH, w = 0.3, z0 = 0.86, z1 = 1.11;
+    const edges = [
+      [[-H,-H],[H,-H], 'y-'],
+      [[-H,-H],[-H,H], 'x-'],
+      [[-H,H],[H,H], 'y+'],
+      [[H,-H],[H,H], 'x+']
+    ];
+    const K = Math.floor(p*4 + 1e-6);
+    for(let i = 0; i < K; i++){
+      const e = edges[i];
+      if(e[2] === 'y-') mdlBox(ctx, P, -H, -H, H, -H+w, z0, z1, MDL_KOM);
+      if(e[2] === 'x-') mdlBox(ctx, P, -H, -H, -H+w, H, z0, z1, MDL_KOM);
+      if(e[2] === 'y+') mdlBox(ctx, P, -H, H-w, H, H, z0, z1, MDL_KOM);
+      if(e[2] === 'x+') mdlBox(ctx, P, H-w, -H, H, H, z0, z1, MDL_KOM);
+    }
+  },
+  // 14. Перекрытие зазоров досками
+  (ctx, P, s, p) => {
+    const H = MDL_HH - 0.3, w = 0.55, z0 = 0.86, z1 = 0.9;
+    const K = Math.floor(p*4 + 1e-6);
+    const c = {t:'#e8cf9e', l:'#c2a06c', r:'#ab8854'};
+    for(let i = 0; i < K; i++){
+      if(i === 0) mdlBox(ctx, P, -H, -H, H, -H+w, z0, z1, c);
+      if(i === 1) mdlBox(ctx, P, -H, -H, -H+w, H, z0, z1, c);
+      if(i === 2) mdlBox(ctx, P, -H, H-w, H, H, z0, z1, c);
+      if(i === 3) mdlBox(ctx, P, H-w, -H, H, H, z0, z1, c);
+    }
+  },
+  // 15. Светосигнальное оборудование
+  (ctx, P, s, p) => {
+    const H = MDL_HH - 0.6, lights = [];
+    [[-H,-H],[H,-H],[H,H],[-H,H]].forEach(c => lights.push([c[0], c[1], '#39d353'])); // 4 угла FATO
+    for(let k = 0; k < 8; k++){
+      const t = -H + (k%4+0.5) * (2*H/4);
+      const edge = [[t,-H],[H,t],[-t,H],[-H,-t]][Math.floor(k/2)%4];
+      lights.push([edge[0], edge[1], '#ffd23f']); // периметр TLOF
+    }
+    const K = Math.floor(p * lights.length + 1e-6);
+    for(let i = 0; i < K; i++) mdlDot(ctx, P, lights[i][0], lights[i][1], 1.12, 2.3, lights[i][2], true);
+    if(p > 0.9){ // прожекторные мачты за углами
+      [[-H-2,-H-2],[H+2,-H-2],[H+2,H+2],[-H-2,H+2]].forEach(c => {
+        const a = P(c[0], c[1], 0), b = P(c[0], c[1], 1.6);
+        ctx.strokeStyle = '#6b6b6b'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+        mdlDot(ctx, P, c[0], c[1], 1.6, 2, '#fff2b0', true);
+      });
+    }
+  },
+  // 16. Ветроуказатель и аншлаг
+  (ctx, P, s, p) => {
+    // ветроуказатель ЭЛ04-00
+    const wx = 14, wy = 5;
+    if(p > 0.05){
+      const a = P(wx, wy, 0), b = P(wx, wy, 2.2);
+      ctx.strokeStyle = '#7a7a7a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    }
+    if(p > 0.4){ // конус
+      const t = P(wx, wy, 2.2), e = P(wx+1.3, wy+0.5, 2.0);
+      ctx.fillStyle = '#e8842c';
+      ctx.beginPath(); ctx.moveTo(t[0], t[1]); ctx.lineTo(e[0], e[1]-3); ctx.lineTo(e[0], e[1]+3); ctx.closePath(); ctx.fill();
+      mdlDot(ctx, P, wx, wy, 2.25, 1.8, '#ffd23f', true);
+    }
+    if(p > 0.65){ // аншлаг «СТОЙ! ОПАСНАЯ ЗОНА!»
+      const bx = 13.5, by = 0.5;
+      mdlQuad(ctx, P, [[bx-0.8,by,0],[bx+0.8,by,0],[bx+0.8,by,1.15],[bx-0.8,by,1.15]], '#f4f0e4', '#b3311f');
+      ctx.save();
+      const q = P(bx, by, 0.62);
+      ctx.fillStyle = '#b3311f'; ctx.fillRect(q[0]-5, q[1]-3, 10, 6);
+      ctx.restore();
+    }
+    if(p > 0.85){ // щит с противопожарным оборудованием
+      mdlBox(ctx, P, 12.6, -4.5, 13.4, -4.1, 0, 0.9, {t:'#c23b2a', l:'#9c2c1e', r:'#83241a'});
+    }
+  }
+];
+function mdlDraw(){
+  const cv = document.getElementById('mdlCv'); if(!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth || (cv.parentNode ? cv.parentNode.clientWidth - 24 : 340) || 340;
+  const H = Math.round(W * 0.82);
+  if(cv.width !== Math.round(W*dpr)){ cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); cv.style.height = H + 'px'; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#e9f1e3'); g.addColorStop(1, '#d5e1c8');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const s = W / 42, cx = W/2, cy = H * 0.42;
+  const ZEX = 4.2; // вертикальное преувеличение для читаемости схемы
+  const P = (x, y, z) => [cx + (x - y)*0.866*s, cy + (x + y)*0.5*s - (z||0)*s*ZEX];
+  // площадка-основание (участок)
+  mdlQuad(ctx, P, [[-14.5,-14.5],[14.5,-14.5],[14.5,14.5],[-14.5,14.5]], '#cbd8b8');
+  mdlQuad(ctx, P, [[-MDL_HH-1,-MDL_HH-1],[MDL_HH+1,-MDL_HH-1],[MDL_HH+1,MDL_HH+1],[-MDL_HH-1,MDL_HH+1]], '#d8cba8');
+  const prog = mdlProgArray();
+  prog.forEach((p, i) => { if(p > 0 && MDL_STEPS[i]) MDL_STEPS[i](ctx, P, s, Math.min(1, p)); });
+  // завершение — документальный этап
+  if(prog.length && prog.every(x => x >= 1)){
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    const bw = W*0.72, bh = 44, bx = (W-bw)/2, by = H*0.06;
+    ctx.fillStyle = '#f7f3e8';
+    ctx.strokeStyle = '#8a6d3b'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 12); else ctx.rect(bx, by, bw, bh);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#5c4526'; ctx.font = '700 12.5px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('✅ Объект собран по проекту', W/2, by + 18);
+    ctx.font = '11px sans-serif'; ctx.fillStyle = '#7a6a4d';
+    ctx.fillText('Этап 8 · Исполнительная документация и приёмка', W/2, by + 34);
+    ctx.restore();
+  }
+}
+
 function render(){
   try{ sessionStorage.setItem('lastView', view); }catch(e){}
-  if(!view || (!['chat','tasks','news','files','misc','stages','home','acts','plan','proto'].includes(view) && !view.startsWith('tab:'))) view = 'chat';
+  if(!view || (!['chat','tasks','news','files','misc','stages','home','acts','plan','proto','model'].includes(view) && !view.startsWith('tab:'))) view = 'chat';
   if(view.startsWith('tab:') && TABS.length && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
   const _tnm=document.getElementById('teamNm'); if(_tnm) _tnm.textContent = team ? team.name : '—';
@@ -3125,6 +3679,7 @@ function render(){
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='acts'){ renderActs(v); return; }
   if(view==='proto'){ renderProto(v); return; }
+  if(view==='model'){ renderModel(v); return; }
   if(view==='home'){ renderHome(v); return; }
   if(view==='chat') renderChat(v);
   if(view==='stages') renderStages(v);
