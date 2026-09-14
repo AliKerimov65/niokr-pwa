@@ -46,6 +46,19 @@ main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 .frow .fbtns{display:flex;gap:4px;flex:none}
 .fbtn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;border:1px solid var(--brd2);background:var(--card2);color:var(--acc);font-size:16px;text-decoration:none;cursor:pointer;padding:0}
 .fbtn.del{background:#fbe7e5;color:#b3261e;border-color:#ecc9c5}
+/* Протокол совещания */
+.pchip{padding:6px 12px;border-radius:16px;border:1px solid var(--brd2);background:var(--card2);font-size:12.5px;cursor:pointer;white-space:nowrap;color:var(--txt)}
+.pchip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+.pmic{width:72px;height:72px;border-radius:50%;border:0;background:var(--acc);color:#fff;font-size:30px;box-shadow:0 3px 10px rgba(122,84,16,.4);cursor:pointer;flex:none}
+.pmic.rec{background:#b3261e;animation:ppulse 1.2s infinite}
+.pmic:disabled{opacity:.4}
+@keyframes ppulse{0%,100%{box-shadow:0 0 0 0 rgba(179,38,30,.4)}50%{box-shadow:0 0 0 12px rgba(179,38,30,0)}}
+.pinterim{background:#fdf6e3;border:1px dashed var(--brd2);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--mut);min-height:36px}
+.pentry{border-left:3px solid var(--brd2);padding:6px 10px;margin-bottom:8px;background:var(--card);border-radius:0 10px 10px 0;border-top:1px solid var(--brd);border-right:1px solid var(--brd);border-bottom:1px solid var(--brd)}
+.pentry .ph{display:flex;align-items:center;gap:6px;font-size:12.5px;margin-bottom:2px}
+.pentry .pt2{font-size:14px;line-height:1.4;white-space:pre-wrap}
+.pentry .pa{display:flex;gap:2px;margin-left:auto}
+.pentry .pa button{background:none;border:0;font-size:13px;padding:2px 4px;cursor:pointer;color:var(--mut)}
 .card h3{font-size:15px;margin-bottom:4px;word-break:break-word}
 .mut{color:var(--mut);font-size:12.5px}
 .row{display:flex;gap:8px;align-items:center}
@@ -2629,9 +2642,456 @@ document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   navGo(v);
 });
 
+/* ================= ПРОТОКОЛ ВЫЕЗДНОГО СОВЕЩАНИЯ =================
+   Голосовая запись: участник представляется фамилией — система фиксирует говорящего,
+   речь переводится в текст (Web Speech API), диктовка исправляется через az-polish,
+   протокол с атрибутикой хранится в реестре (Storage protocols/<team_id>/*.json,
+   паттерн ActsStore), оформляется в Word (buildProtoDocx), выгружается в 📁 Файлы. */
+let PROTOS = null, PROTO_CUR = null, PROTO_KIND = 'entry';
+const ProtoStore = {
+  prefix(){ return 'protocols/' + tid(); },
+  async load(){
+    try{
+      const {data: list, error} = await sb.storage.from('files').list(this.prefix(), {limit: 500});
+      if(error) throw error;
+      const out = [];
+      for(const o of (list || [])){
+        if(!o.name || !o.name.endsWith('.json')) continue;
+        try{
+          const url = sb.storage.from('files').getPublicUrl(this.prefix() + '/' + o.name).data.publicUrl;
+          const r = await fetch(url + '?t=' + Date.now(), {cache: 'no-store'});
+          if(r.ok){ const j = await r.json(); if(j && j.id) out.push(j); }
+        }catch(_){}
+      }
+      out.sort((a,b) => String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
+      return out;
+    }catch(e){ console.warn('Протоколы: ошибка загрузки —', e && e.message); return []; }
+  },
+  async save(p){
+    p.updated_at = new Date().toISOString();
+    const body = new Blob([JSON.stringify(p)], {type: 'application/json'});
+    const {error} = await sb.storage.from('files').upload(this.prefix() + '/' + p.id + '.json', body, {contentType: 'application/json', upsert: true});
+    if(error) throw error;
+    return p;
+  },
+  async remove(id){
+    const {error} = await sb.storage.from('files').remove([this.prefix() + '/' + id + '.json']);
+    if(error) throw error;
+  }
+};
+async function loadProtos(){
+  if(!SYNC){ PROTOS = []; return; }
+  PROTOS = await ProtoStore.load();
+}
+function protoSave(){ if(PROTO_CUR && SYNC) ProtoStore.save(PROTO_CUR).catch(e => console.warn('Протокол не сохранён:', e && e.message)); }
+
+function protoNewForm(){
+  const azt = TABS.find(x=>x.kind==='az'); const azc = azt ? azt.config : {};
+  const d = new Date();
+  const dstr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const tstr = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  const names = TEAM_MEMBERS.map(m=>m.member);
+  $('#sheet').innerHTML = `<h2>🎤 Новый протокол совещания</h2><div class="card">
+    <input id="pnTitle" value="Выездное совещание" placeholder="Тема совещания">
+    <div style="height:8px"></div><div class="row"><input type="date" id="pnDate" value="${dstr}" style="flex:1"><input type="time" id="pnTime" value="${tstr}" style="flex:1"></div>
+    <div style="height:8px"></div><input id="pnPlace" placeholder="Место проведения" value="${esc(azc.address||'')}">
+    <div style="height:8px"></div><input id="pnObject" placeholder="Объект" value="${esc(azc.object||'')}">
+    <div style="height:8px"></div><textarea id="pnAgenda" rows="2" placeholder="Повестка (вопросы совещания)"></textarea>
+    <div style="height:10px"></div><p class="mut" style="margin-bottom:6px">Участники:</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${names.map(n=>`<label class="pchip"><input type="checkbox" class="pnPart" value="${esc(n)}" checked style="width:auto;margin-right:4px">${esc(n)}</label>`).join('')}</div>
+    <div style="height:10px"></div><div class="row"><select id="pnChair" style="flex:1"><option value="">Председательствующий…</option>${names.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+    <select id="pnSec" style="flex:1"><option value="">Секретарь…</option>${names.map(n=>`<option ${n===me.name?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+    <div style="height:12px"></div><button class="pri" style="width:100%" onclick="protoCreate()">▶ Начать совещание</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Отмена</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+function protoCreate(){
+  const parts = [...document.querySelectorAll('.pnPart:checked')].map(x=>x.value);
+  if(!parts.length) return alert('Отметьте хотя бы одного участника');
+  const num = (PROTOS||[]).reduce((m,p)=>Math.max(m,p.num||0),0) + 1;
+  PROTO_CUR = {
+    id: Date.now(), num,
+    title: $('#pnTitle').value.trim() || 'Выездное совещание',
+    date: $('#pnDate').value, time: $('#pnTime').value,
+    place: $('#pnPlace').value.trim(), object: $('#pnObject').value.trim(),
+    agenda: $('#pnAgenda').value.trim(),
+    participants: parts,
+    chair: $('#pnChair').value, secretary: $('#pnSec').value,
+    entries: [], decisions: [], speaker: null,
+    created_by: me.name, created_at: new Date().toISOString(), status: 'draft'
+  };
+  PROTOS = [PROTO_CUR].concat(PROTOS||[]);
+  protoSave();
+  $('#overlay').style.display='none';
+  render();
+}
+function protoOpen(id){ PROTO_CUR = (PROTOS||[]).find(p=>p.id===id) || null; PROTO_KIND='entry'; render(); }
+function protoClose(){ protoStopRec(); protoSave(); PROTO_CUR = null; PROTOS = null; render(); }
+async function protoDel(id){
+  if(!confirm('Удалить протокол безвозвратно?')) return;
+  try{ await ProtoStore.remove(id); }catch(e){ return alert('Не удалось удалить: ' + (e && e.message)); }
+  PROTOS = (PROTOS||[]).filter(p=>p.id!==id);
+  if(PROTO_CUR && PROTO_CUR.id===id) PROTO_CUR = null;
+  render();
+}
+function protoEditAttrs(){
+  const p = PROTO_CUR; if(!p) return;
+  const names = TEAM_MEMBERS.map(m=>m.member);
+  $('#sheet').innerHTML = `<h2>✏️ Атрибуты протокола №${p.num}</h2><div class="card">
+    <input id="peTitle" value="${esc(p.title)}" placeholder="Тема">
+    <div style="height:8px"></div><div class="row"><input type="date" id="peDate" value="${p.date}" style="flex:1"><input type="time" id="peTime" value="${p.time||''}" style="flex:1"></div>
+    <div style="height:8px"></div><input id="pePlace" placeholder="Место" value="${esc(p.place||'')}">
+    <div style="height:8px"></div><input id="peObject" placeholder="Объект" value="${esc(p.object||'')}">
+    <div style="height:8px"></div><textarea id="peAgenda" rows="2" placeholder="Повестка">${esc(p.agenda||'')}</textarea>
+    <div style="height:8px"></div><div class="row"><select id="peChair" style="flex:1"><option value="">Председательствующий…</option>${names.map(n=>`<option ${n===p.chair?'selected':''}>${esc(n)}</option>`).join('')}</select>
+    <select id="peSec" style="flex:1"><option value="">Секретарь…</option>${names.map(n=>`<option ${n===p.secretary?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+    <div style="height:12px"></div><button class="pri" style="width:100%" onclick="protoSaveAttrs()">💾 Сохранить</button>
+    <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Отмена</button>
+  </div>`;
+  $('#overlay').style.display='flex';
+}
+function protoSaveAttrs(){
+  const p = PROTO_CUR; if(!p) return;
+  p.title = $('#peTitle').value.trim() || p.title;
+  p.date = $('#peDate').value; p.time = $('#peTime').value;
+  p.place = $('#pePlace').value.trim(); p.object = $('#peObject').value.trim();
+  p.agenda = $('#peAgenda').value.trim();
+  p.chair = $('#peChair').value; p.secretary = $('#peSec').value;
+  protoSave();
+  $('#overlay').style.display='none';
+  render();
+}
+
+/* --- Идентификация говорящего по представлению (фамилия / фамилия + имя) --- */
+function protoNorm(s){ return String(s||'').toLowerCase().replace(/ё/g,'е'); }
+function protoDetectSpeaker(text){
+  const p = PROTO_CUR; if(!p) return null;
+  const names = [...new Set([...(p.participants||[]), ...TEAM_MEMBERS.map(m=>m.member)])].filter(Boolean);
+  const byKey = {};
+  names.forEach(n => {
+    const parts = n.trim().split(/\s+/);
+    if(parts[0]) byKey[protoNorm(parts[0])] = n;
+    if(parts.length > 1) byKey[protoNorm(parts.slice(0,2).join(' '))] = n;
+  });
+  const rawWords = String(text).trim().split(/\s+/);
+  const normWords = rawWords.map(w => protoNorm(w).replace(/^[^а-яa-z0-9]+|[^а-яa-z0-9.]+$/gi,''));
+  let wi = 0;
+  while(wi < normWords.length && ['это','говорит','слово','так','докладывает','выступает'].includes(normWords[wi])) wi++;
+  for(const len of [2,1]){
+    if(wi+len > normWords.length) continue;
+    const key = normWords.slice(wi, wi+len).join(' ');
+    if(byKey[key]) return {name: byKey[key], rest: rawWords.slice(wi+len).join(' ').replace(/^[\s,:\-.—–]+/,'').trim()};
+  }
+  return null;
+}
+function protoHandleTranscript(text){
+  const p = PROTO_CUR; if(!p || !text || !text.trim()) return;
+  let t = text.trim();
+  const det = protoDetectSpeaker(t);
+  let speaker = p.speaker || me.name;
+  if(det){
+    speaker = det.name;
+    if(!p.participants.includes(det.name)) p.participants.push(det.name);
+    p.speaker = det.name;
+    t = det.rest;
+    if(!t){ protoSave(); if(view==='proto') render(); return; } /* участник только представился */
+  }
+  const item = {speaker, text: t, t: now().split(' ')[1] || '', raw: true};
+  const kind = PROTO_KIND === 'decision' ? 'decision' : 'entry';
+  (kind === 'decision' ? p.decisions : p.entries).push(item);
+  protoSave(); if(view==='proto') render();
+  protoPolishItem((kind === 'decision' ? p.decisions : p.entries).length - 1, kind);
+}
+function protoSetSpeaker(n){ if(PROTO_CUR){ PROTO_CUR.speaker = n; render(); } }
+function protoSetKind(k){ PROTO_KIND = k; render(); }
+function protoManualAdd(){
+  const inp = document.getElementById('pManual'); if(!inp) return;
+  const t = inp.value.trim(); if(!t) return;
+  inp.value = '';
+  protoHandleTranscript(t);
+}
+
+/* --- Исправление диктовки (серверная az-polish, при сбое — исходный текст) --- */
+async function protoPolish(text){
+  try{
+    const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/az-polish', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})
+    });
+    const j = await r.json().catch(()=>({}));
+    return (j && j.text && String(j.text).trim()) ? String(j.text).trim() : text;
+  }catch(e){ return text; }
+}
+async function protoPolishItem(i, kind){
+  const p = PROTO_CUR; if(!p) return;
+  const arr = kind==='decision' ? p.decisions : p.entries;
+  const it = arr[i]; if(!it) return;
+  const fixed = await protoPolish(it.text);
+  if(PROTO_CUR !== p) return;
+  if(fixed && fixed !== it.text) it.text = fixed;
+  it.raw = false;
+  protoSave(); if(view==='proto') render();
+}
+function protoPolishEntry(i){ protoPolishItem(i, 'entry'); }
+async function protoPolishAll(){
+  const p = PROTO_CUR; if(!p) return;
+  for(let i=0;i<p.entries.length;i++) await protoPolishItem(i,'entry');
+  for(let i=0;i<p.decisions.length;i++) await protoPolishItem(i,'decision');
+}
+
+/* --- Редактирование реплик и решений --- */
+function protoEditEntry(i){
+  const e = PROTO_CUR && PROTO_CUR.entries[i]; if(!e) return;
+  const t = prompt('Реплика (' + e.speaker + '):', e.text); if(t===null) return;
+  const nt = t.trim(); if(!nt) return;
+  e.text = nt; e.raw = false; protoSave(); render();
+}
+function protoEditDecision(i){
+  const d = PROTO_CUR && PROTO_CUR.decisions[i]; if(!d) return;
+  const t = prompt('Решение №' + (i+1) + ':', d.text); if(t===null) return;
+  const nt = t.trim(); if(!nt) return;
+  d.text = nt; protoSave(); render();
+}
+function protoDelEntry(i){ if(confirm('Удалить реплику?')){ PROTO_CUR.entries.splice(i,1); protoSave(); render(); } }
+function protoDelDecision(i){ if(confirm('Удалить решение №' + (i+1) + '?')){ PROTO_CUR.decisions.splice(i,1); protoSave(); render(); } }
+function protoToDecision(i){
+  const e = PROTO_CUR && PROTO_CUR.entries[i]; if(!e) return;
+  PROTO_CUR.entries.splice(i,1);
+  PROTO_CUR.decisions.push({speaker:e.speaker, text:e.text, t:e.t});
+  protoSave(); render();
+}
+
+/* --- Голосовая запись (Web Speech API, непрерывный режим) --- */
+let protoRec = null, protoRecOn = false;
+function protoStopRec(){ protoRecOn = false; if(protoRec){ try{ protoRec.stop(); }catch(e){} protoRec = null; } }
+function protoMicToggle(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return alert('Голосовой ввод не поддерживается браузером (используйте Chrome)');
+  if(protoRecOn){ protoStopRec(); render(); return; }
+  const rec = new SR();
+  rec.lang = 'ru-RU'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec.onresult = (e) => {
+    let interim = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if(r.isFinal) protoHandleTranscript(r[0].transcript);
+      else interim += r[0].transcript;
+    }
+    const box = document.getElementById('pInterim');
+    if(box && interim) box.textContent = '🔴 ' + interim;
+  };
+  rec.onerror = (e) => {
+    if(e && e.error === 'not-allowed'){
+      protoStopRec();
+      alert('Нет доступа к микрофону — разрешите в настройках браузера/приложения');
+      if(view==='proto') render();
+    }
+  };
+  rec.onend = () => { if(protoRecOn){ try{ rec.start(); }catch(e){} } };
+  protoRec = rec; protoRecOn = true;
+  try{ rec.start(); }catch(e){}
+  render();
+}
+
+/* --- Экран инструмента --- */
+function renderProto(v){
+  if(!SYNC){ v.innerHTML = '<h2 class="pt">🎤 Протокол совещания</h2><p class="mut">Требуется подключение к базе.</p>'; return; }
+  if(!PROTOS){
+    v.innerHTML = '<h2 class="pt">🎤 Протокол совещания</h2><p class="mut">Загрузка реестра…</p>';
+    loadProtos().then(()=>{ if(view==='proto') render(); });
+    return;
+  }
+  if(!PROTO_CUR){
+    v.innerHTML = `<h2 class="pt">🎤 Протокол совещания</h2>
+    <p class="mut" style="margin-bottom:8px">Голосовая запись выездного совещания: участник представляется фамилией — система фиксирует говорящего, переводит речь в текст, исправляет грамматику и оформляет протокол в Word.</p>
+    <button class="pri" style="width:100%;margin-bottom:10px" onclick="protoNewForm()">＋ Новый протокол</button>
+    ${(PROTOS||[]).map(p=>`<div class="frow"><div class="finf"><b>Протокол №${p.num} — ${esc(p.title)}</b><span>${_ruDate(p.date)}${p.time?', '+esc(p.time):''} · ${esc(p.place||'')} · реплик: ${(p.entries||[]).length} · ${p.status==='formed'?'оформлен':'черновик'}</span></div>
+      <div class="fbtns"><button class="fbtn" title="Открыть" onclick="protoOpen(${p.id})">✏️</button>
+      <button class="fbtn" title="Скачать Word" onclick="protoWord(${p.id})">⬇</button>
+      <button class="fbtn del" title="Удалить" onclick="protoDel(${p.id})">✖</button></div></div>`).join('') || '<p class="mut">Протоколов пока нет.</p>'}`;
+    return;
+  }
+  const p = PROTO_CUR;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  v.innerHTML = `<h2 class="pt">🎤 Протокол №${p.num} — ${esc(p.title)}</h2>
+  <div class="card" style="padding:10px 12px"><b>${_ruDate(p.date)}${p.time?', '+esc(p.time):''}</b>${p.place?' · '+esc(p.place):''}<br>
+    <span class="mut">${esc(p.object||'')}</span>${p.agenda?`<br><span class="mut">Повестка: ${esc(p.agenda)}</span>`:''}
+    <div style="height:8px"></div><button class="sec" style="padding:5px 12px;font-size:12px" onclick="protoEditAttrs()">✏️ Атрибуты</button>
+    <button class="sec" style="padding:5px 12px;font-size:12px" onclick="protoClose()">К реестру</button></div>
+  <div class="card">
+    <p class="mut" style="margin-bottom:6px">Кто говорит — нажмите на участника или просто начните реплику с фамилии («Маслов, …»):</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${p.participants.map(n=>`<button class="pchip ${p.speaker===n?'on':''}" onclick="protoSetSpeaker('${esc(n)}')">${esc(n)}</button>`).join('')}
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="pmic ${protoRecOn?'rec':''}" id="pMicBtn" onclick="protoMicToggle()" ${SR?'':'disabled'}>${protoRecOn?'⏹':'🎙'}</button>
+      <div style="flex:1;min-width:0"><div class="pinterim" id="pInterim">${protoRecOn?'🔴 Слушаю… говорите, реплики появятся ниже':'Нажмите 🎙 и говорите — каждая реплика появится ниже с именем говорящего.'}</div>
+      <div class="row" style="margin-top:6px;gap:6px">
+        <button class="sec" style="flex:1;padding:6px;font-size:12px;${PROTO_KIND==='entry'?'border-color:var(--acc);color:var(--acc);font-weight:700':''}" onclick="protoSetKind('entry')">🗣 Реплика</button>
+        <button class="sec" style="flex:1;padding:6px;font-size:12px;${PROTO_KIND==='decision'?'border-color:var(--acc);color:var(--acc);font-weight:700':''}" onclick="protoSetKind('decision')">📌 Решение</button>
+      </div></div>
+    </div>
+    ${SR?'':'<p class="mut" style="margin-top:8px">Голосовой ввод не поддерживается этим браузером — введите текст вручную ниже.</p>'}
+    <div style="height:8px"></div>
+    <div class="row"><input id="pManual" placeholder="Или введите реплику текстом…" onkeydown="if(event.key==='Enter')protoManualAdd()"><button class="pri" style="flex:none;padding:9px 14px" onclick="protoManualAdd()">＋</button></div>
+  </div>
+  ${p.entries.length?`<h3 style="margin:10px 0 6px">Выступления</h3>` + p.entries.map((e,i)=>`
+    <div class="pentry"><div class="ph"><b style="color:${avNameColor(e.speaker)}">${esc(e.speaker||'—')}</b><span class="mut">${esc(e.t||'')}</span>${e.raw?'<span class="mut" title="исходный текст, идёт исправление">⏳</span>':''}
+      <span class="pa"><button title="Исправить грамматику" onclick="protoPolishEntry(${i})">✨</button><button title="Редактировать" onclick="protoEditEntry(${i})">✏️</button><button title="Перенести в решения" onclick="protoToDecision(${i})">📌</button><button title="Удалить" onclick="protoDelEntry(${i})">✖</button></span></div>
+      <div class="pt2">${esc(e.text)}</div></div>`).join(''):''}
+  ${p.decisions.length?`<h3 style="margin:10px 0 6px">📌 Решения</h3>` + p.decisions.map((d,i)=>`
+    <div class="pentry" style="border-left-color:var(--ok)"><div class="ph"><b>№${i+1}</b>${d.speaker?`<span style="color:${avNameColor(d.speaker)}">${esc(d.speaker)}</span>`:''}<span class="mut">${esc(d.t||'')}</span>
+      <span class="pa"><button title="Редактировать" onclick="protoEditDecision(${i})">✏️</button><button title="Удалить" onclick="protoDelDecision(${i})">✖</button></span></div>
+      <div class="pt2">${esc(d.text)}</div></div>`).join(''):''}
+  <div style="height:10px"></div>
+  <div class="row"><button class="sec" style="flex:1" onclick="protoPolishAll()">✨ Исправить всё</button>
+  <button class="pri" style="flex:1" onclick="protoForm()">📄 Сформировать</button></div>
+  <div style="height:14px"></div>`;
+}
+
+/* --- Формирование: предпросмотр, Word, выгрузка в Файлы --- */
+function protoForm(){
+  const p = PROTO_CUR; if(!p) return;
+  if(!p.entries.length && !p.decisions.length) return alert('Пока нет ни одной реплики — продиктуйте или добавьте текстом.');
+  p.status = 'formed'; protoSave();
+  $('#sheet').innerHTML = `<h2>📄 Протокол №${p.num} сформирован</h2>
+  <div class="card" style="font-size:13.5px">
+    <b>${esc(p.title)}</b><br>${_ruDate(p.date, true)}${p.time?', '+esc(p.time):''}${p.place?'<br>Место: '+esc(p.place):''}${p.object?'<br>Объект: '+esc(p.object):''}
+    <br>Присутствовали: ${esc(p.participants.join(', '))}
+    ${p.agenda?'<br>Повестка: '+esc(p.agenda):''}
+    <hr style="border:0;border-top:1px solid var(--brd);margin:8px 0">
+    ${p.entries.map(e=>`<p style="margin-bottom:6px"><b>${esc(e.speaker)}:</b> ${esc(e.text)}</p>`).join('')||'<p class="mut">Реплик нет.</p>'}
+    ${p.decisions.length?'<b>Решили:</b>'+p.decisions.map((d,i)=>`<p style="margin-bottom:4px">${i+1}. ${esc(d.text)}${d.speaker?' ('+esc(d.speaker)+')':''}</p>`).join(''):''}
+  </div>
+  <button class="pri" style="width:100%" onclick="protoWord(${p.id})">💾 Скачать Word</button>
+  <div style="height:8px"></div><button class="sec" style="width:100%" onclick="protoToFiles(${p.id})">📁 Сохранить в Файлы команды</button>
+  <div style="height:8px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Продолжить редактирование</button>`;
+  $('#overlay').style.display='flex';
+}
+function buildProtoDocx(p){
+  const azt = TABS.find(x=>x.kind==='az'); const azc = azt ? azt.config : {};
+  const body = [];
+  body.push(_wp([{t: 'П Р О Т О К О Л  № ' + p.num, b: true, sz: 28}], {align: 'center', after: 60}));
+  body.push(_wp([{t: p.title || 'выездного совещания', b: true, sz: 24}], {align: 'center', after: 200}));
+  body.push(_wp([{t: 'Дата и время: ', b: true}, {t: _ruDate(p.date, true) + (p.time ? ', ' + p.time : '')}], {after: 60}));
+  if(p.place) body.push(_wp([{t: 'Место проведения: ', b: true}, {t: p.place}], {after: 60}));
+  if(p.object) body.push(_wp([{t: 'Объект: ', b: true}, {t: p.object}], {after: 60}));
+  if(azc.project_code) body.push(_wp([{t: 'Проектная документация: ', b: true}, {t: azc.project_code}], {after: 60}));
+  body.push(_wp([{t: 'Присутствовали (' + (p.participants||[]).length + '): ', b: true}, {t: (p.participants||[]).join(', ')}], {after: 60}));
+  if(p.chair) body.push(_wp([{t: 'Председательствующий: ', b: true}, {t: p.chair}], {after: 60}));
+  if(p.secretary) body.push(_wp([{t: 'Секретарь: ', b: true}, {t: p.secretary}], {after: 60}));
+  body.push(_wp('', {after: 120}));
+  if(p.agenda){
+    body.push(_wp([{t: 'П О В Е С Т К А', b: true}], {align: 'center', after: 80}));
+    body.push(_wp(p.agenda, {align: 'both', after: 200}));
+  }
+  body.push(_wp([{t: 'СЛУШАЛИ / ВЫСТУПИЛИ:', b: true}], {after: 100}));
+  (p.entries||[]).forEach(e => body.push(_wp([{t: (e.speaker || '—') + ': ', b: true}, {t: e.text}], {align: 'both', after: 100, ind: 283})));
+  if(!(p.entries||[]).length) body.push(_wp('—', {after: 100}));
+  if((p.decisions||[]).length){
+    body.push(_wp([{t: 'Р Е Ш И Л И:', b: true}], {align: 'center', after: 100}));
+    p.decisions.forEach((d, i) => body.push(_wp([{t: (i+1) + '. ', b: true}, {t: d.text + (d.speaker ? ' (' + d.speaker + ')' : '')}], {align: 'both', after: 100, ind: 283})));
+  }
+  body.push(_wp('', {after: 360}));
+  const sigHead = [_wp([{t: 'Должность', b: true, sz: 22}], {align: 'center', after: 40}),
+                   _wp([{t: 'Подпись', b: true, sz: 22}], {align: 'center', after: 40}),
+                   _wp([{t: 'Ф.И.О.', b: true, sz: 22}], {align: 'center', after: 40})];
+  const sigRow = (role, fio) => [_wp([{t: role, sz: 22}], {after: 40}), _wp([{t: '', sz: 22}], {after: 40}), _wp([{t: fio || '', sz: 22}], {after: 40})];
+  body.push(_wtbl([sigHead, sigRow('Председательствующий', p.chair), sigRow('Секретарь', p.secretary || p.created_by)], [4400, 1800, 3100]));
+  body.push(_wp([{t: 'Сформировано в системе «НИОКР Команда» — голосовая запись с автоматической идентификацией говорящего и исправлением диктовки.', i: true, sz: 18}], {align: 'both', after: 0}));
+  const enc = new TextEncoder();
+  const nowIso = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    body.join('') +
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="850" w:bottom="1134" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>' +
+    '</w:body></w:document>';
+  const stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>' +
+    '<w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+  const ctXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
+    '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>';
+  const relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+    '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>';
+  const docRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+  const coreXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
+    'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+    '<dc:title>' + _xesc('Протокол №' + p.num + ' — ' + (p.title || '')) + '</dc:title><dc:creator>НИОКР Команда</dc:creator>' +
+    '<dcterms:created xsi:type="dcterms:W3CDTF">' + nowIso + '</dcterms:created>' +
+    '<dcterms:modified xsi:type="dcterms:W3CDTF">' + nowIso + '</dcterms:modified></cp:coreProperties>';
+  const appXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>НИОКР Команда</Application></Properties>';
+  return _zipStore([
+    {name: '[Content_Types].xml', data: enc.encode(ctXml)},
+    {name: '_rels/.rels', data: enc.encode(relsXml)},
+    {name: 'docProps/core.xml', data: enc.encode(coreXml)},
+    {name: 'docProps/app.xml', data: enc.encode(appXml)},
+    {name: 'word/document.xml', data: enc.encode(documentXml)},
+    {name: 'word/styles.xml', data: enc.encode(stylesXml)},
+    {name: 'word/_rels/document.xml.rels', data: enc.encode(docRelsXml)}
+  ]);
+}
+function protoWord(id){
+  const p = (PROTO_CUR && PROTO_CUR.id===id) ? PROTO_CUR : (PROTOS||[]).find(x=>x.id===id);
+  if(!p) return;
+  let bytes;
+  try{ bytes = buildProtoDocx(p); }
+  catch(e){ return alert('Не удалось сформировать Word-файл: ' + (e.message || e)); }
+  const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const fname = ('Протокол_' + p.num + '_' + (p.date || '')).replace(/[\\/:*?"<>|\s]+/g, '_') + '.docx';
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement('a');
+  el.href = url; el.download = fname;
+  document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+async function protoToFiles(id){
+  const p = (PROTO_CUR && PROTO_CUR.id===id) ? PROTO_CUR : (PROTOS||[]).find(x=>x.id===id);
+  if(!p || !SYNC) return;
+  let bytes;
+  try{ bytes = buildProtoDocx(p); }
+  catch(e){ return alert('Не удалось сформировать Word-файл: ' + (e.message || e)); }
+  const fname = 'Протокол совещания №' + p.num + ' от ' + _ruDate(p.date) + '.docx';
+  const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const teamId = tid(), chatId = cid;
+  const path = teamId + '/' + chatId + '/' + Date.now() + '_' + fname.replace(/[^\w.\-]+/g, '_');
+  try{
+    await new Promise((res, rej) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', SUPABASE_URL + '/storage/v1/object/files/' + path.split('/').map(encodeURIComponent).join('/'));
+      xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Authorization', 'Bearer ' + SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Content-Type', blob.type);
+      xhr.setRequestHeader('x-upsert', 'true');
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? res() : rej(new Error('HTTP ' + xhr.status));
+      xhr.onerror = () => rej(new Error('сеть недоступна'));
+      xhr.send(blob);
+    });
+    const {data: pub} = sb.storage.from('files').getPublicUrl(path);
+    const ins = await sb.from('documents').insert({team_id: teamId, name: fname, size: (blob.size/1024).toFixed(1)+' КБ', url: pub.publicUrl, author: me.name});
+    if(ins.error) throw ins.error;
+    alert('Протокол сохранён в разделе 📁 Файлы');
+    if(view==='files') loadDocs();
+  }catch(e){ alert('Не удалось сохранить в Файлы: ' + (e.message || e)); }
+}
+
 function render(){
   try{ sessionStorage.setItem('lastView', view); }catch(e){}
-  if(!view || (!['chat','tasks','news','files','misc','stages','home','acts','plan'].includes(view) && !view.startsWith('tab:'))) view = 'chat';
+  if(!view || (!['chat','tasks','news','files','misc','stages','home','acts','plan','proto'].includes(view) && !view.startsWith('tab:'))) view = 'chat';
   if(view.startsWith('tab:') && TABS.length && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
   $('#who').textContent = me ? me.name.split(' ')[0] : '';
   const _tnm=document.getElementById('teamNm'); if(_tnm) _tnm.textContent = team ? team.name : '—';
@@ -2658,6 +3118,7 @@ function render(){
   }
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='acts'){ renderActs(v); return; }
+  if(view==='proto'){ renderProto(v); return; }
   if(view==='home'){ renderHome(v); return; }
   if(view==='chat') renderChat(v);
   if(view==='stages') renderStages(v);
@@ -3157,6 +3618,9 @@ function renderMisc(v){
   const isOwner = team && team.is_owner;
   const others = MEMBERS.filter(m => !TEAM_MEMBERS.find(t => t.member === m.name));
   v.innerHTML = `<h2 class="pt">Разное</h2>
+  <div class="card"><h3>🎤 Протокол совещания</h3>
+<div class="sec" style="font-size:12.5px;line-height:1.45">Диктовка протокола выездного совещания: распознавание речи, определение говорящего по представлению, автоисправление, выгрузка DOCX.</div>
+<button class="pri" style="width:100%;margin-top:8px" onclick="navGo('proto')">Открыть инструмент</button></div>
   <div class="card"><h3>Участник</h3><p class="mut" style="margin:4px 0 10px">${esc(me.name)} · ${esc(me.role||'')}</p>
     <button class="sec" style="width:100%" onclick="switchUser()">👤 Сменить участника</button></div>
   <div class="card"><h3>Состав команды «${esc(team?team.name:'—')}»</h3>
