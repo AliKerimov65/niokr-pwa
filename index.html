@@ -81,6 +81,13 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 .msg .qte b{color:#5f3f0a}
 .msg.me .qte{border-color:#ffe9b8;background:rgba(255,255,255,.14);color:rgba(255,255,255,.85)}
 .msg.me .qte b{color:#fff !important}
+.msg .ansd{display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;margin-top:5px;padding-top:5px;border-top:1px dashed rgba(31,25,14,.15);font-size:10.5px;color:var(--mut);line-height:1.3}
+.msg .ansd .aic{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:#e6f4ec;color:#1e7a43;font-size:9px;font-weight:800;flex:none}
+.msg .ansd .an{font-weight:700;cursor:pointer;border-bottom:1px dotted currentColor}
+.msg .ansd .anm{font-weight:700}
+.msg.me .ansd{border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.85)}
+.msg.me .ansd .aic{background:rgba(255,255,255,.25);color:#fff}
+.msg.me .ansd .an{color:#fff}
 .mention{background:#ffe3a1;color:#5f3f0a;border-radius:5px;padding:0 4px;font-weight:700;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .mention.me{background:var(--acc);color:#fff}
 .msg.me .mention{background:rgba(255,255,255,.25);color:#fff}
@@ -2629,6 +2636,7 @@ const teamIds = () => TEAM_MEMBERS.map(m => m.member);
 
 /* ---------- ЧАТ ---------- */
 let REPLY = null;
+let ANSWERED = {}; /* id сообщения -> [{id ответа, автор}]: пометка «Отвечено» */
 function parseReply(x){
   const m = /^↩(\{[^\n]*\})\n?([\s\S]*)$/.exec(String(x||''));
   if(!m) return {rp:null, text:String(x||'')};
@@ -2692,6 +2700,9 @@ function msgHTML(m, i, grp){
   const isMe = m.n===me.name;
   const tome = !isMe && mentionsMe(pr.text);
   const qte = pr.rp ? `<div class="qte" onclick="jumpMsg(${pr.rp.i||0})" title="Перейти к сообщению"><b ${isMe?'':`style="color:${avNameColor(pr.rp.a)}"`}>${esc(pr.rp.a||'')}</b><br>${linkify(pr.rp.t||'')}</div>` : '';
+  const ansRaw = m.id ? (ANSWERED[m.id]||[]) : [];
+  const seenA = {}; const ans = ansRaw.filter(r => seenA[r.n] ? false : (seenA[r.n]=true));
+  const ansd = ans.length ? `<div class="ansd"><span class="aic">✓</span>Отвечено:${ans.slice(0,3).map(r=>`<span class="an" onclick="jumpMsg(${r.id||0})" title="Перейти к ответу" ${isMe?'':`style="color:${avNameColor(r.n)}"`}>${esc(r.n)}</span>`).join('')}${ans.length>3?`<span class="anm">+${ans.length-3}</span>`:''}</div>` : '';
   const tm = String(m.t||'').split(' ')[1] || m.t || '';
   return `<div class="mwrap ${isMe?'me':''} ${grp?'grp':''}">
     <div class="mav ${grp?'sp':''}" style="background:${avGrad(m.n)}" title="${esc(m.n)}">${esc(String(m.n||'?').trim().charAt(0).toUpperCase())}</div>
@@ -2701,6 +2712,7 @@ function msgHTML(m, i, grp){
       ${qte}
       ${pr.text?`<div class="bd">${mentionify(linkify(pr.text))}</div>`:''}
       ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>`) : ''}
+      ${ansd}
       <div class="t">${tm}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div>
     </div></div>`;
 }
@@ -2725,6 +2737,8 @@ function renderChat(v){
   }
   const msgs = SYNC ? rMsgs : store.get('chat_'+(team?team.id:'x')+'_'+chan, []);
   window._chatList = msgs;
+  ANSWERED = {};
+  msgs.forEach(m => { const pr = parseReply(m.x); if(pr.rp && pr.rp.i) (ANSWERED[pr.rp.i] = ANSWERED[pr.rp.i] || []).push({id:m.id||0, n:m.n}); });
   let html = '', prev = null;
   msgs.forEach((m, i) => {
     const ds = String(m.t||'').split(' ')[0];
