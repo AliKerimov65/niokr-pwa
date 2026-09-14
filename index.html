@@ -2666,43 +2666,96 @@ function renderFiles(v){
   v.innerHTML = `<h2 class="pt">Документы команды</h2>
   <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
   <button class="pri" id="upBtn" style="width:100%" onclick="addFile()">Загрузить</button>
-  <p class="mut" style="font-size:11.5px;margin-top:6px">Лимит хранилища — 48 МБ на файл. Крупные PDF загружаются по мобильной сети несколько минут — дождитесь «✅ Загружено».</p></div>
+  <p class="mut" style="font-size:11.5px;margin-top:6px">Лимит хранилища — 48 МБ на файл. Загрузка идёт в фоне: индикатор внизу экрана покажет процент и оставшееся время — можно переходить в другие окна, загрузка не прервётся.</p></div>
   ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
   <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#7a5410;font-size:22px">⬇</a>
   <button class="dng" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
+/* ---------- ФОНОВАЯ ЗАГРУЗКА ФАЙЛОВ: XHR с прогрессом и обратным отсчётом.
+   Индикатор живёт вне <main> — переходы по окнам загрузку НЕ прерывают. ---------- */
+const UPLOADS = []; // {name,size,pct,eta,state:'up'|'ok'|'err',msg,teamId,t0,tEnd}
+function updUploadPill(){
+  let pill = document.getElementById('upPill');
+  const act = UPLOADS.filter(x => x.state === 'up');
+  const recent = UPLOADS[UPLOADS.length - 1];
+  if(!recent || (!act.length && Date.now() - (recent.tEnd || 0) > 6000)){
+    if(pill) pill.remove();
+    return;
+  }
+  if(!pill){
+    pill = document.createElement('div');
+    pill.id = 'upPill';
+    pill.style.cssText = 'position:fixed;left:12px;right:12px;bottom:66px;z-index:40;background:#241a0e;color:#e9dfc8;border-radius:12px;padding:10px 14px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.4);border:1px solid #4a3a1f';
+    pill.onclick = () => { if(!UPLOADS.some(x => x.state === 'up')){ const p = document.getElementById('upPill'); if(p) p.remove(); } };
+    document.body.appendChild(pill);
+  }
+  const u = act.length ? act[act.length - 1] : recent;
+  let html;
+  if(u.state === 'up'){
+    const pctTxt = u.pct != null ? (' ' + Math.round(u.pct * 100) + '%') : '';
+    const etaTxt = u.eta != null ? (' · осталось ≈' + (u.eta > 90 ? Math.ceil(u.eta / 60) + ' мин' : Math.ceil(u.eta) + ' с')) : ' · расчёт…';
+    html = '⏳ ' + esc(u.name) + pctTxt + etaTxt + (act.length > 1 ? ' · ещё ' + (act.length - 1) : '') +
+      '<div style="height:4px;background:#4a3a1f;border-radius:2px;margin-top:6px"><div style="height:4px;background:#d9b96a;border-radius:2px;width:' + Math.round((u.pct || 0) * 100) + '%;transition:width .3s"></div></div>';
+  } else if(u.state === 'ok'){
+    html = '✅ «' + esc(u.name) + '» загружено — можно продолжать работу';
+  } else {
+    html = '⚠ Ошибка загрузки «' + esc(u.name) + '»: ' + esc(u.msg || '') + ' (нажмите, чтобы скрыть)';
+  }
+  pill.innerHTML = html;
+}
+setInterval(updUploadPill, 400);
+window.addEventListener('beforeunload', e => { if(UPLOADS.some(x => x.state === 'up')){ e.preventDefault(); e.returnValue = ''; } });
+
 async function addFile(){
   const inp = $('#projFile');
   const f = inp && inp.files[0];
   if(!f) return alert('Сначала выберите файл');
-  const btn = $('#upBtn');
   if(f.size > 48*1024*1024){
     return alert('Файл слишком большой: ' + (f.size/1048576).toFixed(1) + ' МБ. Лимит хранилища — 48 МБ. Сожмите PDF или разбейте документ на части.');
   }
-  if(SYNC){
-    const t0 = Date.now();
-    if(btn){ btn.disabled = true; btn.textContent = '⏳ Загрузка… 0 с'; }
-    const tick = setInterval(() => { if(btn) btn.textContent = '⏳ Загрузка… ' + Math.round((Date.now()-t0)/1000) + ' с'; }, 500);
-    try{
-      const path = tid() + '/' + cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
-      const up = await sb.storage.from('files').upload(path, f);
-      if(up.error) throw up.error;
-      const {data:u} = sb.storage.from('files').getPublicUrl(path);
-      const ins = await sb.from('documents').insert({team_id:tid(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', url:u.publicUrl, author:me.name});
-      if(ins.error) throw ins.error;
-      clearInterval(tick);
-      if(btn) btn.textContent = '✅ Загружено';
-      setTimeout(loadDocs, 600);
-    }catch(err){
-      clearInterval(tick);
-      if(btn){ btn.disabled = false; btn.textContent = 'Загрузить'; }
-      alert('Ошибка загрузки: ' + ((err && err.message) || err));
-    }
-  } else {
+  if(!SYNC){
     const r = new FileReader();
     r.onload = () => { const fs = store.get('files_'+(team?team.id:'x'), []); fs.unshift({id:Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', created_at:new Date().toISOString(), d:r.result}); store.set('files_'+(team?team.id:'x'), fs); render(); };
     r.readAsDataURL(f);
+    return;
   }
+  // ФОНОВАЯ ЗАГРУЗКА: форма сразу свободна, можно уходить в любое окно — индикатор внизу экрана
+  if(inp) inp.value = '';
+  const teamId = tid(), chatId = cid; // команду и чат фиксируем на момент старта
+  const u = {name: f.name, size: f.size, pct: null, eta: null, state: 'up', teamId, t0: Date.now()};
+  UPLOADS.push(u);
+  updUploadPill();
+  try{
+    const path = teamId + '/' + chatId + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
+    await new Promise((res, rej) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', SUPABASE_URL + '/storage/v1/object/files/' + path.split('/').map(encodeURIComponent).join('/'));
+      xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Authorization', 'Bearer ' + SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
+      xhr.setRequestHeader('x-upsert', 'true');
+      xhr.upload.onprogress = e => {
+        if(!e.lengthComputable) return;
+        u.pct = e.loaded / e.total;
+        const el = (Date.now() - u.t0) / 1000;
+        if(el > 1.5 && e.loaded > 0){
+          const speed = e.loaded / el; // байт/с
+          u.eta = Math.max(0, (e.total - e.loaded) / speed);
+        }
+      };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? res() : rej(new Error('HTTP ' + xhr.status + ': ' + (xhr.responseText || '').slice(0, 160)));
+      xhr.onerror = () => rej(new Error('сеть недоступна'));
+      xhr.send(f);
+    });
+    const {data: pub} = sb.storage.from('files').getPublicUrl(path);
+    const ins = await sb.from('documents').insert({team_id: teamId, name: f.name, size: (f.size/1024).toFixed(1)+' КБ', url: pub.publicUrl, author: me.name});
+    if(ins.error) throw ins.error;
+    u.state = 'ok'; u.tEnd = Date.now(); u.pct = 1;
+    if(view === 'files' && tid() === teamId) loadDocs();
+  }catch(err){
+    u.state = 'err'; u.tEnd = Date.now(); u.msg = (err && err.message) || String(err);
+  }
+  updUploadPill();
 }
 async function delFile(id){
   if(SYNC){ await sb.from('documents').delete().eq('id',id); loadDocs(); }
