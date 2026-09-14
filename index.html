@@ -223,7 +223,7 @@ let team = store.get('team', null);
 let view = 'chat', chan = store.get('chan', 'Общий'), dmWith = null;
 let MEMBERS = [], MYTEAMS = [], TEAM_MEMBERS = [];
 let rMsgs = [], rTasks = null, rNews = null, rDocs = null, STAGES = null;
-let PLAN_ROWS = [];
+let PLAN_ROWS = [], PLAN_ROWS_TAB = null;
 let READS = [], ONLINE = {}, TABS = [], DM_PARTNERS = [];
 let AUTO = store.get('auto', true), autoTimer = null;
 let AGENT_THREADS = [], AGENT_MSGS = [], curThread = null, DEV_TASKS = [], QA_ITEMS = [];
@@ -586,7 +586,7 @@ async function teamSheet(){
   $('#overlay').style.display = 'flex';
 }
 function switchTeam(id){ team = MYTEAMS.find(t => t.id === id); store.set('team', team); $('#overlay').style.display='none'; reloadAll(); }
-function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; AZ_ENTRIES=null; start(); }
+function reloadAll(){ rTasks=null; rNews=null; rDocs=null; STAGES=null; rMsgs=[]; dmWith=null; TABS=[]; AZ_ENTRIES=null; PLAN_ROWS=[]; PLAN_ROWS_TAB=null; start(); }
 async function teamMenuToggle(ev){
   ev.stopPropagation();
   if(!SYNC) return;
@@ -850,11 +850,12 @@ async function ensurePlanTab(){
 
 /* ---------- Технический план реализации (интерактивный + консультации) ---------- */
 async function renderPlan(v, t){
+  const entryView = view; // защита от гонки: перерендер только если пользователь всё ещё на этой вкладке
   const c = t.config;
   const azT0 = TABS.find(x => x.kind === 'az');
   const azCode = (azT0 && azT0.config.project_code) || '—';
-  if(!PLAN_ROWS.length) await loadPlanRows(t.id);
-  if(view !== 'plan') return; // пользователь уже ушёл с вкладки — не перезаписываем экран
+  if(PLAN_ROWS_TAB !== t.id) await loadPlanRows(t.id);
+  if(view !== entryView) return; // пользователь уже ушёл с вкладки — не перезаписываем экран
   const done = store.get('plan_done_' + t.id, []);
   v.innerHTML = `<div class="row" style="margin-bottom:8px"><h2 class="pt" style="flex:1;margin:0">🗺 ${esc(t.name)}</h2>
     ${canReport()?`<button class="pri" style="padding:7px 12px" onclick="reportForm('all')">📄 Сводный отчёт</button>`:''}</div>
@@ -904,7 +905,7 @@ async function renderPlan(v, t){
 async function loadPlanRows(tabId){
   try{
     const {data, error} = await sb.from('plan_works').select('*').eq('tab_id', tabId);
-    if(!error) PLAN_ROWS = data || [];
+    if(!error){ PLAN_ROWS = data || []; PLAN_ROWS_TAB = tabId; }
   }catch(e){ /* оставляем прежнее */ }
 }
 function planRowKey(tabId, n, work){ return PLAN_ROWS.find(r => r.tab_id===tabId && r.item_n===n && r.work===work); }
@@ -2438,7 +2439,7 @@ function render(){
   if(view === 'plan'){
     const pt = TABS.find(x => x.kind === 'plan');
     if(pt){
-      if(!PLAN_ROWS.length) loadPlanRows(pt.id).then(() => { if(view === 'plan') render(); });
+      if(PLAN_ROWS_TAB !== pt.id) loadPlanRows(pt.id).then(() => { if(view === 'plan') render(); });
       renderPlan(v, pt);
     } else {
       v.innerHTML = '<p class="mut" style="padding:20px">Загрузка плана…</p>';
