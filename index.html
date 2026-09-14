@@ -2196,7 +2196,9 @@ function renderHome(v){
     <p style="font-size:12.5px;opacity:.75;margin-top:6px;line-height:1.5">Объект: ${esc(c.object || '—')}<br>Проект: ${esc(c.project_code || '—')} · Застройщик: ${esc(c.customer || '—')}</p>
     <p id="homeWx" style="font-size:12px;opacity:.85;margin-top:6px"></p>
   </div>
+  <div id="homeWxWarn"></div>
   <div id="homeStatus"><p class="mut" style="padding:6px 2px">⏳ Собираю сводку по команде…</p></div>
+  <div id="homeChart"></div>
   <div id="homeDigest"></div>
   <div id="homeMine"></div>
   <div id="homeDue"></div>
@@ -2224,6 +2226,95 @@ async function homeTask(id){
   if(!rTasks) await loadTasks();
   taskSheet(id);
 }
+/* ---------- ПРОГНОЗ ПОГОДЫ И ПРЕДУПРЕЖДЕНИЯ ДЛЯ НАРУЖНЫХ РАБОТ ---------- */
+let azWxDailyCache = null, azWxDailyTime = 0;
+async function fetchWxDaily(cfg){
+  const now = Date.now();
+  if(azWxDailyCache && now - azWxDailyTime < 1800000) return azWxDailyCache;
+  try{
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${cfg.lat||69.35}&longitude=${cfg.lon||88.2}&daily=weather_code,temperature_2m_min,temperature_2m_max,precipitation_sum,wind_speed_10m_max&timezone=Asia%2FKrasnoyarsk&forecast_days=4`);
+    const j = await r.json();
+    const d = j.daily || {};
+    const out = (d.time || []).map((t, k) => ({date: t, code: (d.weather_code||[])[k], tmin: (d.temperature_2m_min||[])[k], tmax: (d.temperature_2m_max||[])[k], precip: (d.precipitation_sum||[])[k], wind: (d.wind_speed_10m_max||[])[k]}));
+    azWxDailyCache = out; azWxDailyTime = now;
+    return out;
+  }catch(e){ return azWxDailyCache || []; }
+}
+function wxOutdoorWarnings(days){
+  const lbl = ['сегодня', 'завтра', 'послезавтра'];
+  const out = [];
+  (days || []).slice(0, 3).forEach((d, i) => {
+    const day = lbl[i] || (d.date.slice(8, 10) + '.' + d.date.slice(5, 7));
+    const ws = d.wind != null ? Math.round(d.wind / 3.6) : null; // км/ч -> м/с
+    const cand = [];
+    if(d.code === 95 || d.code === 96 || d.code === 99) cand.push({lvl: 2, txt: 'гроза — высотные и крановые работы запрещены'});
+    if(ws != null && ws >= 15) cand.push({lvl: 2, txt: 'ветер до ' + ws + ' м/с — стоп высотные и крановые работы'});
+    else if(ws != null && ws >= 10) cand.push({lvl: 1, txt: 'ветер до ' + ws + ' м/с — ограничения на высотных работах'});
+    if(d.precip != null && d.precip >= 10) cand.push({lvl: 2, txt: 'сильные осадки ' + d.precip + ' мм — наружные работы под запретом'});
+    else if(d.precip != null && d.precip >= 3) cand.push({lvl: 1, txt: 'осадки ' + d.precip + ' мм — мокрые процессы под вопросом'});
+    if(d.tmin != null && d.tmin <= -25) cand.push({lvl: 2, txt: 'мороз до ' + Math.round(d.tmin) + '° — бетонные и инъекционные работы стоп'});
+    else if(d.tmin != null && d.tmin <= -15) cand.push({lvl: 1, txt: 'мороз до ' + Math.round(d.tmin) + '° — зимние меры для бетона и смесей'});
+    if(cand.length){
+      cand.sort((a, b) => b.lvl - a.lvl);
+      out.push({day, lvl: cand[0].lvl, txt: cand[0].txt, extra: cand.length - 1});
+    }
+  });
+  return out;
+}
+
+/* ---------- ГРАФИК ГОТОВНОСТИ РАБОТ ПО НЕДЕЛЯМ (SVG, без библиотек) ---------- */
+function homeChartBuild(planTab){
+  if(!planTab) return null;
+  const total = ((planTab.config || {}).items || []).reduce((sm, x) => sm + (x.works || []).length, 0);
+  if(!total) return null;
+  const doneRows = (PLAN_ROWS || []).filter(r => r.status === 'Выполнено');
+  const now = new Date();
+  const dow = (now.getDay() + 6) % 7; // 0 = понедельник
+  const mon0 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+  const weeks = [];
+  for(let k = 7; k >= 0; k--){
+    const m = new Date(mon0.getFullYear(), mon0.getMonth(), mon0.getDate() - k * 7);
+    weeks.push({start: m, label: ('0' + m.getDate()).slice(-2) + '.' + ('0' + (m.getMonth() + 1)).slice(-2), cnt: 0});
+  }
+  const winStart = weeks[0].start;
+  let base0 = 0;
+  doneRows.forEach(r => {
+    if(!r.done_at){ base0++; return; }
+    const d = new Date(r.done_at);
+    if(d < winStart){ base0++; return; }
+    const idx = Math.floor((d - winStart) / 6048e5);
+    if(idx >= 0 && idx < 8) weeks[idx].cnt++;
+  });
+  let acc = base0;
+  const cum = weeks.map(w => { acc += w.cnt; return acc / total; });
+  return {total, doneTotal: doneRows.length, weeks, cum, thisWeek: weeks[7].cnt};
+}
+function homeChartSvg(ch){
+  const W = 340, H = 148, L = 6, R = 34, T = 12;
+  const plotW = W - L - R, plotH = 100, baseY = T + plotH;
+  const step = plotW / 8, bw = step * 0.52;
+  const maxCnt = Math.max(1, ...ch.weeks.map(w => w.cnt));
+  let bars = '', labels = '', pts = '', path = '';
+  ch.weeks.forEach((w, i) => {
+    const x = L + i * step + (step - bw) / 2;
+    const h = w.cnt / maxCnt * (plotH - 14);
+    const y = baseY - h;
+    if(w.cnt > 0){
+      bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${i === 7 ? '#7a5410' : '#d9b96a'}"/>`;
+      labels += `<text x="${(x + bw / 2).toFixed(1)}" y="${(y - 3).toFixed(1)}" font-size="8.5" text-anchor="middle" fill="#756947">${w.cnt}</text>`;
+    }
+    labels += `<text x="${(L + i * step + step / 2).toFixed(1)}" y="${baseY + 12}" font-size="8" text-anchor="middle" fill="#756947">${w.label}</text>`;
+  });
+  ch.cum.forEach((pc, i) => {
+    const x = L + i * step + step / 2, y = baseY - pc * plotH;
+    path += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    pts += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="#2e7d4f"/>`;
+    if(i === 7) pts += `<text x="${Math.min(x, W - R - 6).toFixed(1)}" y="${(y - 6).toFixed(1)}" font-size="9.5" font-weight="bold" text-anchor="middle" fill="#2e7d4f">${Math.round(pc * 100)}%</text>`;
+  });
+  const grid = [0, 0.5, 1].map(g => `<line x1="${L}" y1="${(baseY - g * plotH).toFixed(1)}" x2="${W - R}" y2="${(baseY - g * plotH).toFixed(1)}" stroke="#ddd2b8" stroke-width="0.6"${g ? ' stroke-dasharray="3 3"' : ''}/><text x="${W - R + 4}" y="${(baseY - g * plotH + 3).toFixed(1)}" font-size="8" fill="#756947">${g * 100}%</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${bars}<path d="${path}" fill="none" stroke="#2e7d4f" stroke-width="1.8"/>${pts}${labels}</svg>`;
+}
+
 async function homeDash(){
   const teamId = tid();
   const stEl = $('#homeStatus');
@@ -2264,7 +2355,7 @@ async function homeDash(){
     }catch(e){ return 0; }
   };
   const planTotal = planTab ? (planTab.config.items || []).reduce((sm, x) => sm + (x.works || []).length, 0) : 0;
-  const [tasksOpen, docsTotal, azTotal, stagesRows, actsList, myTasks, dueTasks, dueStages, planDone,
+  const [tasksOpen, docsTotal, azTotal, stagesRows, actsList, myTasks, dueTasks, dueStages, planDone, _plRows,
          newMsgs, newTasks, newAnn, newDocs, newAz] = await Promise.all([
     cntQ('tasks', q => q.neq('status', 'Выполнено')),
     cntQ('documents'),
@@ -2275,6 +2366,7 @@ async function homeDash(){
     sel('tasks', q => q.neq('status', 'Выполнено').not('deadline', 'is', null).gte('deadline', today).lte('deadline', plus7), {col: 'deadline'}, 5),
     sel('stages', q => q.neq('status', 'Выполнен').not('deadline', 'is', null).gte('deadline', today).lte('deadline', plus7), {col: 'deadline'}, 5),
     (async () => { if(!planTab) return 0; try{ const r = await sb.from('plan_works').select('id', {count:'exact', head:true}).eq('tab_id', planTab.id).eq('status', 'Выполнено'); return r.count || 0; }catch(e){ return 0; } })(),
+    (async () => { if(planTab && PLAN_ROWS_TAB !== planTab.id) await loadPlanRows(planTab.id); return 0; })(),
     prev ? cntQ('messages', q => q.is('dm', null).gt('created_at', prev)) : null,
     prev ? cntQ('tasks', q => q.gt('created_at', prev)) : null,
     prev ? cntQ('announcements', q => q.gt('created_at', prev)) : null,
@@ -2293,6 +2385,14 @@ async function homeDash(){
     <span class="badge" style="padding:6px 12px">📋 Журнал: ${azTotal} записей</span>
     <span class="badge" style="padding:6px 12px">📁 Документов: ${docsTotal}</span>
   </div>`;
+  const chEl = $('#homeChart');
+  if(chEl){
+    const chd = homeChartBuild(planTab);
+    chEl.innerHTML = chd ? `<h2 class="pt">📈 Готовность работ по неделям</h2>
+      <div class="card"><p style="font-size:13px;margin-bottom:4px">Готовность: <b style="color:var(--ok)">${Math.round(chd.doneTotal / chd.total * 100)}%</b> (${chd.doneTotal}/${chd.total} работ) · на этой неделе <b>+${chd.thisWeek}</b></p>
+      ${homeChartSvg(chd)}
+      <p class="mut" style="font-size:10.5px;margin-top:2px">▪ столбцы — работ выполнено за неделю · ▬ линия — суммарная готовность, %</p></div>` : '';
+  }
   const dig = [];
   if(newMsgs) dig.push(`💬 Сообщений в чате: +${newMsgs}`);
   if(newTasks) dig.push(`✅ Новых задач: +${newTasks}`);
@@ -2317,6 +2417,15 @@ async function homeDash(){
     fetchWeather(az.config).then(w => {
       const el = $('#homeWx');
       if(el && w && view === 'home') el.textContent = '🌡 На объекте: ' + (w.desc || '') + (w.temp !== null && w.temp !== undefined ? ', ' + w.temp + '°C' : '') + (w.precip ? ' · осадки ' + w.precip + ' мм' : '');
+    }).catch(() => {});
+    // погодные предупреждения для наружных работ (прогноз на 3 дня)
+    fetchWxDaily(az.config).then(days => {
+      const el = $('#homeWxWarn');
+      if(!el || view !== 'home' || tid() !== teamId) return;
+      const warns = wxOutdoorWarnings(days);
+      el.innerHTML = warns.length
+        ? `<div class="card" style="border-color:var(--bad)"><b style="font-size:13.5px">⚠️ Погода для наружных работ</b>${warns.map(w => `<p style="margin:4px 0 0;font-size:13px">${w.lvl === 2 ? '🔴' : '🟡'} <b>${w.day}:</b> ${esc(w.txt)}${w.extra ? ` <span class="mut" style="font-size:11px">(+${w.extra})</span>` : ''}</p>`).join('')}</div>`
+        : `<div class="card" style="border-color:var(--ok);padding:8px 12px"><p style="font-size:12.5px">🌤 На ближайшие 3 дня погодных ограничений для наружных работ нет.</p></div>`;
     }).catch(() => {});
   }
   store.set('seen_' + teamId, nowIso);
