@@ -780,15 +780,18 @@ function renderCustomTab(v){
    конфигов (пользовательские значения не трогает). Версия _tpl
    позволяет докатывать обновления шаблона на существующие команды. */
 const TEAM_TEMPLATE = {
-  version: 3,
+  version: 4,
   /* Контракт оболочки для каждой новой команды (самовосстанавливается кодом, не данными).
      Подтверждение №1 (Да): Рабочее окно включает график готовности работ по неделям и погодные
      предупреждения для наружных работ. Также в контракте: навигация со стеком и двойным «Назад»=выход;
      закрытие окон ✕/фон/Esc/свайп/Назад; Word-акты АОСР (РД-11-02-2006) из реестра; фоновая загрузка
-     файлов с обратным отсчётом. */
+     файлов с обратным отсчётом.
+     Подтверждение №2 (Да): чат оформлен как диалог команды — ответы на сообщения с цитатой и переходом
+     к оригиналу, подсветка упоминаний членов команды (фамилия/имя), пузырьки «свои справа» с аватарами. */
   shell: {root:'home', navigation:'stack+back+double-back-exit', sheetClose:['x','backdrop','esc','swipe-down','back'],
           dashboard:['summary','since-last-visit','my-tasks','due-7d','weekly-readiness-chart','weather-outdoor-warnings'],
-          actsWord:'АОСР РД-11-02-2006 из реестра', uploads:'background-xhr-eta'},
+          actsWord:'АОСР РД-11-02-2006 из реестра', uploads:'background-xhr-eta',
+          chat:['reply-quote-jump','mention-highlight','bubbles-avatars']},
   tabs: [
     {name:'Журнал авторского надзора', icon:'📋', kind:'az', pos:4,
      config:{object:'', address:'', customer:'', designer:'', contract:'', project_code:'', az_head:'', gip:'', lat:null, lon:null, works:[], act_works:[]}},
