@@ -2263,22 +2263,39 @@ function renderFiles(v){
   const fs = SYNC ? (rDocs||[]) : store.get('files_'+(team?team.id:'x'), []);
   v.innerHTML = `<h2 class="pt">Документы команды</h2>
   <div class="card"><input type="file" id="projFile"><div style="height:8px"></div>
-  <button class="pri" style="width:100%" onclick="addFile()">Загрузить</button></div>
+  <button class="pri" id="upBtn" style="width:100%" onclick="addFile()">Загрузить</button>
+  <p class="mut" style="font-size:11.5px;margin-top:6px">Лимит хранилища — 48 МБ на файл. Крупные PDF загружаются по мобильной сети несколько минут — дождитесь «✅ Загружено».</p></div>
   ${fs.map(f=>`<div class="card row"><div style="flex:1"><h3>📄 ${esc(f.name)}</h3><p class="mut">${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</p></div>
   <a href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" style="color:#7a5410;font-size:22px">⬇</a>
   <button class="dng" onclick="delFile(${f.id})">✖</button></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
 async function addFile(){
-  const f = $('#projFile').files[0]; if(!f) return;
+  const inp = $('#projFile');
+  const f = inp && inp.files[0];
+  if(!f) return alert('Сначала выберите файл');
+  const btn = $('#upBtn');
+  if(f.size > 48*1024*1024){
+    return alert('Файл слишком большой: ' + (f.size/1048576).toFixed(1) + ' МБ. Лимит хранилища — 48 МБ. Сожмите PDF или разбейте документ на части.');
+  }
   if(SYNC){
+    const t0 = Date.now();
+    if(btn){ btn.disabled = true; btn.textContent = '⏳ Загрузка… 0 с'; }
+    const tick = setInterval(() => { if(btn) btn.textContent = '⏳ Загрузка… ' + Math.round((Date.now()-t0)/1000) + ' с'; }, 500);
     try{
       const path = tid() + '/' + cid + '/' + Date.now() + '_' + f.name.replace(/[^\w.\-]+/g,'_');
       const up = await sb.storage.from('files').upload(path, f);
       if(up.error) throw up.error;
       const {data:u} = sb.storage.from('files').getPublicUrl(path);
-      await sb.from('documents').insert({team_id:tid(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', url:u.publicUrl, author:me.name});
-      loadDocs();
-    }catch(err){ alert('Ошибка загрузки: '+err.message); }
+      const ins = await sb.from('documents').insert({team_id:tid(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', url:u.publicUrl, author:me.name});
+      if(ins.error) throw ins.error;
+      clearInterval(tick);
+      if(btn) btn.textContent = '✅ Загружено';
+      setTimeout(loadDocs, 600);
+    }catch(err){
+      clearInterval(tick);
+      if(btn){ btn.disabled = false; btn.textContent = 'Загрузить'; }
+      alert('Ошибка загрузки: ' + ((err && err.message) || err));
+    }
   } else {
     const r = new FileReader();
     r.onload = () => { const fs = store.get('files_'+(team?team.id:'x'), []); fs.unshift({id:Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' КБ', created_at:new Date().toISOString(), d:r.result}); store.set('files_'+(team?team.id:'x'), fs); render(); };
