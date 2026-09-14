@@ -855,7 +855,7 @@ function renderCustomTab(v){
    конфигов (пользовательские значения не трогает). Версия _tpl
    позволяет докатывать обновления шаблона на существующие команды. */
 const TEAM_TEMPLATE = {
-  version: 6,
+  version: 7,
   /* Контракт оболочки для каждой новой команды (самовосстанавливается кодом, не данными).
      Подтверждение №1 (Да): Рабочее окно включает график готовности работ по неделям и погодные
      предупреждения для наружных работ. Также в контракте: навигация со стеком и двойным «Назад»=выход;
@@ -872,11 +872,14 @@ const TEAM_TEMPLATE = {
      Подтверждение №5 (Да): просмотр таблиц (xlsx/xls/csv) внутри приложения — кнопка 👁 в Файлах
      и у вложений чата, лист-просмотрщик с листами книги, кнопка «Скачать».
      Подтверждение №6 (Да): компактный список документов — строки вместо карточек, обрезка длинных
-     имён до двух строк, компактные кнопки действий, слитный блок загрузки. */
+     имён до двух строк, компактные кнопки действий, слитный блок загрузки.
+     Подтверждение №7 (Да): встроенный полноэкранный просмотр фото — двойной тап для увеличения,
+     сдвиг увеличенного фото, закрытие свайпом вниз/✕/Esc, кнопка «Скачать»; открывается из Файлов (👁),
+     чата, объявлений и отчётов. */
   shell: {root:'home', navigation:'stack+back+double-back-exit', sheetClose:['x','backdrop','esc','swipe-down','back'],
           dashboard:['summary','since-last-visit','my-tasks','due-7d','weekly-readiness-chart','weather-outdoor-warnings'],
           actsWord:'АОСР РД-11-02-2006 из реестра', uploads:'background-xhr-eta',
-          files:['compact-rows','inline-xlsx-viewer'],
+          files:['compact-rows','inline-xlsx-viewer','inline-photo-viewer'],
           chat:['reply-quote-jump','mention-highlight','bubbles-avatars','msg-grouping','day-separators',
                 'colored-authors','gradient-avatars','gradient-own-bubbles','reply-bar','pill-composer','msg-animation',
                 'answered-mark']},
