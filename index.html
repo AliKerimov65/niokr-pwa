@@ -550,6 +550,7 @@ async function createTeam(){
   const {data, error} = await sb.from('teams').insert({name, owner:me.name, invite_code:code}).select().single();
   if(error) return alert(error.message);
   await sb.from('team_members').insert({team_id:data.id, member:me.name, is_owner:true});
+  await ensureTeamTemplate(data.id);
   MYTEAMS = await fetchMyTeams();
   team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
   $('#overlay').style.display='none'; dmWith = null; reloadAll();
@@ -611,10 +612,11 @@ document.querySelector('.tabbar').addEventListener('click', e => {
 });
 async function loadTabs(){
   if(!SYNC || !team) return;
+  await ensureTeamTemplate(tid());
   TABS = await sbList('tabs', [['team_id', tid()]]);
   if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
   if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) { view = 'chat'; }
-  renderTabbar();
+  renderTabbar(); renderStructBar();
   if(view.startsWith('tab:') || view === 'plan') render();
 }
 function renderTabbar(){
@@ -763,16 +765,62 @@ function renderCustomTab(v){
     v.innerHTML = `<h2 class="pt">${t.icon||'📄'} ${esc(t.name)}</h2><p class="mut">Тип вкладки «${esc(t.kind)}» не поддерживается этой версией приложения. Обновите приложение: закройте полностью и откройте заново.</p>`;
 }
 
-/* ---------- Технический план: встроенная вкладда ---------- */
-const DEFAULT_PLAN = {"items":[
- {"n":1,"title":"Подготовительный этап","dur":"2 нед","works":["Составление ППР на укрепление грунтов","Ограждение зоны работ, организация бытового городка","Геодезическая съёмка и закрепление контрольных точек на трубе и вокруг","Вводный инструктаж, допуски к работам"],"docs":"Проект (раздел «Общие положения»), СП 48.13330.2019"},
- {"n":2,"title":"Бурение инъекционных скважин","dur":"по графику","works":["Разбивка скважин по проектной схеме","Бурение скважин заданного диаметра и глубины","Установка обсадных труб (при необходимости)","Регистрация фактических координат и глубин"],"docs":"Проект (раздел конструктивных решений), СП 45.13330.2017"},
- {"n":3,"title":"Приготовление инъекционных смесей","dur":"постоянно","works":["Приёмка и входной контроль цемента (сертификаты, паспорта)","Приготовление смесей по проектным параметрам (водоцементное отношение)","Лабораторный контроль консистенции и сроков схватывания"],"docs":"Проект (раздел технологии работ), СП 70.13330.2012"},
- {"n":4,"title":"Инъектирование (укрепление грунтов)","dur":"по графику","works":["Инъектирование по режимам проекта (давление, расход, объёмы)","Поэтапный контроль показателей (давление, расход смеси)","Ведение журнала инъектирования по скважинам","Анализ фактических объёмов против проектных"],"docs":"Проект (ключевой раздел), СП 45.13330.2017 п. 11"},
- {"n":5,"title":"Контроль качества и испытания","dur":"по мере работ","works":["Контрольные скважины/опытные участки по проекту","Оценка фактической прочности укреплённого массива","АОСР на скрытые работы до закрытия","Оформление исполнительной документации"],"docs":"Проект, СП 70.13330.2012 п. 4.5 (АОСР)"},
- {"n":6,"title":"Мониторинг дымовой трубы","dur":"весь период + эксплуатация","works":["Регулярные геодезические наблюдения за креном/осадками","Сравнение с проектными допусками","Учёт температурного режима грунтов","Отчёты по результатам циклов наблюдений"],"docs":"Проект (раздел мониторинга), журнал АН"},
- {"n":7,"title":"Авторский надзор и приёмка","dur":"весь период","works":["Регулярные обходы с записями в журнале авторского надзора","Предписания по несоответствиям с контролем исполнения","Участие в освидетельствовании скрытых работ","Заключение о соответствии выполненных работ проекту"],"docs":"СП 246.1325800.2023, ГрК РФ ст. 55.24, ПП РФ № 963"}
-]};
+/* ---------- БАЗОВЫЙ ШАБЛОН КОМАНДЫ (единый источник истины) ----------
+   Корневая концепция оболочки: любая новая команда создаётся ЧИСТОЙ,
+   строго по этому шаблону, без наследования данных других команд.
+   ensureTeamTemplate() идемпотентно приводит любую команду к шаблону:
+   создаёт недостающие общие вкладки и дополняет недостающие ключи
+   конфигов (пользовательские значения не трогает). Версия _tpl
+   позволяет докатывать обновления шаблона на существующие команды. */
+const TEAM_TEMPLATE = {
+  version: 1,
+  tabs: [
+    {name:'Журнал авторского надзора', icon:'📋', kind:'az', pos:4,
+     config:{object:'', address:'', customer:'', designer:'', contract:'', project_code:'', az_head:'', gip:'', lat:null, lon:null, works:[], act_works:[]}},
+    {name:'Технический план реализации', icon:'🗺', kind:'plan', pos:5,
+     config:{items:[]}}
+  ]
+};
+function tplDefaults(kind){
+  const t = TEAM_TEMPLATE.tabs.find(x => x.kind === kind);
+  return t ? JSON.parse(JSON.stringify(t.config)) : null;
+}
+const _tplLocks = {};
+async function ensureTeamTemplate(teamId){
+  if(!SYNC || !teamId) return;
+  if(_tplLocks[teamId]) return _tplLocks[teamId];
+  _tplLocks[teamId] = (async () => {
+    try{
+      const {data: rows} = await sb.from('tabs').select('*').eq('team_id', teamId);
+      const existing = rows || [];
+      for(const tt of TEAM_TEMPLATE.tabs){
+        let cur = existing.find(r => r.kind === tt.kind);
+        if(!cur){
+          // нет общей вкладки — создаём чистую по шаблону
+          const ins = await sb.from('tabs').insert({team_id: teamId, name: tt.name, icon: tt.icon, kind: tt.kind,
+            config: JSON.parse(JSON.stringify(tt.config)), pos: tt.pos, created_by: 'Шаблон'}).select().single();
+          if(ins.data) existing.push(ins.data);
+          else {
+            // гонка/уникальный индекс — подхватываем созданную параллельно
+            const {data:d} = await sb.from('tabs').select('*').eq('team_id', teamId).eq('kind', tt.kind).maybeSingle();
+            if(d) existing.push(d);
+          }
+        } else {
+          // автокоррекция общих элементов: дополняем только ОТСУТСТВУЮЩИЕ ключи
+          const c = cur.config || {};
+          let changed = false;
+          for(const k of Object.keys(tt.config)){
+            if(!(k in c)){ c[k] = JSON.parse(JSON.stringify(tt.config[k])); changed = true; }
+          }
+          if((c._tpl || 0) !== TEAM_TEMPLATE.version){ c._tpl = TEAM_TEMPLATE.version; changed = true; }
+          if(changed) await sb.from('tabs').update({config: c}).eq('id', cur.id);
+        }
+      }
+    }catch(e){ /* шаблон — best effort, приложение не блокируем */ }
+    finally{ delete _tplLocks[teamId]; }
+  })();
+  return _tplLocks[teamId];
+}
 let planTabLock = null, appStarted = false;
 async function ensurePlanTab(){
   let t = TABS.find(x => x.kind==='plan');
@@ -780,7 +828,7 @@ async function ensurePlanTab(){
   if(planTabLock) return planTabLock;
   planTabLock = (async () => {
     try{
-      const ins = await sb.from('tabs').insert({team_id: tid(), name:'Технический план реализации', icon:'🗺', kind:'plan', config: DEFAULT_PLAN, pos: 5, created_by:'Система'}).select().single();
+      const ins = await sb.from('tabs').insert({team_id: tid(), name:'Технический план реализации', icon:'🗺', kind:'plan', config: tplDefaults('plan'), pos: 5, created_by:'Шаблон'}).select().single();
       if(ins.data){ TABS.push(ins.data); renderTabbar(); renderStructBar(); return ins.data; }
       // конфликт уникального индекса — подхватываем существующую
       const { data } = await sb.from('tabs').select('*').eq('team_id', tid()).eq('kind','plan').maybeSingle();
@@ -794,11 +842,14 @@ async function ensurePlanTab(){
 /* ---------- Технический план реализации (интерактивный + консультации) ---------- */
 async function renderPlan(v, t){
   const c = t.config;
+  const azT0 = TABS.find(x => x.kind === 'az');
+  const azCode = (azT0 && azT0.config.project_code) || '—';
   if(!PLAN_ROWS.length) await loadPlanRows(t.id);
+  if(view !== 'plan') return; // пользователь уже ушёл с вкладки — не перезаписываем экран
   const done = store.get('plan_done_' + t.id, []);
   v.innerHTML = `<div class="row" style="margin-bottom:8px"><h2 class="pt" style="flex:1;margin:0">🗺 ${esc(t.name)}</h2>
     ${canReport()?`<button class="pri" style="padding:7px 12px" onclick="reportForm('all')">📄 Сводный отчёт</button>`:''}</div>
-   <p class="mut" style="margin-bottom:10px">План по проекту Ф-2024-НОК-ДТ-0424-КР. Раскройте пункт до состава работ: каждая работа — статус, ответственный, документы и фотоотчёт.</p>
+   <p class="mut" style="margin-bottom:10px">План по проекту ${esc(azCode)}. Раскройте пункт до состава работ: каждая работа — статус, ответственный, документы и фотоотчёт.</p>
    ${(c.items||[]).map((it,i)=>{
      const works = it.works||[];
      const rows = works.map(w => PLAN_ROWS.find(r => r.tab_id===t.id && r.item_n===it.n && r.work===w) || {status:'Не начат', responsible:null, files:[]});
@@ -982,7 +1033,7 @@ async function reportBuild(scope){
   if(g('head')){
     out += 'ОТЧЁТ ' + (scope==='all' ? 'ПО РЕАЛИЗАЦИИ ПРОЕКТА' : 'ПО ЭТАПУ ' + scope) + '\n';
     out += 'Объект: ' + (azTab ? (azTab.config.object||'') : (c.object||'')) + '\n';
-    out += 'Проект: Ф-2024-НОК-ДТ-0424-КР · Команда: ' + team.name + '\n';
+    out += 'Проект: ' + (azTab && azTab.config.project_code ? azTab.config.project_code : '—') + ' · Команда: ' + team.name + '\n';
     out += 'Составил: ' + me.name + ' (' + (me.role||'') + ') · Дата: ' + new Date().toLocaleDateString('ru-RU') + '\n\n';
   }
   if(g('works')){
@@ -1233,13 +1284,24 @@ function azTitulForm(tabId){
    <div class="row"><input id="azF3" placeholder="Застройщик" value="${esc(c.customer||'')}"><input id="azF4" placeholder="Проектировщик" value="${esc(c.designer||'')}"></div><div style="height:8px"></div>
    <div class="row"><input id="azF5" placeholder="Шифр проекта" value="${esc(c.project_code||'')}"><input id="azF6" placeholder="ГИП" value="${esc(c.gip||'')}"></div><div style="height:8px"></div>
    <div class="row"><input id="azF7" placeholder="Руководитель авторского надзора" value="${esc(c.az_head||'')}"><input id="azF8" placeholder="Договор АН" value="${esc(c.contract||'')}"></div>
+   <div style="height:10px"></div>
+   <div class="mut">Виды работ журнала (каждый с новой строки):</div>
+   <textarea id="azF9" rows="3" placeholder="Бурение скважин&#10;Земляные работы&#10;…">${esc((c.works||[]).join('\n'))}</textarea>
+   <div class="mut" style="margin-top:8px">Виды скрытых работ для актов — строка: <b>Название | Раздел проекта | Документ</b>:</div>
+   <textarea id="azF10" rows="4" placeholder="Бурение скважин | ПЗ, раздел 3 | Исполнительная схема">${esc((c.act_works||[]).map(w=>[w.name,w.section,w.doc].filter(x=>x!==undefined&&x!==null).join(' | ')).join('\n'))}</textarea>
    <div style="height:12px"></div>
    <button class="pri" style="width:100%" onclick="azTitulSave(${tabId})">💾 Сохранить</button></div>`;
   $('#overlay').style.display='flex';
 }
 async function azTitulSave(tabId){
   const t = curTab();
-  await sb.from('tabs').update({config:{...t.config, object:$('#azF1').value, address:$('#azF2').value, customer:$('#azF3').value, designer:$('#azF4').value, project_code:$('#azF5').value, gip:$('#azF6').value, az_head:$('#azF7').value, contract:$('#azF8').value}}).eq('id',tabId);
+  const works = ($('#azF9') ? $('#azF9').value : '').split('\n').map(x=>x.trim()).filter(Boolean);
+  const act_works = ($('#azF10') ? $('#azF10').value : '').split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{
+    const parts = line.split('|').map(x=>x.trim());
+    return {name: parts[0]||'', section: parts[1]||'', doc: parts[2]||''};
+  }).filter(w=>w.name);
+  await sb.from('tabs').update({config:{...t.config, object:$('#azF1').value, address:$('#azF2').value, customer:$('#azF3').value, designer:$('#azF4').value, project_code:$('#azF5').value, gip:$('#azF6').value, az_head:$('#azF7').value, contract:$('#azF8').value, works, act_works}}).eq('id',tabId);
+  loadTabs();
   $('#overlay').style.display='none';
 }
 $('#tabsBtn').onclick = () => manageTabs();
@@ -1772,17 +1834,6 @@ $('#agentBtn').onclick = () => agentSheet();
 
 /* ================= АКТЫ И ДОКУМЕНТЫ (АОСР + реестр) ================= */
 let ACTS = [];
-// Виды скрытых работ строго по проекту Ф-2024-НОК-ДТ-0424-КР (укрепление грунтов основания дымовой трубы)
-const ACT_WORKS = [
- {name:'Закрепление геодезической разбивочной основы и осей инъекционных скважин', section:'ПЗ, раздел «Конструктивные и объемно-планировочные решения»', doc:'Исполнительная геодезическая схема разбивки; журнал геодезических работ'},
- {name:'Бурение инъекционных скважин (до закрытия устья / начала инъектирования)', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Журнал бурения; паспорта буровых растворов (при применении); исполнительная схема расположения скважин'},
- {name:'Установка обсадных (фильтровых) труб в скважинах', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Сертификаты на трубы; исполнительная схема'},
- {name:'Приёмка цемента и приготовление инъекционных смесей (входной контроль материалов)', section:'ПЗ, раздел технологии; ТУ на материалы', doc:'Сертификаты/паспорта цемента; протоколы лабораторных испытаний смеси (В/Ц, сроки схватывания)'},
- {name:'Инъектирование (цементация) грунтов по скважинам', section:'ПЗ, раздел технологии укрепления грунтов', doc:'Журнал инъектирования по скважинам (давление, расход, объёмы); протоколы опытного инъектирования'},
- {name:'Устройство дренажа (укладка дренажных труб с обратной засыпкой фильтрующим материалом)', section:'ПЗ, раздел «Инженерное оборудование» (при наличии в объёме работ)', doc:'Сертификаты на дренажные трубы и фильтрующий материал; исполнительная схема; фото'},
- {name:'Обратная засыпка котлованов и траншей с послойным уплотнением', section:'ПЗ, раздел технологии', doc:'Акты на скрытые работы по уплотнению; исполнительная схема; фото'},
- {name:'Устройство контрольных (наблюдательных) точек мониторинга крена и осадок трубы', section:'ПЗ, раздел мониторинга', doc:'Исполнительная схема закрепления точек; геодезический журнал'}
-];
 const ACT_NORM = 'Форма акта — РД-11-02-2006. Освидетельствование до закрытия работ: СП 70.13330.2012, п. 4.5. Исполнительная документация: ГОСТ Р 21.101-2020, СП 48.13330.2019.';
 
 /* Хранилище актов АОСР: JSON-файлы в Supabase Storage (бакет files, acts/<team_id>/).
@@ -1841,7 +1892,7 @@ function renderActsBody(v){
   const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
   const isOwner = team && team.is_owner;
   v.innerHTML = `<h2 class="pt">📄 Акты и документы</h2>
-   <p class="mut" style="margin-bottom:8px">Акты освидетельствования скрытых работ (АОСР) по видам работ проекта ${esc(azc.project_code||'Ф-2024-НОК-ДТ-0424-КР')}. ${esc(ACT_NORM)}</p>
+   <p class="mut" style="margin-bottom:8px">Акты освидетельствования скрытых работ (АОСР) по видам работ проекта ${esc(azc.project_code||'—')}. ${esc(ACT_NORM)}</p>
    <div class="card"><b>Объект:</b> ${esc(azc.object||'—')}<br><span class="mut">Застройщик: ${esc(azc.customer||'—')} · Проектировщик: ${esc(azc.designer||'ООО «НПО Фундамент»')}</span></div>
    <div class="row" style="margin-bottom:8px">
      <button class="pri" style="flex:1" onclick="actForm()">＋ Новый акт (АОСР)</button>
@@ -1868,14 +1919,22 @@ function actsRegistryRows(){
 }
 function actForm(){
   const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
+  const AW = azc.act_works || [];
+  if(!AW.length){
+    $('#sheet').innerHTML = `<h2>＋ Акт освидетельствования скрытых работ</h2>
+     <div class="card"><p>⚠️ Виды скрытых работ не заданы для этой команды.</p>
+     <p class="mut" style="margin-top:6px">Владелец: откройте 📋 Журнал АН → «Титульные данные журнала» и заполните список видов скрытых работ (внизу формы).</p></div>
+     <div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Закрыть</button>`;
+    $('#overlay').style.display='flex'; return;
+  }
   $('#sheet').innerHTML = `<h2>＋ Акт освидетельствования скрытых работ</h2>
    <div class="card">
      <p class="mut" style="margin-bottom:6px">Вид работы (по проекту):</p>
-     <select id="acW">${ACT_WORKS.map((w,i)=>`<option value="${i}">${esc(w.name)}</option>`).join('')}</select>
+     <select id="acW">${AW.map((w,i)=>`<option value="${i}">${esc(w.name)}</option>`).join('')}</select>
      <div style="height:8px"></div>
      <div class="row"><input type="date" id="acD" style="flex:1" title="Дата акта"><input id="acFrom" type="date" style="flex:1" title="Начало работ"><input id="acTo" type="date" style="flex:1" title="Окончание работ"></div>
      <div style="height:8px"></div>
-     <input id="acCust" placeholder="Представитель застройщика (техзаказчика)" value="${esc(azc.customer||'ООО «НОК»')}">
+     <input id="acCust" placeholder="Представитель застройщика (техзаказчика)" value="${esc(azc.customer||'')}">
      <div style="height:8px"></div>
      <input id="acContr" placeholder="Представитель подрядчика (лицо, осуществляющее строительство)">
      <div style="height:8px"></div>
@@ -1893,7 +1952,9 @@ function actForm(){
   $('#overlay').style.display = 'flex';
 }
 async function actSave(){
-  const w = ACT_WORKS[parseInt($('#acW').value)];
+  const azt = TABS.find(x=>x.kind==='az'); const AW = (azt && azt.config.act_works) || [];
+  const w = AW[parseInt($('#acW').value)];
+  if(!w) return alert('Вид работы не найден. Проверьте настройки журнала.');
   const num = (ACTS.length ? Math.max(...ACTS.map(a=>a.num)) : 0) + 1;
   const row = {
     team_id: tid(), num,
@@ -1949,7 +2010,7 @@ function renderHome(v){
   <div class="card" style="background:linear-gradient(135deg,#241a0e 0%,#3a2c14 100%);border:1px solid #4a3a1f;color:#e9dfc8">
     <p style="font-family:Georgia,serif;font-size:17px;margin-bottom:2px">${greet}, <b>${esc(me.name)}</b></p>
     <p style="font-size:13.5px;opacity:.9">${esc(team ? team.name : '')}</p>
-    <p style="font-size:12.5px;opacity:.75;margin-top:6px;line-height:1.5">Объект: ${esc(c.object || '—')}<br>Проект: ${esc(c.project_code || 'Ф-2024-НОК-ДТ-0424-КР')} · Застройщик: ${esc(c.customer || '—')}</p>
+    <p style="font-size:12.5px;opacity:.75;margin-top:6px;line-height:1.5">Объект: ${esc(c.object || '—')}<br>Проект: ${esc(c.project_code || '—')} · Застройщик: ${esc(c.customer || '—')}</p>
   </div>
   <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
     <span class="badge ${openTasks ? 'warn' : 'ok'}" style="padding:6px 12px">✅ Задач открыто: ${openTasks}</span>
@@ -2117,25 +2178,17 @@ $('#fileInp').addEventListener('change', async e => {
 });
 
 /* ---------- ЭТАПЫ ---------- */
-const NIORK_PLAN = [
- {num:1, title:'Анализ исходных данных', subs:['Изучение проектной, эксплуатационной и инспекционной документации по всем 10 объектам ГТС (хвостохранилища, пруды-накопители, ГТ и др.)','Систематизация материалов инженерных изысканий (геологических, геокриологических, гидрологических)','Анализ метеорологических данных за исторический период (осадки, температура воздуха, скорость ветра, изменение длительности тёплого периода года) по данным Росгидромета и мировых климатических баз']},
- {num:2, title:'Анализ результатов ежегодного мониторинга ГТС', subs:['Обработка данных ежегодного мониторинга (вертикальные и горизонтальные деформации дамб, температурный режим грунтов в теле и основании дамб, уровень грунтовых вод)','Анализ данных натурных наблюдений и отчётов по эксплуатации ГТС']},
- {num:3, title:'Разработка актуализированных климатических моделей', subs:['Построение региональных моделей изменения климата до 2050 года для НПР','Учёт сценариев экстремальных погодных явлений (ливни, снегопады, таяние снега и др.)']},
- {num:4, title:'Оценка устойчивости ГТС в условиях изменяющегося климата', subs:['Моделирование термического состояния многолетнемерзлых пород с использованием нестационарной физически полной модели','Расчёт мощности сезонно-талого слоя и температурного профиля грунтов','Теплофизические и напряжённо-деформированные расчёты (НДС) для ключевых створов дамб','3D-моделирование деформаций и тепловых полей с учётом прогнозных климатических условий','Калибровка моделей по данным натурных наблюдений']},
- {num:5, title:'Анализ применимости нормативно-технической документации', subs:['Сопоставление текущих климатических и геокриологических условий с требованиями действующих нормативов','Оценка необходимости корректировки НТД в части проектирования, строительства и эксплуатации ГТС на многолетнемерзлых грунтах']},
- {num:6, title:'Прогноз рисков и разработка рекомендаций', subs:['Количественная оценка вероятности и последствий аварийных ситуаций на ГТС под воздействием климатических изменений','Оценка рисков для объектов инфраструктуры (трубопроводы и др.) при необходимости','Выявление рисков, связанных с устареванием нормативной базы','Формирование перечня мероприятий по снижению рисков: усиление конструкций, модернизация систем дренажа и мониторинга, аварийные планы реагирования','Подготовка заключения с выводами и рекомендациями по обеспечению эксплуатационной надёжности ГТС']},
- {num:7, title:'Уточнение результатов НИР', subs:['Выполняется при наличии должного обоснования, по согласованию с заказчиком (срок ~2 мес. с момента получения уточнённых инженерно-геологических изысканий)','Дополнительные инженерно-геологические изыскания и расчёты по створам с уточняемыми характеристиками грунтов','Подготовка пояснительной записки; при существенном влиянии — корректировка заключения по этапу 6']}
-];
 function renderStages(v){
-  if(!SYNC){ v.innerHTML = '<h2 class="pt">Этапы НИОКР</h2><p class="mut">Требуется подключение Supabase.</p>'; return; }
+  if(!SYNC){ v.innerHTML = '<h2 class="pt">Этапы</h2><p class="mut">Требуется подключение Supabase.</p>'; return; }
   if(STAGES === null){ v.innerHTML = '<p class="mut">Загрузка…</p>'; loadStages(); return; }
   const isOwner = team && team.is_owner;
-  let html = `<h2 class="pt">Календарный план НИОКР</h2>`;
+  let html = `<h2 class="pt">Календарный план</h2>`;
   if(!STAGES.length){
-    html += `<div class="card"><p class="mut" style="margin-bottom:8px">План не загружен. ${isOwner?'Загрузите 7 этапов по ТЗ (раздел 8).':'Спросите владельца команды.'}</p>
-      ${isOwner?'<button class="pri" style="width:100%" onclick="seedStages()">🗓 Загрузить календарный план НИОКР (7 этапов)</button>':''}</div>`;
+    html += `<div class="card"><p class="mut" style="margin-bottom:8px">Этапов пока нет. ${isOwner?'Добавьте первый этап.':'Спросите владельца команды.'}</p>
+      ${isOwner?'<button class="pri" style="width:100%" onclick="addStage()">＋ Добавить этап</button>':''}</div>`;
     v.innerHTML = html; return;
   }
+  if(isOwner) html += `<div style="margin-bottom:8px"><button class="sec" style="width:100%" onclick="addStage()">＋ Добавить этап</button></div>`;
   html += STAGES.map(s => `<div class="card">
     <div class="stage-head"><h3>Этап ${s.num}. ${esc(s.title)}</h3>
       <span class="badge ${s.status==='Выполнен'?'ok':s.status==='В работе'?'warn':''}">${esc(s.status)}</span></div>
@@ -2156,9 +2209,13 @@ function renderStages(v){
   </div>`).join('');
   v.innerHTML = html;
 }
-async function seedStages(){
-  const rows = NIORK_PLAN.map(p => ({team_id:tid(), num:p.num, title:p.title, subs:p.subs, status:'Не начат'}));
-  const {error} = await sb.from('stages').insert(rows);
+async function addStage(){
+  if(!(team && team.is_owner)) return;
+  const title = prompt('Название этапа:'); if(!title || !title.trim()) return;
+  const subsRaw = prompt('Содержание этапа (пункты через точку с запятой, можно пусто):') || '';
+  const subs = subsRaw.split(';').map(x => x.trim()).filter(Boolean);
+  const num = (STAGES && STAGES.length ? Math.max(...STAGES.map(x => x.num || 0)) : 0) + 1;
+  const {error} = await sb.from('stages').insert({team_id:tid(), num, title:title.trim(), subs, status:'Не начат'});
   if(error) return alert(error.message);
   loadStages();
 }
