@@ -2090,7 +2090,23 @@ function _ruDate(iso, long){
 }
 function buildActDocx(a, azc){
   azc = azc || {};
-  const num = 'АОСР-' + String(a.num).padStart(3, '0');
+  const kind = actKind(a);
+  const num = actLabel(a);
+  const TITLES = {
+    aosr: 'освидетельствования скрытых работ',
+    interim: 'промежуточной приёмки выполненных работ',
+    final: 'приёмки выполненных работ (окончательной)'
+  };
+  const ACT1 = {
+    aosr: 'произведено освидетельствование скрытых работ:',
+    interim: 'произведена промежуточная приёмка выполненных работ:',
+    final: 'произведена окончательная приёмка выполненных работ:'
+  };
+  const P1 = {
+    aosr: '1. Наименование скрытых работ: ',
+    interim: '1. Наименование работ (этап): ',
+    final: '1. Наименование работ: '
+  };
   const body = [];
   // Шапка (организации, справа)
   body.push(_wp([{t: 'Застройщик (технический заказчик): ' + (azc.customer || '—'), sz: 20}], {align: 'right', after: 40}));
@@ -2098,7 +2114,8 @@ function buildActDocx(a, azc){
   body.push(_wp([{t: 'Подрядчик: ' + (a.rep_contractor || '—'), sz: 20}], {align: 'right', after: 200}));
   // Заголовок
   body.push(_wp([{t: 'А К Т  № ' + num, b: true, sz: 28}], {align: 'center', after: 60}));
-  body.push(_wp([{t: 'освидетельствования скрытых работ', b: true, sz: 24}], {align: 'center', after: 200}));
+  body.push(_wp([{t: TITLES[kind], b: true, sz: 24}], {align: 'center', after: a.status === 'draft' ? 60 : 200}));
+  if(a.status === 'draft') body.push(_wp([{t: 'ПРЕДВАРИТЕЛЬНАЯ ФОРМА — требует проверки, дополнения и подписей', b: true, i: true, sz: 20}], {align: 'center', after: 200}));
   // Объект + дата
   body.push(_wp([{t: 'Объект капитального строительства: ', b: true}, {t: (azc.object || '—') + (azc.address ? ', ' + azc.address : '')}], {align: 'both', after: 80}));
   body.push(_wp([{t: 'Проектная документация: ', b: true}, {t: azc.project_code || '—'}], {align: 'both', after: 160}));
@@ -2110,12 +2127,12 @@ function buildActDocx(a, azc){
   if(a.rep_designer) reps.push('представителем проектировщика (авторского надзора) ' + a.rep_designer);
   if(a.rep_control) reps.push('представителем строительного контроля ' + a.rep_control);
   body.push(_wp('Нами, нижеподписавшимися, ' + (reps.join(', ') || 'уполномоченными представителями') +
-    ', произведено освидетельствование скрытых работ:', {align: 'both', ind: 709, after: 160}));
+    ', ' + ACT1[kind], {align: 'both', ind: 709, after: 160}));
   // Пункты
-  body.push(_wp([{t: '1. Наименование скрытых работ: ', b: true}, {t: a.work_name || '—'}], {align: 'both', after: 100}));
+  body.push(_wp([{t: P1[kind], b: true}, {t: a.work_name || '—'}], {align: 'both', after: 100}));
   body.push(_wp([{t: '2. Даты производства работ: ', b: true}, {t: 'начало — ' + _ruDate(a.date_from) + ', окончание — ' + _ruDate(a.date_to) + '.'}], {align: 'both', after: 100}));
-  body.push(_wp([{t: '3. Основание (проектная документация, раздел): ', b: true}, {t: a.basis_project || '—'}], {align: 'both', after: 100}));
-  body.push(_wp([{t: '4. Документы о качестве материалов, изделий и конструкций: ', b: true}, {t: a.basis_quality || '—'}], {align: 'both', after: 200}));
+  body.push(_wp([{t: kind === 'aosr' ? '3. Основание (проектная документация, раздел): ' : '3. Основание (проектная документация, ППР): ', b: true}, {t: a.basis_project || '—'}], {align: 'both', after: 100}));
+  body.push(_wp([{t: kind === 'aosr' ? '4. Документы о качестве материалов, изделий и конструкций: ' : '4. Предъявленные документы: ', b: true}, {t: a.basis_quality || '—'}], {align: 'both', after: 200}));
   body.push(_wp([{t: 'Заключение: ', b: true}, {t: a.conclusion || '—'}], {align: 'both', after: 160}));
   body.push(_wp([{t: 'Приложения: ', b: true}, {t: a.attach || '—'}], {align: 'both', after: 300}));
   // Подписи
@@ -2129,7 +2146,9 @@ function buildActDocx(a, azc){
     sigRow('Проектировщика (авторский надзор)', a.rep_designer),
     sigRow('Строительного контроля', a.rep_control)
   ], [4400, 1800, 3100]));
-  body.push(_wp([{t: 'Сформировано в системе «НИОКР Команда». Форма — РД-11-02-2006.', i: true, sz: 18}], {align: 'both', after: 0}));
+  body.push(_wp([{t: kind === 'aosr'
+    ? 'Сформировано в системе «НИОКР Команда». Форма — РД-11-02-2006.'
+    : 'Сформировано в системе «НИОКР Команда» по требованиям ППР к исполнительной документации.', i: true, sz: 18}], {align: 'both', after: 0}));
   // Пакет
   const enc = new TextEncoder();
   const nowIso = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
@@ -2181,6 +2200,15 @@ function buildActDocx(a, azc){
 /* ================= АКТЫ И ДОКУМЕНТЫ (АОСР + реестр) ================= */
 let ACTS = [];
 const ACT_NORM = 'Форма акта — РД-11-02-2006. Освидетельствование до закрытия работ: СП 70.13330.2012, п. 4.5. Исполнительная документация: ГОСТ Р 21.101-2020, СП 48.13330.2019.';
+/* Виды актов: АОСР (РД-11-02-2006), акт промежуточной приёмки, акт окончательной приёмки.
+   status:'draft' — предварительная форма (автозаполнение по ППР, требует ручной проверки). */
+const ACT_KINDS = {
+  aosr:    {p:'АОСР', label:'Акт освидетельствования скрытых работ'},
+  interim: {p:'АПР',  label:'Акт промежуточной приёмки выполненных работ'},
+  final:   {p:'АП',   label:'Акт окончательной приёмки работ'}
+};
+function actKind(a){ return (a && ACT_KINDS[a.kind]) ? a.kind : 'aosr'; }
+function actLabel(a){ return ACT_KINDS[actKind(a)].p + '-' + String(a.num).padStart(3, '0'); }
 
 /* Хранилище актов АОСР: JSON-файлы в Supabase Storage (бакет files, acts/<team_id>/).
    Таблица acts в базе отсутствует (удалена при сбросах) — Storage даёт ту же
@@ -2212,6 +2240,21 @@ const ActsStore = {
     if(error) throw error;
     return act;
   },
+  async update(id, row){
+    let prev = (ACTS || []).find(x => x.id === id) || null;
+    if(!prev){
+      try{
+        const url = sb.storage.from('files').getPublicUrl(this.prefix() + '/' + id + '.json').data.publicUrl;
+        const r = await fetch(url + '?t=' + Date.now(), {cache: 'no-store'});
+        if(r.ok) prev = await r.json();
+      }catch(_){}
+    }
+    const act = Object.assign({}, prev || {}, row, {id});
+    const body = new Blob([JSON.stringify(act)], {type: 'application/json'});
+    const {error} = await sb.storage.from('files').upload(this.prefix() + '/' + id + '.json', body, {contentType: 'application/json', upsert: true});
+    if(error) throw error;
+    return act;
+  },
   async remove(id){
     const {error} = await sb.storage.from('files').remove([this.prefix() + '/' + id + '.json']);
     if(error) throw error;
@@ -2238,15 +2281,19 @@ function renderActsBody(v){
   const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
   const isOwner = team && team.is_owner;
   v.innerHTML = `<h2 class="pt">📄 Акты и документы</h2>
-   <p class="mut" style="margin-bottom:8px">Акты освидетельствования скрытых работ (АОСР) по видам работ проекта ${esc(azc.project_code||'—')}. ${esc(ACT_NORM)}</p>
+   <p class="mut" style="margin-bottom:8px">Акты по видам работ проекта ${esc(azc.project_code||'—')}: освидетельствование скрытых работ (АОСР), промежуточная и окончательная приёмка. ${esc(ACT_NORM)}</p>
    <div class="card"><b>Объект:</b> ${esc(azc.object||'—')}<br><span class="mut">Застройщик: ${esc(azc.customer||'—')} · Проектировщик: ${esc(azc.designer||'ООО «НПО Фундамент»')}</span></div>
+   ${actsPprCard()}
    <div class="row" style="margin-bottom:8px">
-     <button class="pri" style="flex:1" onclick="actForm()">＋ Новый акт (АОСР)</button>
+     <button class="pri" style="flex:1" onclick="actForm()">＋ Новый акт</button>
    </div>
-   ${ACTS.length ? ACTS.map(a => `<div class="card" style="cursor:pointer" onclick="actView(${a.id})">
-     <div class="row"><b style="flex:1">АОСР-${String(a.num).padStart(3,'0')} · ${esc(a.work_name)}</b></div>
-     <p class="mut" style="margin-top:4px">${a.date_act ? 'от ' + a.date_act : 'дата не указана'} · ${esc(a.created_by||'')}</p>
-   </div>`).join('') : '<p class="mut">Актов нет — создайте первый.</p>'}
+   ${ACTS.length ? ACTS.map(a => {
+     const k = actKind(a), draft = a.status === 'draft';
+     return `<div class="card" style="cursor:pointer" onclick="actView(${a.id})">
+     <div class="row"><b style="flex:1">${actLabel(a)} · ${esc(a.work_name)}</b></div>
+     <p class="mut" style="margin-top:4px">${ACT_KINDS[k].label}${draft ? ' · <b style="color:#c08f43">предварительная форма</b>' : ''}${a.ppr_page ? ' · ППР, ' + esc(a.ppr_page) : ''}</p>
+     <p class="mut" style="margin-top:2px">${a.date_act ? 'от ' + a.date_act : 'дата не указана'} · ${esc(a.created_by||'')}</p>
+   </div>`;}).join('') : '<p class="mut">Актов нет — создайте первый.</p>'}
    <h2 class="pt" style="margin-top:14px">🗂 Реестр исполнительной документации (формируется автоматически)</h2>
    <div class="card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
      <tr style="text-align:left;color:var(--mut)"><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">№</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Наименование документа</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Номер/дата</th><th style="padding:6px 8px;border-bottom:1px solid var(--brd)">Источник</th></tr>
@@ -2254,82 +2301,208 @@ function renderActsBody(v){
    </table></div>
    <p class="mut" style="font-size:11px">Реестр автоматически пополняется по мере создания актов, загрузки документов и выполнения работ по техплану. Нажмите на название акта 📄 — откроется полный текст в формате Word.</p>`;
 }
+/* Карточка «Требуемые акты и документы по ППР»: перечень извлечён из текста ППР
+   (config.ppr журнала АН), каждая позиция — с точной цитатой и листом. */
+function actsPprCard(){
+  const t = TABS.find(x=>x.kind==='az'); const ppr = t && t.config ? t.config.ppr : null;
+  if(!ppr || !(ppr.acts||[]).length) return '';
+  const isOwner = team && team.is_owner;
+  const rows = ppr.acts.map((r, ix) => {
+    const k = ACT_KINDS[r.kind] ? r.kind : 'aosr';
+    const made = (ACTS || []).find(a => a.ppr_ix === ix && actKind(a) === k);
+    return `<div style="border-bottom:1px solid var(--brd);padding:7px 0">
+      <div class="row" style="align-items:flex-start">
+        <div style="flex:1"><b>${ACT_KINDS[k].p}</b> · ${esc(r.title)}<br>
+        <span class="mut" style="font-size:11.5px">${esc(ppr.code||'ППР')}${r.page ? ', ' + esc(r.page) : ''}${r.quote ? ' — «' + esc(r.quote) + '»' : ''}</span></div>
+        ${made
+          ? `<button class="sec" style="font-size:12px;padding:6px 10px;white-space:nowrap" onclick="actView(${made.id})">${made.status==='draft'?'📝 Форма':'✅ Готов'}</button>`
+          : (isOwner ? `<button class="sec" style="font-size:12px;padding:6px 10px;white-space:nowrap" onclick="pprMakeDrafts(${ix})">＋ Форма</button>` : '<span class="mut" style="font-size:12px">нет формы</span>')}
+      </div>
+    </div>`;
+  }).join('');
+  const allMade = ppr.acts.every((r, ix) => (ACTS || []).some(a => a.ppr_ix === ix));
+  const j = (ppr.journals||[]).length ? `<p class="mut" style="margin-top:8px;font-size:12px"><b>Журналы по ППР:</b> ${ppr.journals.map(x=>esc(x)).join('; ')}.</p>` : '';
+  const d = (ppr.exec_docs||[]).length ? `<p class="mut" style="margin-top:4px;font-size:12px"><b>Исполнительные документы:</b> ${ppr.exec_docs.map(x=>esc(x)).join('; ')}.</p>` : '';
+  return `<h2 class="pt" style="margin-top:14px">📑 Требуемые акты и документы по ППР</h2>
+  <div class="card">
+    <p class="mut" style="margin-bottom:6px;font-size:12.5px">${esc(ppr.title||'')}${ppr.code ? ' (' + esc(ppr.code) + ')' : ''}${ppr.doc ? ' — файл в Файлах команды: «' + esc(ppr.doc) + '»' : ''}. Перечень извлечён из текста ППР без добавлений.</p>
+    ${rows}
+    ${isOwner && !allMade ? '<button class="pri" style="width:100%;margin-top:8px" onclick="pprMakeDrafts()">📝 Создать все предварительные формы</button>' : ''}
+    ${j}${d}
+  </div>`;
+}
+/* Создание предварительных форм по ППР: автозаполнение из журнала АН и текста ППР,
+   дальше — ручная проверка и правка в карточке акта. */
+async function pprMakeDrafts(onlyIx){
+  if(!(team && team.is_owner)) return alert('Создавать формы может владелец команды.');
+  const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
+  const ppr = azc.ppr;
+  if(!ppr || !(ppr.acts||[]).length) return;
+  let made = 0;
+  for(let ix = 0; ix < ppr.acts.length; ix++){
+    if(onlyIx != null && ix !== onlyIx) continue;
+    const r = ppr.acts[ix], k = ACT_KINDS[r.kind] ? r.kind : 'aosr';
+    if((ACTS || []).some(a => a.ppr_ix === ix && actKind(a) === k)) continue;
+    const num = Math.max(0, ...(ACTS || []).filter(a => actKind(a) === k).map(a => a.num)) + 1;
+    const row = {
+      team_id: tid(), num, kind: k, status: 'draft',
+      ppr_ix: ix, ppr_page: r.page || null, ppr_quote: r.quote || null,
+      work_name: r.title,
+      basis_project: (ppr.code || 'ППР') + (r.page ? ', ' + r.page : ''),
+      basis_quality: r.docs || null,
+      date_act: null, date_from: null, date_to: null,
+      conclusion: k === 'aosr'
+        ? 'Работы выполнены в соответствии с проектной документацией, техническими регламентами и технологическими картами. Разрешается производство последующих работ.'
+        : 'Работы выполнены в соответствии с проектной документацией и проектом производства работ. Предъявлены акты промежуточной приёмки выполненных работ и исполнительные документы.',
+      rep_customer: null, rep_contractor: null,
+      rep_designer: (azc.az_head ? azc.az_head + ' — ' : '') + (azc.designer || '') || null,
+      rep_control: null, attach: null, created_by: me.name
+    };
+    try{ const a = await ActsStore.save(row); ACTS.push(a); made++; await new Promise(rr => setTimeout(rr, 5)); }
+    catch(e){ return alert('Не удалось сохранить форму: ' + (e.message || e)); }
+  }
+  ACTS.sort((a, b) => actKind(a).localeCompare(actKind(b)) || a.num - b.num);
+  render();
+  if(made) alert('Создано предварительных форм: ' + made + '. Откройте форму — поля заполнены по ППР, проверьте и дополните вручную.');
+}
 function actsRegistryRows(){
   const rows = [];
-  ACTS.forEach(a => rows.push(['АОСР-' + String(a.num).padStart(3,'0'), 'Акт освидетельствования скрытых работ: ' + a.work_name, (a.date_act||'—'), 'Акты', a.id]));
+  ACTS.forEach(a => rows.push([actLabel(a), ACT_KINDS[actKind(a)].label + ': ' + a.work_name, (a.date_act||'—'), 'Акты', a.id]));
   (rDocs || []).forEach(d => rows.push(['', 'Документ: ' + d.name, (d.created_at||'').slice(0,10), 'Файлы команды']));
   (PLAN_ROWS || []).filter(r => r.status === 'Выполнено').forEach(r => rows.push(['', 'Исполнена работа: ' + r.work, (r.done_at||'').slice(0,10), 'Техплан']));
   (AZ_ENTRIES || []).forEach(e => rows.push(['', 'Запись журнала авторского надзора: ' + e.works.slice(0,60), e.entry_date, 'Журнал АН']));
   if(!rows.length) return '<tr><td colspan="4" class="mut" style="padding:8px">Документов пока нет.</td></tr>';
   return rows.map((r,i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${i+1}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${r[4] ? `<a title="Открыть полный текст акта в Word" style="color:var(--acc);text-decoration:underline;cursor:pointer" onclick="actWord(${r[4]})">📄 ${esc(r[1])}</a>` : esc(r[1])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[2])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)" class="mut">${esc(r[3])}</td></tr>`).join('');
 }
-function actForm(){
+function actForm(editId){
   const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
   const AW = azc.act_works || [];
-  if(!AW.length){
+  const a = editId ? (ACTS || []).find(x => x.id === editId) : null;
+  if(editId && !a) return;
+  if(!editId && !AW.length){
     $('#sheet').innerHTML = `<h2>＋ Акт освидетельствования скрытых работ</h2>
      <div class="card"><p>⚠️ Виды скрытых работ не заданы для этой команды.</p>
      <p class="mut" style="margin-top:6px">Владелец: откройте 📋 Журнал АН → «Титульные данные журнала» и заполните список видов скрытых работ (внизу формы).</p></div>
      <div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Закрыть</button>`;
     $('#overlay').style.display='flex'; return;
   }
-  $('#sheet').innerHTML = `<h2>＋ Акт освидетельствования скрытых работ</h2>
+  const k0 = a ? actKind(a) : 'aosr';
+  let wix = a ? AW.findIndex(w => w.name === a.work_name) : 0;
+  let wExtra = '';
+  if(a && k0 === 'aosr' && wix < 0){ wix = 0; wExtra = `<option value="-1" selected>${esc(a.work_name)}</option>`; }
+  const desDef = (azc.az_head ? azc.az_head + ' — ' : '') + (azc.designer || 'ООО «НПО Фундамент»');
+  window._actEdit = editId || null;
+  $('#sheet').innerHTML = `<h2>${a ? '✎ Правка: ' + actLabel(a) : '＋ Новый акт'}</h2>
    <div class="card">
-     <p class="mut" style="margin-bottom:6px">Вид работы (по проекту):</p>
-     <select id="acW">${AW.map((w,i)=>`<option value="${i}">${esc(w.name)}</option>`).join('')}</select>
+     <p class="mut" style="margin-bottom:6px">Вид акта:</p>
+     <select id="acK" onchange="actFormKind()">
+       ${Object.keys(ACT_KINDS).map(k => `<option value="${k}" ${k===k0?'selected':''}>${ACT_KINDS[k].label} (${ACT_KINDS[k].p})</option>`).join('')}
+     </select>
      <div style="height:8px"></div>
-     <div class="row"><input type="date" id="acD" style="flex:1" title="Дата акта"><input id="acFrom" type="date" style="flex:1" title="Начало работ"><input id="acTo" type="date" style="flex:1" title="Окончание работ"></div>
+     <div id="acWBox">
+       <p class="mut" style="margin-bottom:6px">Вид работы (по проекту):</p>
+       <select id="acW" onchange="actFormWork()">${wExtra}${AW.map((w,i)=>`<option value="${i}" ${i===wix && !wExtra ?'selected':''}>${esc(w.name)}</option>`).join('')}</select>
+     </div>
+     <input id="acWFree" placeholder="Наименование работ / этапа" value="${a && k0!=='aosr' ? esc(a.work_name) : ''}" style="display:${k0==='aosr'?'none':'block'};margin-top:0">
      <div style="height:8px"></div>
-     <input id="acCust" placeholder="Представитель застройщика (техзаказчика)" value="${esc(azc.customer||'')}">
+     <input id="acBasisP" placeholder="Основание (проектная документация, ППР, раздел)" value="${esc(a ? (a.basis_project||'') : (AW[wix] ? AW[wix].section : ''))}">
      <div style="height:8px"></div>
-     <input id="acContr" placeholder="Представитель подрядчика (лицо, осуществляющее строительство)">
+     <input id="acBasisQ" placeholder="Документы о качестве / предъявленные документы" value="${esc(a ? (a.basis_quality||'') : (AW[wix] ? AW[wix].doc : ''))}">
      <div style="height:8px"></div>
-     <input id="acDes" placeholder="Представитель проектировщика (авторский надзор)" value="Керимов А.Г. — ООО «НПО Фундамент»">
+     <div class="row"><input type="date" id="acD" style="flex:1" title="Дата акта" value="${a && a.date_act ? a.date_act : ''}"><input id="acFrom" type="date" style="flex:1" title="Начало работ" value="${a && a.date_from ? a.date_from : ''}"><input id="acTo" type="date" style="flex:1" title="Окончание работ" value="${a && a.date_to ? a.date_to : ''}"></div>
      <div style="height:8px"></div>
-     <input id="acCtrl" placeholder="Представитель строительного контроля">
+     <input id="acCust" placeholder="Представитель застройщика (техзаказчика)" value="${esc(a ? (a.rep_customer||'') : (azc.customer||''))}">
      <div style="height:8px"></div>
-     <textarea id="acAttach" rows="2" placeholder="Приложения (исполнительные схемы, протоколы испытаний, сертификаты — вручную)"></textarea>
+     <input id="acContr" placeholder="Представитель подрядчика (лицо, осуществляющее строительство)" value="${esc(a ? (a.rep_contractor||'') : '')}">
      <div style="height:8px"></div>
-     <select id="acConc"><option selected>Работы выполнены в соответствии с проектной документацией, техническими регламентами и технологическими картами. Разрешается производство последующих работ.</option><option>Замечания: (указать в приложении). Последующие работы — после устранения.</option></select>
+     <input id="acDes" placeholder="Представитель проектировщика (авторский надзор)" value="${esc(a ? (a.rep_designer||'') : desDef)}">
+     <div style="height:8px"></div>
+     <input id="acCtrl" placeholder="Представитель строительного контроля" value="${esc(a ? (a.rep_control||'') : '')}">
+     <div style="height:8px"></div>
+     <textarea id="acAttach" rows="2" placeholder="Приложения (исполнительные схемы, протоколы испытаний, сертификаты — вручную)">${esc(a ? (a.attach||'') : '')}</textarea>
+     <div style="height:8px"></div>
+     <select id="acConc">${(k0==='aosr'
+        ? ['Работы выполнены в соответствии с проектной документацией, техническими регламентами и технологическими картами. Разрешается производство последующих работ.','Замечания: (указать в приложении). Последующие работы — после устранения.']
+        : ['Работы выполнены в соответствии с проектной документацией и проектом производства работ. Предъявлены акты промежуточной приёмки выполненных работ и исполнительные документы.','Работы приняты с замечаниями: (указать в приложении).']
+       ).map(x=>`<option ${a && a.conclusion===x?'selected':''}>${x}</option>`).join('')}</select>
+     ${a && a.status==='draft' ? '<div style="height:8px"></div><label style="font-size:13px;display:flex;gap:8px;align-items:center"><input type="checkbox" id="acFormed" style="width:auto"> ✅ Оформлен — убрать пометку «предварительная форма»</label>' : ''}
      <div style="height:12px"></div>
-     <button class="pri" style="width:100%" onclick="actSave()">💾 Сформировать акт</button>
-     <p class="mut" style="font-size:11px;margin-top:8px">${esc(ACT_NORM)}</p>
+     <button class="pri" style="width:100%" onclick="actSave(${editId || 'null'})">💾 ${a ? 'Сохранить изменения' : 'Сформировать акт'}</button>
+     <p class="mut" style="font-size:11px;margin-top:8px">${a && a.ppr_quote ? 'По ППР (' + esc(a.ppr_page||'') + '): «' + esc(a.ppr_quote) + '».' : esc(ACT_NORM)}</p>
    </div>`;
   $('#overlay').style.display = 'flex';
+  actFormKind();
 }
-async function actSave(){
+function actFormKind(){
+  const k = $('#acK').value;
+  const isAosr = k === 'aosr';
+  $('#acWBox').style.display = isAosr ? '' : 'none';
+  $('#acWFree').style.display = isAosr ? 'none' : 'block';
+}
+function actFormWork(){
+  const t = TABS.find(x=>x.kind==='az'); const AW = (t && t.config.act_works) || [];
+  const selW = parseInt($('#acW').value);
+  if(selW < 0) return;
+  const w = AW[selW];
+  if(!w) return;
+  if(!window._actEdit){ $('#acBasisP').value = w.section || ''; $('#acBasisQ').value = w.doc || ''; }
+}
+async function actSave(editId){
   const azt = TABS.find(x=>x.kind==='az'); const AW = (azt && azt.config.act_works) || [];
-  const w = AW[parseInt($('#acW').value)];
-  if(!w) return alert('Вид работы не найден. Проверьте настройки журнала.');
-  const num = (ACTS.length ? Math.max(...ACTS.map(a=>a.num)) : 0) + 1;
+  const k = $('#acK').value || 'aosr';
+  const prev = editId ? (ACTS || []).find(x => x.id === editId) : null;
+  let work_name;
+  if(k === 'aosr'){
+    const selW = parseInt($('#acW').value);
+    if(selW === -1 && prev){ work_name = prev.work_name; }
+    else {
+      const w = AW[selW];
+      if(!w) return alert('Вид работы не найден. Проверьте настройки журнала.');
+      work_name = w.name;
+    }
+  } else {
+    work_name = $('#acWFree').value.trim();
+    if(!work_name) return alert('Укажите наименование работ / этапа.');
+  }
+  const num = prev ? prev.num : Math.max(0, ...(ACTS || []).filter(x => actKind(x) === k).map(x => x.num)) + 1;
   const row = {
-    team_id: tid(), num,
-    work_name: w.name,
-    basis_project: w.section,
-    basis_quality: w.doc,
+    team_id: tid(), num, kind: k,
+    status: prev && prev.status === 'draft' ? ($('#acFormed') && $('#acFormed').checked ? 'formed' : 'draft') : (prev ? prev.status : undefined),
+    work_name,
+    basis_project: $('#acBasisP').value || null,
+    basis_quality: $('#acBasisQ').value || null,
     date_act: $('#acD').value || null, date_from: $('#acFrom').value || null, date_to: $('#acTo').value || null,
     conclusion: $('#acConc').value,
     rep_customer: $('#acCust').value || null, rep_contractor: $('#acContr').value || null,
     rep_designer: $('#acDes').value || null, rep_control: $('#acCtrl').value || null,
-    attach: $('#acAttach').value || null, created_by: me.name
+    attach: $('#acAttach').value || null, created_by: prev ? prev.created_by : me.name
   };
-  try{ await ActsStore.save(row); }
+  Object.keys(row).forEach(key => { if(row[key] === undefined) delete row[key]; });
+  try{
+    if(prev) await ActsStore.update(editId, row);
+    else await ActsStore.save(row);
+  }
   catch(e){ return alert('Не удалось сохранить акт: ' + (e.message || e)); }
+  window._actEdit = null;
   $('#overlay').style.display = 'none';
   ACTS = null; render();
 }
 function actView(id){
   const a = ACTS.find(x => x.id === id); if(!a) return;
-  $('#sheet').innerHTML = `<h2>АОСР-${String(a.num).padStart(3,'0')}</h2><div class="card">
-    <p><b>${esc(a.work_name)}</b></p>
+  const k = actKind(a), draft = a.status === 'draft';
+  $('#sheet').innerHTML = `<h2>${actLabel(a)}${draft ? ' <span style="font-size:12px;color:#c08f43;font-weight:700">· предварительная форма</span>' : ''}</h2><div class="card">
+    <p class="mut" style="font-size:12px">${ACT_KINDS[k].label}</p>
+    <p style="margin-top:4px"><b>${esc(a.work_name)}</b></p>
     <p class="mut" style="margin-top:6px">Дата акта: ${a.date_act||'—'} · Работы: ${a.date_from||'—'} — ${a.date_to||'—'}</p>
     <p style="margin-top:6px">Основание: ${esc(a.basis_project||'—')}</p>
     <p style="margin-top:4px">Документы о качестве: ${esc(a.basis_quality||'—')}</p>
     <p style="margin-top:6px">Застройщик: ${esc(a.rep_customer||'—')}<br>Подрядчик: ${esc(a.rep_contractor||'—')}<br>Проектировщик: ${esc(a.rep_designer||'—')}<br>Стройконтроль: ${esc(a.rep_control||'—')}</p>
-    <p style="margin-top:6px">Заключение: ${esc(a.conclusion)}</p>
+    <p style="margin-top:6px">Заключение: ${esc(a.conclusion||'—')}</p>
     ${a.attach ? `<p style="margin-top:4px">Приложения: ${esc(a.attach)}</p>` : ''}
-    <div class="row" style="margin-top:8px">
-      <button class="pri" style="flex:1" onclick="actWord(${a.id})">📄 Открыть в Word</button>
+    ${a.ppr_quote ? `<p class="mut" style="margin-top:6px;font-size:11.5px">Требование ППР (${esc(a.ppr_page||'—')}): «${esc(a.ppr_quote)}»</p>` : ''}
+    <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
+      <button class="pri" style="flex:1;min-width:120px" onclick="actWord(${a.id})">📄 Открыть в Word</button>
+      <button class="sec" style="flex:1;min-width:100px" onclick="actForm(${a.id})">✎ Править</button>
       <button class="sec" onclick="navigator.clipboard && navigator.clipboard.writeText(document.querySelector('#sheet .card').innerText).then(()=>alert('Акт скопирован'))">📋</button>
       <button class="dng" onclick="actDel(${a.id})">🗑</button>
     </div></div>`;
@@ -2342,7 +2515,7 @@ function actWord(id){
   try{ bytes = buildActDocx(a, azc); }
   catch(e){ return alert('Не удалось сформировать Word-файл: ' + (e.message || e)); }
   const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-  const fname = ('АОСР-' + String(a.num).padStart(3,'0') + '_' + (a.work_name || 'акт'))
+  const fname = (actLabel(a) + '_' + (a.work_name || 'акт'))
     .replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 90) + '.docx';
   const url = URL.createObjectURL(blob);
   const el = document.createElement('a');
@@ -2389,7 +2562,7 @@ function renderHome(v){
     <div class="mrow"><div class="av" style="background:#2e7d4f">✅</div><div class="inf"><b>Задачи</b><br><span class="mut" style="font-size:12px">Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи.</span></div></div>
     <div class="mrow"><div class="av" style="background:#33608a">🗺</div><div class="inf"><b>Технический план</b><br><span class="mut" style="font-size:12px">Этапы и состав работ: статусы, ответственные, документы и фото. ❓ — консультация со ссылками на проект и нормативку.</span></div></div>
     <div class="mrow"><div class="av" style="background:#7a4a8a">📋</div><div class="inf"><b>Журнал АН</b><br><span class="mut" style="font-size:12px">Записи обходов: дата/погода автоматически, 🎙 — голосовой набор, предписания со статусами.</span></div></div>
-    <div class="mrow"><div class="av" style="background:#8a3a2e">📄</div><div class="inf"><b>Акты и документы</b><br><span class="mut" style="font-size:12px">АОСР по видам работ проекта (форма РД-11-02-2006) и авто-реестр исполнительной документации.</span></div></div>
+    <div class="mrow"><div class="av" style="background:#8a3a2e">📄</div><div class="inf"><b>Акты и документы</b><br><span class="mut" style="font-size:12px">Акты по видам работ проекта: АОСР (РД-11-02-2006), промежуточная и окончательная приёмка; требуемые акты по ППР с предварительными формами; авто-реестр исполнительной документации.</span></div></div>
   </details>`;
   homeDash();
 }
