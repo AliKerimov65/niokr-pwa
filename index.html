@@ -2275,7 +2275,7 @@ async function ensureActsDefaults(){
 function renderActs(v){
   if(!SYNC){ v.innerHTML = '<h2 class="pt">📄 Акты и документы</h2><p class="mut">Требуется подключение.</p>'; return; }
   v.innerHTML = '<h2 class="pt">📄 Акты и документы</h2><p class="mut">Загрузка…</p>';
-  loadActs().then(() => { if(view === 'acts') renderActsBody(v); });
+  loadActs().then(() => loadOjr()).then(() => { if(view === 'acts') renderActsBody(v); });
 }
 function renderActsBody(v){
   const t = TABS.find(x=>x.kind==='az'); const azc = t ? t.config : {};
@@ -2283,6 +2283,7 @@ function renderActsBody(v){
   v.innerHTML = `<h2 class="pt">📄 Акты и документы</h2>
    <p class="mut" style="margin-bottom:8px">Акты по видам работ проекта ${esc(azc.project_code||'—')}: освидетельствование скрытых работ (АОСР), промежуточная и окончательная приёмка. ${esc(ACT_NORM)}</p>
    <div class="card"><b>Объект:</b> ${esc(azc.object||'—')}<br><span class="mut">Застройщик: ${esc(azc.customer||'—')} · Проектировщик: ${esc(azc.designer||'ООО «НПО Фундамент»')}</span></div>
+   ${ojrCard()}
    ${actsPprCard()}
    <div class="row" style="margin-bottom:8px">
      <button class="pri" style="flex:1" onclick="actForm()">＋ Новый акт</button>
@@ -2321,7 +2322,8 @@ function actsPprCard(){
     </div>`;
   }).join('');
   const allMade = ppr.acts.every((r, ix) => (ACTS || []).some(a => a.ppr_ix === ix));
-  const j = (ppr.journals||[]).length ? `<p class="mut" style="margin-top:8px;font-size:12px"><b>Журналы по ППР:</b> ${ppr.journals.map(x=>esc(x)).join('; ')}.</p>` : '';
+  const j = (ppr.journals||[]).length ? `<p class="mut" style="margin-top:8px;font-size:12px"><b>Журналы по ППР:</b> ${ppr.journals.map(x=>esc(x)).join('; ')}.</p>
+    <div style="margin-top:6px"><button class="sec" style="font-size:12px;padding:6px 10px" onclick="ojrOpen('works')">📔 Общий журнал работ${ojrRows('works').length ? ' · записей: ' + ojrRows('works').length : ''} — открыть</button></div>` : '';
   const d = (ppr.exec_docs||[]).length ? `<p class="mut" style="margin-top:4px;font-size:12px"><b>Исполнительные документы:</b> ${ppr.exec_docs.map(x=>esc(x)).join('; ')}.</p>` : '';
   return `<h2 class="pt" style="margin-top:14px">📑 Требуемые акты и документы по ППР</h2>
   <div class="card">
@@ -2528,6 +2530,403 @@ async function actDel(id){
   try{ await ActsStore.remove(id); }
   catch(e){ return alert('Не удалось удалить акт: ' + (e.message || e)); }
   ACTS = null; render();
+}
+
+/* ================= ОБЩИЙ ЖУРНАЛ РАБОТ (приказ Минстроя № 1026/пр) =================
+   Форма и порядок ведения — приказ Минстроя России от 02.12.2022 № 1026/пр
+   (в силе с 01.09.2023, заменил РД-11-05-2007). Журнал — один JSON-файл на команду
+   в Storage (journals/<team>/ojr.json): титул + разделы 1-6. Записи раздела 3
+   вносятся в день выполнения работ; исправление записей приказом допускается. */
+const OJR_NORM = 'Форма и порядок ведения — приказ Минстроя России от 02.12.2022 № 1026/пр (с 01.09.2023, взамен РД-11-05-2007). Раздел 3 заполняется в день выполнения работ, раздел 4 — не позднее следующего дня.';
+let OJR = null;
+const OJR_SECS = {
+  staff: {n: 1, icon: '👷', title: 'Список инженерно-технического персонала лица, осуществляющего строительство', cols: [
+    {k: 'org', label: 'Лицо, осуществляющее строительство (наименование)', w: 1900},
+    {k: 'person', label: 'Ф.И.О., должность специалиста', w: 1900},
+    {k: 'start', label: 'Дата начала работ (с указанием вида работ)', w: 1800, ph: '12.01.2026 — буровые работы'},
+    {k: 'end', label: 'Дата окончания работ', w: 1200},
+    {k: 'sign', label: 'Подпись уполномоченного представителя', w: 2000}]},
+  spec: {n: 2, icon: '📚', title: 'Перечень специальных журналов и журналов авторского надзора', cols: [
+    {k: 'name', label: 'Наименование специального журнала (журнала АН), дата выдачи', w: 2800},
+    {k: 'keeper', label: 'Кто ведёт (организация, представитель, должность)', w: 2400},
+    {k: 'handed', label: 'Дата передачи застройщику (техническому заказчику)', w: 1600},
+    {k: 'sign', label: 'Подпись представителя застройщика (технического заказчика)', w: 2000}]},
+  works: {n: 3, icon: '🛠', title: 'Сведения о выполнении работ', cols: [
+    {k: 'date', label: 'Дата выполнения работ', w: 1000, type: 'date'},
+    {k: 'cond', label: 'Условия производства работ', w: 1800},
+    {k: 'name', label: 'Наименование работ с указанием осей, отметок, скважин, секций; методы, материалы, испытания', w: 3900, ta: true},
+    {k: 'sign', label: 'Должность, фамилия, инициалы, подпись представителя лица, осуществляющего строительство', w: 2100}]},
+  control: {n: 4, icon: '🔍', title: 'Сведения о строительном контроле', cols: [
+    {k: 'info', label: 'Сведения о проведении строительного контроля', w: 1700, ta: true},
+    {k: 'defects', label: 'Выявленные недостатки', w: 1600, ta: true},
+    {k: 'deadline', label: 'Срок устранения недостатков', w: 1000, type: 'date'},
+    {k: 'sign', label: 'Представитель заказчика (должность, Ф.И.О., подпись)', w: 1600},
+    {k: 'fixed', label: 'Дата устранения недостатков', w: 1000, type: 'date'},
+    {k: 'sign2', label: 'Подпись представителя после устранения', w: 1900}]},
+  exec: {n: 5, icon: '🗂', title: 'Перечень исполнительной документации', cols: [
+    {k: 'name', label: 'Наименование исполнительной документации', w: 4800},
+    {k: 'signed', label: 'Дата подписания, должности, Ф.И.О. лиц, подписавших документ', w: 4000}]},
+  gsn: {n: 6, icon: '🏛', title: 'Сведения о государственном строительном надзоре', cols: [
+    {k: 'date', label: 'Дата контрольного (надзорного) мероприятия', w: 1300, type: 'date'},
+    {k: 'info', label: 'Сведения о мероприятии, выданные предписания', w: 2900, ta: true},
+    {k: 'deadline', label: 'Срок устранения нарушений', w: 1200, type: 'date'},
+    {k: 'fixed', label: 'Отметка об устранении (дата)', w: 1200, type: 'date'},
+    {k: 'officer', label: 'Должностное лицо органа надзора (должность, Ф.И.О.)', w: 2200}]}
+};
+const OjrStore = {
+  key(){ return 'journals/' + tid() + '/ojr.json'; },
+  url(){ return sb.storage.from('files').getPublicUrl(this.key()).data.publicUrl; },
+  async load(){
+    try{
+      const r = await fetch(this.url() + '?t=' + Date.now(), {cache: 'no-store'});
+      if(!r.ok) return {meta: {}, secs: {}};
+      const j = await r.json();
+      if(!j || typeof j !== 'object') return {meta: {}, secs: {}};
+      if(!j.meta) j.meta = {};
+      if(!j.secs) j.secs = {};
+      return j;
+    }catch(e){ return {meta: {}, secs: {}}; }
+  },
+  async save(j){
+    j.updated_at = new Date().toISOString(); j.updated_by = me.name; j.team_id = tid();
+    const body = new Blob([JSON.stringify(j)], {type: 'application/json'});
+    const {error} = await sb.storage.from('files').upload(this.key(), body, {contentType: 'application/json', upsert: true});
+    if(error) throw error;
+    return j;
+  }
+};
+async function loadOjr(){ OJR = SYNC ? await OjrStore.load() : {meta: {}, secs: {}}; }
+function ojrRows(sec){ return (OJR && OJR.secs && OJR.secs[sec]) || []; }
+/* Карточка журнала в разделе «Акты и документы» */
+function ojrCard(){
+  const total = Object.keys(OJR_SECS).reduce((s, k) => s + ojrRows(k).length, 0);
+  const mt = (OJR && OJR.meta) || {};
+  return `<h2 class="pt" style="margin-top:14px">📔 Общий журнал работ</h2>
+  <div class="card">
+    <p class="mut" style="font-size:12px">${esc(OJR_NORM)}</p>
+    <p style="margin-top:6px;font-size:13.5px">${mt.object ? 'Объект: <b>' + esc(mt.object) + '</b><br>' : ''}
+    Записей в журнале: <b>${total}</b> (раздел 3 «Выполнение работ»: <b>${ojrRows('works').length}</b>)${OJR && OJR.updated_at ? '<br><span class="mut" style="font-size:11.5px">Обновлён ' + esc((OJR.updated_at || '').slice(0, 10)) + ' · ' + esc(OJR.updated_by || '') + '</span>' : ''}</p>
+    <div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap">
+      <button class="pri" style="flex:1;min-width:140px" onclick="ojrOpen()">📔 Открыть журнал</button>
+      <button class="sec" style="flex:1;min-width:110px" onclick="ojrWord()">📄 В Word</button>
+    </div>
+  </div>`;
+}
+/* Экран журнала: разделы 1-6 + титул */
+let _ojrSec = 'works';
+function ojrOpen(sec){
+  _ojrSec = sec || _ojrSec || 'works';
+  if(!OJR_SECS[_ojrSec]) _ojrSec = 'works';
+  const isOwner = team && team.is_owner;
+  const s = OJR_SECS[_ojrSec], rows = ojrRows(_ojrSec);
+  const chips = Object.keys(OJR_SECS).map(k => {
+    const d = OJR_SECS[k], n = ojrRows(k).length;
+    return `<button class="sec" style="padding:6px 8px;font-size:11.5px;${k === _ojrSec ? 'border-color:var(--acc);color:var(--acc);font-weight:700' : ''}" onclick="ojrOpen('${k}')">${d.icon} Р${d.n}${n ? ' · ' + n : ''}</button>`;
+  }).join('');
+  const list = rows.length ? rows.map((r, ix) => {
+    const c0 = s.cols[0], c1 = s.cols[1];
+    const v0 = c0.type === 'date' ? _ruDate(r[c0.k]) : (r[c0.k] || '—');
+    const v1full = String(r[c1.k] || '');
+    const v1 = v1full.slice(0, 90);
+    return `<div class="card" style="padding:9px 11px;margin-bottom:8px">
+      <div class="row" style="align-items:flex-start">
+        <div style="flex:1;min-width:0"><b>№ ${ix + 1}</b> · ${esc(String(v0))}${v1 ? '<br><span class="mut" style="font-size:12px">' + esc(v1) + (v1full.length > 90 ? '…' : '') + '</span>' : ''}</div>
+        ${isOwner ? `<button class="sec" style="font-size:12px;padding:5px 9px;flex:none" onclick="ojrRowForm('${_ojrSec}',${ix})">✎</button>
+        <button class="dng" style="font-size:12px;padding:5px 9px;flex:none" onclick="ojrRowDel('${_ojrSec}',${ix})">🗑</button>` : ''}
+      </div></div>`;
+  }).join('') : '<p class="mut">Записей пока нет' + (isOwner ? ' — добавьте первую' : '') + '.</p>';
+  const fillBtns = [];
+  if(isOwner && _ojrSec === 'spec') fillBtns.push('<button class="sec" style="flex:1;font-size:12px" onclick="ojrFillSpec()">📥 Заполнить из ППР</button>');
+  if(isOwner && _ojrSec === 'exec') fillBtns.push('<button class="sec" style="flex:1;font-size:12px" onclick="ojrFillExec()">📥 Из актов команды</button>');
+  $('#sheet').innerHTML = `<h2>📔 Общий журнал работ</h2>
+    <p class="mut" style="font-size:11.5px;margin-bottom:8px">${esc(OJR_NORM)}</p>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}
+      <button class="sec" style="padding:6px 8px;font-size:11.5px" onclick="ojrTitulForm()">📋 Титул</button>
+    </div>
+    <h3 style="margin:4px 0 8px">${s.icon} Раздел ${s.n}. ${esc(s.title)}</h3>
+    ${_ojrSec === 'works' ? '<p class="mut" style="font-size:11.5px;margin-bottom:8px">Записи вносятся в день выполнения работ. Если работы не велись — запись «Работы не производились» с указанием причины.</p>' : ''}
+    ${list}
+    ${isOwner ? `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><button class="pri" style="flex:1;min-width:130px" onclick="ojrRowForm('${_ojrSec}',null)">＋ Новая запись</button>${fillBtns.join('')}</div>` : ''}
+    <div class="row" style="gap:6px;margin-top:8px">
+      <button class="sec" style="flex:1" onclick="ojrWord()">📄 Выгрузить в Word</button>
+      <button class="sec" style="flex:1" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>
+    </div>`;
+  $('#overlay').style.display = 'flex';
+}
+/* Автозаполнение полей по умолчанию */
+function ojrDefault(sec, k, azc){
+  const mt = (OJR && OJR.meta) || {};
+  if(sec === 'works'){
+    if(k === 'date') return new Date().toISOString().slice(0, 10);
+    if(k === 'sign') return mt.builder_rep || azc.az_head || me.name || '';
+    if(k === 'cond') return 'Дневная смена, штатные условия производства работ.';
+  }
+  if(sec === 'staff' && k === 'org') return mt.builder || '';
+  if(sec === 'staff' && k === 'sign') return mt.builder_rep || azc.az_head || '';
+  if(sec === 'control' && (k === 'sign' || k === 'sign2')) return mt.developer_rep || '';
+  return '';
+}
+/* Форма записи раздела (авто + ручное заполнение) */
+function ojrRowForm(sec, ix){
+  if(!(team && team.is_owner)) return alert('Записи в журнал вносит владелец команды.');
+  const s = OJR_SECS[sec];
+  const row = ix != null ? ojrRows(sec)[ix] : null;
+  const azt = TABS.find(x => x.kind === 'az'); const azc = azt ? azt.config : {};
+  let extra = '';
+  if(sec === 'works'){
+    const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
+    const opts = W.map((w, i) => `<option value="${i}">Этап ${(ST[map[i] || 0] || {}).n || '—'} · ${esc(w)}</option>`).join('');
+    extra = `<p class="mut" style="font-size:11.5px;margin:0 0 3px">Автозаполнение из Модели команды:</p>
+      <select id="ojr_mw" onchange="ojrWorksPick()"><option value="-1">— выбрать работу по проекту (ППР) —</option>${opts}</select>
+      <div class="row" style="gap:6px;margin-top:6px;margin-bottom:4px">
+        <button class="sec" style="flex:1;font-size:12px" onclick="ojrWorksWx()">🌡 Погоду в «Условия»</button>
+        <button class="sec" style="flex:1;font-size:12px" onclick="ojrWorksIdle()">🚫 Работы не производились</button>
+      </div>`;
+  }
+  const inputs = s.cols.map(c => {
+    const val = row ? (row[c.k] || '') : ojrDefault(sec, c.k, azc);
+    const lab = `<p class="mut" style="font-size:11.5px;margin:8px 0 3px">${c.label}</p>`;
+    if(c.type === 'date') return lab + `<input type="date" id="ojr_${c.k}" value="${esc(val)}">`;
+    if(c.ta) return lab + `<textarea id="ojr_${c.k}" rows="3" placeholder="${esc(c.ph || '')}">${esc(val)}</textarea>`;
+    return lab + `<input id="ojr_${c.k}" placeholder="${esc(c.ph || '')}" value="${esc(val)}">`;
+  }).join('');
+  $('#sheet').innerHTML = `<h2>${row ? '✎ Запись №' + (ix + 1) : '＋ Новая запись'} — раздел ${s.n}</h2>
+    <div class="card">${extra}${inputs}
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="ojrRowSave('${sec}',${ix == null ? 'null' : ix})">💾 Сохранить запись</button>
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="ojrOpen('${sec}')">← К разделу</button></div>`;
+  $('#overlay').style.display = 'flex';
+}
+/* Выбор работы из Модели → наименование с этапом и местом */
+function ojrWorksPick(){
+  const el = document.getElementById('ojr_mw'); if(!el) return;
+  const i = parseInt(el.value); if(isNaN(i) || i < 0) return;
+  const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
+  const st = ST[map[i] || 0] || {};
+  const nm = document.getElementById('ojr_name');
+  if(nm) nm.value = (W[i] || '') + ' (этап ' + (st.n || '—') + ' — ' + (st.title || '') + '). Место: скв. №____, отм. ____.';
+}
+/* Погода в «Условия производства работ» (open-meteo по координатам объекта) */
+async function ojrWorksWx(){
+  const azt = TABS.find(x => x.kind === 'az'); const azc = azt ? azt.config : {};
+  const w = await fetchWeather(azc);
+  if(!w || w.manual || w.temp == null){ alert('Погода недоступна — заполните условия вручную.'); return; }
+  const t = Math.round(w.temp);
+  const el = document.getElementById('ojr_cond');
+  if(el) el.value = 'Дневная смена, ' + (w.desc || 'без особых условий') + ', t° ' + (t > 0 ? '+' : '') + t + ' °C' + (w.precip ? ', осадки ' + w.precip + ' мм' : '') + '.';
+}
+function ojrWorksIdle(){
+  const nm = document.getElementById('ojr_name');
+  if(nm) nm.value = 'Работы не производились. Причина: _____.';
+}
+async function ojrRowSave(sec, ix){
+  const s = OJR_SECS[sec];
+  const row = {};
+  s.cols.forEach(c => { const el = document.getElementById('ojr_' + c.k); row[c.k] = el ? el.value.trim() : ''; });
+  if(sec === 'works'){
+    if(!row.date) return alert('Укажите дату выполнения работ.');
+    if(!row.name) return alert('Заполните наименование работ.');
+  }
+  if(!OJR) OJR = {meta: {}, secs: {}};
+  if(!OJR.secs) OJR.secs = {};
+  const arr = OJR.secs[sec] = OJR.secs[sec] || [];
+  if(ix == null) arr.push(row); else arr[ix] = Object.assign({}, arr[ix], row);
+  if(sec === 'works') arr.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  try{ await OjrStore.save(OJR); }
+  catch(e){ return alert('Не удалось сохранить журнал: ' + (e.message || e)); }
+  ojrOpen(sec);
+}
+async function ojrRowDel(sec, ix){
+  if(!confirm('Удалить запись №' + (ix + 1) + '?')) return;
+  if(!OJR || !OJR.secs || !OJR.secs[sec]) return;
+  OJR.secs[sec].splice(ix, 1);
+  try{ await OjrStore.save(OJR); }
+  catch(e){ return alert('Не удалось сохранить журнал: ' + (e.message || e)); }
+  ojrOpen(sec);
+}
+/* Раздел 2 — автозаполнение перечня спецжурналов из ППР */
+async function ojrFillSpec(){
+  const azt = TABS.find(x => x.kind === 'az'); const ppr = azt && azt.config ? azt.config.ppr : null;
+  const names = ppr && ppr.journals ? ppr.journals : [];
+  if(!names.length) return alert('В ППР команды перечень журналов не извлечён.');
+  if(!OJR.secs) OJR.secs = {};
+  const arr = OJR.secs.spec = OJR.secs.spec || [];
+  let added = 0;
+  names.forEach(n => {
+    const key = String(n).toLowerCase().slice(0, 20);
+    if(arr.some(r => String(r.name || '').toLowerCase().includes(key))) return;
+    const mt = OJR.meta || {};
+    arr.push({name: n, keeper: ((mt.builder || '') + (mt.builder_rep ? ', ' + mt.builder_rep : '')).replace(/^, /, ''), handed: '', sign: ''});
+    added++;
+  });
+  if(!added) return alert('Все журналы из ППР уже в перечне.');
+  try{ await OjrStore.save(OJR); }
+  catch(e){ return alert('Не удалось сохранить журнал: ' + (e.message || e)); }
+  ojrOpen('spec');
+}
+/* Раздел 5 — автозаполнение исполнительной документации из актов команды */
+async function ojrFillExec(){
+  if(!ACTS || !ACTS.length){ try{ ACTS = await ActsStore.load(); }catch(e){} }
+  if(!ACTS || !ACTS.length) return alert('Актов пока нет — сначала сформируйте акты.');
+  if(!OJR.secs) OJR.secs = {};
+  const arr = OJR.secs.exec = OJR.secs.exec || [];
+  let added = 0;
+  ACTS.forEach(a => {
+    const nm = actLabel(a) + ' — ' + (a.work_name || '');
+    if(arr.some(r => (r.name || '') === nm)) return;
+    arr.push({name: nm, signed: (a.date_act ? _ruDate(a.date_act) : 'не подписан') + (a.rep_contractor ? ', ' + a.rep_contractor : '')});
+    added++;
+  });
+  if(!added) return alert('Все акты уже в перечне.');
+  try{ await OjrStore.save(OJR); }
+  catch(e){ return alert('Не удалось сохранить журнал: ' + (e.message || e)); }
+  ojrOpen('exec');
+}
+/* Титульный лист журнала (1026/пр) */
+const OJR_META_F = [
+  ['object', 'Наименование объекта капитального строительства'],
+  ['address', 'Адрес объекта'],
+  ['developer', 'Застройщик (наименование)'],
+  ['developer_rep', 'Уполномоченный представитель застройщика (Ф.И.О., должность)'],
+  ['tech_customer', 'Технический заказчик (наименование)'],
+  ['builder', 'Лицо, осуществляющее строительство (подрядчик)'],
+  ['builder_sro', 'СРО подрядчика (наименование, ОГРН, ИНН)'],
+  ['builder_rep', 'Уполномоченный представитель подрядчика (Ф.И.О., должность)'],
+  ['designer', 'Лицо, осуществляющее подготовку проектной документации (проектировщик)'],
+  ['designer_rep', 'Представитель проектировщика (авторский надзор)'],
+  ['permit', 'Разрешение на строительство (№, дата, кем выдано)'],
+  ['date_start', 'Начало строительства (дата)', 'date'],
+  ['date_end', 'Окончание строительства (дата)', 'date'],
+  ['pages', 'В журнале страниц (для бумажного носителя)']
+];
+function ojrTitulForm(){
+  const isOwner = team && team.is_owner;
+  const azt = TABS.find(x => x.kind === 'az'); const azc = azt ? azt.config : {};
+  const mt = (OJR && OJR.meta) || {};
+  const auto = {object: azc.object, address: azc.address, developer: azc.customer,
+    designer: azc.designer, builder_rep: azc.az_head, designer_rep: azc.az_head};
+  $('#sheet').innerHTML = `<h2>📋 Титульные данные журнала</h2><div class="card">
+    <p class="mut" style="font-size:12px;margin-bottom:8px">Титульный лист общего журнала по приказу № 1026/пр. Данные команды подставлены автоматически — проверьте и дополните вручную.</p>
+    ${OJR_META_F.map(f => {
+      const v = mt[f[0]] != null && mt[f[0]] !== '' ? mt[f[0]] : (auto[f[0]] || '');
+      return `<p class="mut" style="font-size:11.5px;margin:8px 0 3px">${f[1]}</p><input ${f[2] === 'date' ? 'type="date"' : ''} id="ojm_${f[0]}" value="${esc(v)}" ${isOwner ? '' : 'disabled'}>`;
+    }).join('')}
+    <div style="height:12px"></div>
+    ${isOwner ? '<button class="pri" style="width:100%" onclick="ojrTitulSave()">💾 Сохранить титул</button><div style="height:8px"></div>' : ''}
+    <button class="sec" style="width:100%" onclick="ojrOpen()">← К журналу</button></div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function ojrTitulSave(){
+  const mt = {};
+  OJR_META_F.forEach(f => { const el = document.getElementById('ojm_' + f[0]); mt[f[0]] = el ? el.value.trim() : ''; });
+  if(!OJR) OJR = {meta: {}, secs: {}};
+  OJR.meta = mt;
+  try{ await OjrStore.save(OJR); }
+  catch(e){ return alert('Не удалось сохранить титул: ' + (e.message || e)); }
+  ojrOpen();
+}
+/* Упаковка DOCX (общая обвязка, как у актов) */
+function _docxPack(title, body){
+  const enc = new TextEncoder();
+  const nowIso = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    body.join('') +
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="850" w:bottom="1134" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>' +
+    '</w:body></w:document>';
+  const stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>' +
+    '<w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+  const ctXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
+    '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>';
+  const relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+    '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>';
+  const docRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+  const coreXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
+    'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+    '<dc:title>' + _xesc(title) + '</dc:title><dc:creator>НИОКР Команда</dc:creator>' +
+    '<dcterms:created xsi:type="dcterms:W3CDTF">' + nowIso + '</dcterms:created>' +
+    '<dcterms:modified xsi:type="dcterms:W3CDTF">' + nowIso + '</dcterms:modified></cp:coreProperties>';
+  const appXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>НИОКР Команда</Application></Properties>';
+  return _zipStore([
+    {name: '[Content_Types].xml', data: enc.encode(ctXml)},
+    {name: '_rels/.rels', data: enc.encode(relsXml)},
+    {name: 'docProps/core.xml', data: enc.encode(coreXml)},
+    {name: 'docProps/app.xml', data: enc.encode(appXml)},
+    {name: 'word/document.xml', data: enc.encode(documentXml)},
+    {name: 'word/styles.xml', data: enc.encode(stylesXml)},
+    {name: 'word/_rels/document.xml.rels', data: enc.encode(docRelsXml)}
+  ]);
+}
+/* Word-документ журнала: титул + разделы 1-6 по форме 1026/пр */
+function buildOjrDocx(j){
+  const mt = (j && j.meta) || {};
+  const secs = (j && j.secs) || {};
+  const body = [];
+  body.push(_wp([{t: 'ОБЩИЙ ЖУРНАЛ', b: true, sz: 40}], {align: 'center', after: 80}));
+  body.push(_wp([{t: 'в котором ведется учет выполнения работ по строительству, реконструкции, капитальному ремонту объекта капитального строительства', sz: 22}], {align: 'center', after: 240}));
+  body.push(_wp([{t: 'Наименование объекта: ', b: true}, {t: mt.object || '—'}], {after: 80}));
+  body.push(_wp([{t: 'Адрес объекта: ', b: true}, {t: mt.address || '—'}], {after: 200}));
+  const row2 = (a, b) => [_wp([{t: a, sz: 22}], {after: 40}), _wp([{t: b, sz: 22}], {after: 40})];
+  body.push(_wtbl([
+    [_wp([{t: 'Участник', b: true, sz: 22}], {align: 'center', after: 40}), _wp([{t: 'Наименование / представитель', b: true, sz: 22}], {align: 'center', after: 40})],
+    row2('Застройщик', (mt.developer || '—') + (mt.developer_rep ? '; представитель: ' + mt.developer_rep : '')),
+    row2('Технический заказчик', mt.tech_customer || '—'),
+    row2('Лицо, осуществляющее строительство', (mt.builder || '—') + (mt.builder_sro ? '; СРО: ' + mt.builder_sro : '') + (mt.builder_rep ? '; представитель: ' + mt.builder_rep : '')),
+    row2('Лицо, осуществляющее подготовку проектной документации', (mt.designer || '—') + (mt.designer_rep ? '; представитель: ' + mt.designer_rep : '')),
+    row2('Разрешение на строительство', mt.permit || '—')
+  ], [3900, 5400]));
+  body.push(_wp('', {after: 120}));
+  body.push(_wp([{t: 'Начало строительства, реконструкции, капитального ремонта: ', b: true}, {t: _ruDate(mt.date_start)}], {after: 60}));
+  body.push(_wp([{t: 'Окончание строительства, реконструкции, капитального ремонта: ', b: true}, {t: _ruDate(mt.date_end)}], {after: 120}));
+  if(mt.pages) body.push(_wp([{t: 'В настоящем журнале ' + mt.pages + ' страниц. Журнал пронумерован, сброшюрован и скреплен печатью (при ведении на бумажном носителе).', i: true, sz: 20}], {after: 120}));
+  Object.keys(OJR_SECS).forEach(k => {
+    const s = OJR_SECS[k], arr = secs[k] || [];
+    body.push(_wp([{t: 'РАЗДЕЛ ' + s.n, b: true, sz: 26}], {after: 60}));
+    body.push(_wp([{t: s.title + '.', b: true, sz: 22}], {after: 160}));
+    const widths = [500].concat(s.cols.map(c => c.w));
+    const head = [_wp([{t: '№ п/п', b: true, sz: 18}], {align: 'center', after: 20})]
+      .concat(s.cols.map(c => _wp([{t: c.label, b: true, sz: 18}], {align: 'center', after: 20})));
+    const rowsX = [head];
+    arr.forEach((r, ix) => {
+      rowsX.push([_wp([{t: String(ix + 1), sz: 18}], {align: 'center', after: 20})]
+        .concat(s.cols.map(c => _wp([{t: c.type === 'date' ? _ruDate(r[c.k]) : (r[c.k] || ''), sz: 18}], {after: 20}))));
+    });
+    if(!arr.length) rowsX.push([_wp([{t: '—', sz: 18}], {align: 'center', after: 20})].concat(s.cols.map(() => _wp([{t: '', sz: 18}], {after: 20}))));
+    body.push(_wtbl(rowsX, widths));
+    body.push(_wp('', {after: 160}));
+  });
+  body.push(_wp([{t: 'Сформировано в системе «НИОКР Команда». Форма и порядок ведения — приказ Минстроя России от 02.12.2022 № 1026/пр. Дата выгрузки: ' + _ruDate(new Date().toISOString().slice(0, 10)) + '.', i: true, sz: 18}], {align: 'both', after: 0}));
+  return _docxPack('Общий журнал работ — ' + (mt.object || ''), body);
+}
+function ojrWord(){
+  let bytes;
+  try{ bytes = buildOjrDocx(OJR || {}); }
+  catch(e){ return alert('Не удалось сформировать Word-файл: ' + (e.message || e)); }
+  const blob = new Blob([bytes], {type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const fname = ('ОЖР_' + ((((OJR || {}).meta || {}).object) || 'общий журнал работ'))
+    .replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 90) + '.docx';
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement('a');
+  el.href = url; el.download = fname;
+  document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 
