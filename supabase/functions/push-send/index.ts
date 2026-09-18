@@ -15,8 +15,10 @@ import webpush from "npm:web-push@3.6.7";
 
 const VAPID_PUBLIC  = Deno.env.get("VAPID_PUBLIC") || "";
 const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE") || "";
-const SB_URL = Deno.env.get("SUPABASE_URL") || "";
-const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+// Данные (push_subs) живут в проекте приложения; если функция развёрнута в другом
+// проекте, задаются NIOKR_SB_URL / NIOKR_SB_KEY (publishable достаточно: RLS push_subs открыт)
+const SB_URL = Deno.env.get("NIOKR_SB_URL") || Deno.env.get("SUPABASE_URL") || "";
+const SB_KEY = Deno.env.get("NIOKR_SB_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

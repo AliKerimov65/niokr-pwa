@@ -1563,12 +1563,13 @@ async function pushSync(){
 /* ---------- Web Push: отправка уведомлений участникам ---------- */
 function pushMemberNames(){ return (TEAM_MEMBERS||[]).map(m => m.member).filter(Boolean); }
 /* fire-and-forget: серверная функция push-send рассылает web-push по подпискам из push_subs */
+const PUSH_SEND_URL = 'https://nlgxrendtkxlzisqikoj.supabase.co/functions/v1/push-send'; /* функция развёрнута в резервном проекте akProject (v141) — данные читает из основного */
 function pushNotify(members, title, body, url){
   try{
     if(!SYNC || !me) return;
     const list = [...new Set((members||[]).filter(m => m && m !== me.name))];
     if(!list.length) return;
-    fetch(SUPABASE_URL + '/functions/v1/push-send', {
+    fetch(PUSH_SEND_URL, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({members:list, title:String(title||'НИОКР Команда').slice(0,80), body:String(body||'').slice(0,180), url:url||'./#/chat'})
     }).catch(()=>{});
