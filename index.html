@@ -314,6 +314,13 @@ header{background:var(--card) !important}
 #rmLines .pentry{margin-bottom:8px}
 #rmInterim{padding:6px 12px;font-size:12.5px;color:#a83427;min-height:20px}
 .rm-foot{padding:8px 10px;border-top:1px solid var(--brd);background:#fff}
+#rmTicker{display:none;align-items:stretch;background:rgba(15,18,24,.88);border-top:1px solid #323945;height:34px;cursor:pointer;flex:none;overflow:hidden}
+#rmTicker.on{display:flex}
+.rm-tk-label{flex:none;display:flex;align-items:center;gap:5px;padding:0 10px;background:#5c1f1a;color:#ff9d92;font-size:10px;font-weight:700;letter-spacing:.5px;animation:rmBlink 1.6s infinite}
+.rm-tk-viewport{flex:1;overflow:hidden;display:flex;align-items:center}
+.rm-tk-run{white-space:nowrap;display:inline-block;padding-left:100%;will-change:transform;font-size:13px;color:#e6ebf2}
+@keyframes rmTk{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+.rm-tk-run b{font-weight:700}
 #roomMini{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tbh,64px) + 10px);z-index:60;display:none;align-items:center;gap:9px;background:#20242b;color:#eef1f5;border:1px solid #3a424f;border-radius:24px;padding:8px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);cursor:pointer;font-size:12.5px;user-select:none}
 #roomMini .dot{width:9px;height:9px;border-radius:50%;background:#4ade80;animation:rmBlink 1.6s infinite}
 #roomMini button{border:none;background:#5c2a24;color:#ffb3ab;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;flex:none}
@@ -373,6 +380,10 @@ header{background:var(--card) !important}
     <button class="rm-x" onclick="roomMinimize()" title="Свернуть (совещание продолжится)">—</button>
   </div>
   <div id="rmScene"></div>
+  <div id="rmTicker" onclick="roomPanelToggle(true)" title="Открыть полный протокол">
+    <span class="rm-tk-label">● ПРОТОКОЛ</span>
+    <div class="rm-tk-viewport"><span class="rm-tk-run" id="rmTkRun"></span></div>
+  </div>
   <div id="rmPanel">
     <div class="rm-ph"><b>📜 Протокол совещания</b><button onclick="roomPanelToggle(false)" title="Закрыть панель">✕</button></div>
     <div id="rmLines"></div>
@@ -6216,7 +6227,7 @@ async function roomOpen(){
   if(RM.actx && RM.local.getAudioTracks().length) roomAnalyserAdd(RM.key, RM.local);
   clearInterval(RM.speakTimer);
   RM.speakTimer = setInterval(roomSpeakTick, 350);
-  roomBtnUpd(); roomRenderLines(); roomMiniUpd();
+  roomBtnUpd(); roomRenderLines(); roomMiniUpd(); roomTickerUpd();
   window.addEventListener('resize', roomOnResize);
 }
 function roomLeave(ask){
@@ -6237,6 +6248,7 @@ function roomLeave(ask){
     if(RM.actx){ try{ RM.actx.close(); }catch(e){} RM.actx = null; }
     Object.assign(RM, {on:false, parts:[], lines:[], meeting:null, proto:null, analysers:{}, speaking:{}, camOn:false, muted:false, hand:false});
     $('#roomOv').classList.remove('on'); $('#roomMini').style.display = 'none';
+    roomTickerUpd();
     window.removeEventListener('resize', roomOnResize);
   })();
 }
@@ -6394,8 +6406,6 @@ function renderScene(){
   });
   const sv = document.getElementById('rmv-' + RM.key);
   if(sv && RM.camOn && RM.selfStream) sv.srcObject = RM.selfStream;
-  const pn = document.getElementById('rmPanel');
-  if(pn && !pn.classList.contains('on') && RM.meeting) roomPanelToggle(true);
 }
 
 /* ---------- пульт ---------- */
@@ -6496,6 +6506,7 @@ function roomPanelToggle(force){
     sc.style.marginRight = (on && wide) ? Math.min(350, window.innerWidth * 0.92) + 'px' : '0';
     if(wide) renderScene(); /* чтение clientWidth внутри даст синхронный reflow после смены margin */
   }
+  roomTickerUpd(); /* при открытой панели бегущая строка скрывается */
 }
 function roomPanelNote(txt){
   const box = document.getElementById('rmLines'); if(!box) return;
@@ -6503,6 +6514,29 @@ function roomPanelNote(txt){
   d.className = 'pentry'; d.style.borderLeftColor = 'var(--warn)';
   d.innerHTML = `<div class="pt2 mut">${esc(txt)}</div>`;
   box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+/* Бегущая строка протокола: последние реплики, пока идёт запись (панель закрыта) */
+function roomTkColor(name){ let h = 0; const s = String(name || '?'); for(let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return 'hsl(' + h + ',70%,72%)'; }
+function roomTickerUpd(){
+  const tk = document.getElementById('rmTicker'); if(!tk) return;
+  const pn = document.getElementById('rmPanel');
+  const show = !!(RM.on && RM.meeting && !(pn && pn.classList.contains('on')));
+  const was = tk.classList.contains('on');
+  tk.classList.toggle('on', show);
+  if(show !== was) renderScene(); /* высота сцены изменилась — пересадить кресла */
+  if(!show) return;
+  const run = document.getElementById('rmTkRun'); if(!run) return;
+  const last = RM.lines.slice(-6);
+  const htm = last.length
+    ? last.map(l => `<b style="color:${roomTkColor(l.speaker)}">${esc(String(l.speaker || '').split(' ')[0])}:</b> ${esc(l.text)}`).join('<span style="color:#5b6472">  •  </span>')
+    : 'Идёт запись протокола — реплики участников появятся здесь…';
+  if(run.dataset.htm !== htm){
+    run.dataset.htm = htm;
+    run.style.animation = 'none';
+    run.innerHTML = htm;
+    const w = run.offsetWidth; /* включает padding-left:100% — полный пробег */
+    run.style.animation = 'rmTk ' + Math.max(14, Math.round(w / 55)) + 's linear infinite';
+  }
 }
 
 /* ---------- протокол: распознавание речи + ведение ---------- */
@@ -6524,7 +6558,7 @@ function roomProtoToggle(){
   roomBc('meet', {action: 'start', meeting: RM.meeting});
   const rc = document.getElementById('rmRec'); rc.style.display = ''; rc.textContent = '● ПРОТОКОЛ · вы ведёте';
   roomStartRec();
-  roomPanelToggle(true); roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+  roomRenderLines(); roomBtnUpd(); roomMiniUpd(); roomTickerUpd();
   roomPanelNote('Идёт запись: речь каждого участника переводится в текст с его устройства. Говорите по очереди; без наушников реплики коллег могут попасть в вашу дорожку — лишнее удалите при формировании.');
 }
 function roomProtoSkeleton(){
@@ -6547,7 +6581,7 @@ async function roomProtoEnd(auto){
   roomStopRec();
   RM.meeting = null;
   document.getElementById('rmRec').style.display = 'none';
-  roomBtnUpd(); roomMiniUpd();
+  roomBtnUpd(); roomMiniUpd(); roomTickerUpd();
   if(wasOwner && RM.proto){
     const p = RM.proto; RM.proto = null;
     p.entries = RM.lines.map(l => ({speaker: l.speaker, text: l.text, t: l.t, raw: !!l.raw}));
@@ -6570,15 +6604,15 @@ function roomMeet(m){
   if(m.action === 'start' && (!RM.meeting || RM.meeting.id !== m.meeting.id)){
     RM.meeting = m.meeting;
     const rc = document.getElementById('rmRec'); rc.style.display = ''; rc.textContent = '● ПРОТОКОЛ · ведёт ' + (m.meeting.ownerName || '');
-    if(!roomIsOwner()){ roomPanelToggle(true); roomPanelNote(m.meeting.ownerName + ' начал(а) запись протокола — ваша речь тоже переводится в текст.'); }
+    if(!roomIsOwner()){ roomPanelNote(m.meeting.ownerName + ' начал(а) запись протокола — ваша речь тоже переводится в текст.'); }
     roomStartRec();
-    roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+    roomRenderLines(); roomBtnUpd(); roomMiniUpd(); roomTickerUpd();
   }
   if(m.action === 'end' && RM.meeting && RM.meeting.id === m.id){
     RM.meeting = null; RM.proto = null;
     roomStopRec();
     document.getElementById('rmRec').style.display = 'none';
-    roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+    roomRenderLines(); roomBtnUpd(); roomMiniUpd(); roomTickerUpd();
     roomPanelNote('Запись протокола завершена.');
   }
   if(m.action === 'adopt' && RM.meeting && RM.meeting.id === m.id){
@@ -6612,7 +6646,7 @@ function roomState(m){
   RM.meeting = m.meeting;
   RM.lines = (m.lines || []).slice();
   const rc = document.getElementById('rmRec'); rc.style.display = ''; rc.textContent = '● ПРОТОКОЛ · ведёт ' + (m.meeting.ownerName || '');
-  roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+  roomRenderLines(); roomBtnUpd(); roomMiniUpd(); roomTickerUpd();
   roomStartRec();
 }
 function roomLine(text){
@@ -6627,7 +6661,7 @@ function roomAddLine(line){
   if(!line || !line.id || !RM.meeting) return;
   if(RM.lines.find(l => l.id === line.id)) return;
   RM.lines.push(line);
-  roomRenderLines();
+  roomRenderLines(); roomTickerUpd();
   if(roomIsOwner()){
     RM.dirty = true;
     roomProtoAutoSave();
@@ -6637,7 +6671,7 @@ function roomAddLine(line){
         line.text = fixed;
         line.raw = false;
         RM.dirty = true;
-        roomRenderLines();
+        roomRenderLines(); roomTickerUpd();
         roomBc('line-upd', {id: line.id, text: line.text});
       } else { line.raw = false; }
     })();
@@ -6646,7 +6680,7 @@ function roomAddLine(line){
 function roomLineUpd(m){
   if(!m) return;
   const l = RM.lines.find(x => x.id === m.id);
-  if(l){ l.text = m.text; l.raw = false; roomRenderLines(); }
+  if(l){ l.text = m.text; l.raw = false; roomRenderLines(); roomTickerUpd(); }
 }
 function roomProtoAutoSave(){
   if(RM.saveTimer) return;
