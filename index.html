@@ -6118,9 +6118,10 @@ if(isIOS && !isInStandalone && me){
   }, 1500);
 }
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').then(reg => {
-    // Консервативная проверка обновлений: новая версия активируется штатно (кнопка ⟳ — как раньше)
-    setInterval(() => { reg.update().catch(() => {}); }, 600000);
+  navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(reg => {
+    // Проверка обновлений: каждые 3 минуты + при возврате в приложение (обход CDN-кэша)
+    setInterval(() => { reg.update().catch(() => {}); }, 180000);
+    document.addEventListener('visibilitychange', () => { if(!document.hidden) reg.update().catch(() => {}); });
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
       if(w) w.addEventListener('statechange', () => {

@@ -1,5 +1,5 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v145';
+const CACHE = 'niokr-pwa-v146';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -15,9 +15,9 @@ self.addEventListener('fetch', (e) => {
   if (e.request.url.includes('supabase.co') || e.request.url.includes('supabase-js')) return;
   const isHTML = e.request.mode === 'navigate' || /\/index\.html/.test(e.request.url);
   if (isHTML) {
-    // Страница приложения: сначала СЕТЬ (всегда актуальная версия), кэш — только офлайн-запас
+    // Страница приложения: сначала СЕТЬ без HTTP-кэша (всегда актуальная версия), кэш — только офлайн-запас
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(e.request, {cache: 'no-store'}).then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put('./index.html', copy));
         return res;
