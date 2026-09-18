@@ -20,7 +20,8 @@ body{background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,'Segoe U
 header{background:var(--card);border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:5}
 .hrow{display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 6px;width:100%}
 main{min-height:0}
-.tabbar{position:sticky;bottom:0}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30}
+body{padding-bottom:var(--tbh,64px)}
 #structBar::-webkit-scrollbar{display:none}
 .struct-chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:16px;padding:5px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer}
 .struct-chip.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
@@ -549,6 +550,7 @@ setTimeout(() => {
 
 /* ---------- старт ---------- */
 async function init(){
+  navTbMeasure();
   syncBadge();
   if(!SYNC){
     if(!me) onboarding1(); else start();
@@ -3328,6 +3330,14 @@ function backIntercept(){
   setTimeout(() => t.remove(), 2400);
 }
 window.addEventListener('popstate', backIntercept);
+
+/* Нижнее меню: фиксированная высота в var(--tbh) — контент никогда не уходит под панель */
+function navTbMeasure(){
+  const tb = document.querySelector('.tabbar');
+  if(tb) document.documentElement.style.setProperty('--tbh', tb.offsetHeight + 'px');
+}
+window.addEventListener('resize', navTbMeasure);
+window.addEventListener('orientationchange', () => setTimeout(navTbMeasure, 300));
 
 /* ================= ПРОФИ-НАВИГАЦИЯ ================= */
 /* Лист «Ещё»: второстепенные разделы + пользовательские вкладки */
