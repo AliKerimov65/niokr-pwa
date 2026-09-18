@@ -6189,7 +6189,8 @@ async function roomOpen(){
     RM.local = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation:true, noiseSuppression:true, autoGainControl:true}, video: false});
   }catch(e){
     RM.local = new MediaStream(); RM.muted = true;
-    roomPanelNote('Микрофон не подключён — вы в режиме слушателя. Разрешите доступ к микрофону и войдите заново.');
+    roomPanelNote('Микрофон не подключён — вы в режиме слушателя. Нажмите «🎙 Подключить» после разрешения доступа.');
+    setTimeout(() => { if(RM.on) roomMicHelp(e); }, 400);
   }
   if(!document.getElementById('rmAudios')){
     const box = document.createElement('div'); box.id = 'rmAudios'; box.style.display = 'none';
@@ -6399,17 +6400,66 @@ function renderScene(){
 /* ---------- пульт ---------- */
 function roomBtnUpd(){
   const set = (id, ic, label, cls) => { const b = document.getElementById(id); if(b){ b.innerHTML = `<span class="bi">${ic}</span>${label}`; b.className = 'rm-btn' + (cls ? ' ' + cls : ''); } };
-  set('rmMicBtn', RM.muted ? '🔇' : '🎙', RM.muted ? 'Немой' : 'Микрофон', RM.muted ? 'off' : '');
+  const noMic = !RM.local || !RM.local.getAudioTracks().length;
+  set('rmMicBtn', noMic ? '🎙' : (RM.muted ? '🔇' : '🎙'), noMic ? 'Подключить' : (RM.muted ? 'Немой' : 'Микрофон'), (noMic || RM.muted) ? 'off' : '');
   set('rmCamBtn', '📷', RM.camOn ? 'Стоп' : 'Камера', RM.camOn ? 'live' : '');
   set('rmHandBtn', '✋', RM.hand ? 'Опустить' : 'Рука', RM.hand ? 'live' : '');
   set('rmProtoBtn', RM.meeting ? '⏹' : '📜', RM.meeting ? (roomIsOwner() ? 'Стоп' : 'Идёт…') : 'Протокол', RM.meeting ? 'rec-on' : '');
 }
 function roomMicToggle(){
   if(!RM.on) return;
-  if(!RM.local || !RM.local.getAudioTracks().length){ alert('Микрофон не подключён — выйдите и войдите в комнату заново, разрешив доступ.'); return; }
+  if(!RM.local || !RM.local.getAudioTracks().length){ roomMicRetry(); return; }
   RM.muted = !RM.muted;
   RM.local.getAudioTracks().forEach(t => t.enabled = !RM.muted);
   roomTrackPresence(); roomBtnUpd(); renderScene();
+}
+/* Повторное подключение микрофона без выхода из комнаты */
+async function roomMicRetry(){
+  if(!RM.on) return;
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation:true, noiseSuppression:true, autoGainControl:true}, video: false});
+    const tr = s.getAudioTracks()[0];
+    if(!tr) throw new Error('no audio track');
+    if(!RM.local) RM.local = new MediaStream();
+    RM.local.getAudioTracks().forEach(t => { try{ t.stop(); }catch(e){} RM.local.removeTrack(t); });
+    RM.local.addTrack(tr);
+    /* отдать трек всем соединениям: предпочтительно replaceTrack в существующий аудио-трансивер */
+    Object.values(RM.peers).forEach(P => {
+      let done = false;
+      try{
+        const tc = P.pc.getTransceivers().find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'audio');
+        if(tc && tc.sender){ tc.sender.replaceTrack(tr); done = true; }
+      }catch(e){}
+      if(!done){ try{ P.pc.addTrack(tr, RM.local); }catch(e){} }
+    });
+    RM.muted = false;
+    if(RM.actx) roomAnalyserAdd(RM.key, RM.local);
+    roomTrackPresence(); roomBtnUpd(); renderScene();
+    roomPanelNote('Микрофон подключён — вас слышно.');
+  }catch(e){
+    roomMicHelp(e);
+  }
+}
+/* Экран-помощник по разрешению доступа к микрофону */
+function roomMicHelp(e){
+  const code = (e && e.name) || '';
+  const why = code === 'NotFoundError' ? 'Браузер не видит микрофон на этом устройстве.'
+    : code === 'NotReadableError' ? 'Микрофон занят другим приложением — закройте звонилки/диктофон и попробуйте снова.'
+    : 'Браузер (или система) блокирует доступ к микрофону для этого приложения.';
+  const andr = /android/i.test(navigator.userAgent), ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const steps = ios
+    ? '1. Кнопка «аА» в адресной строке Safari → «Настройки сайта» → «Микрофон» → «Разрешить».<br>2. Проверьте: Настройки iPhone → Safari → «Микрофон» → разрешить.<br>3. Вернитесь и нажмите «🎙 Подключить микрофон» ниже.'
+    : andr
+    ? '1. Если приложение установлено на рабочий стол: Настройки телефона → Приложения → «НИОКР Команда» → Разрешения → Микрофон → «Разрешить».<br>2. Или в Chrome: значок замка слева от адреса сайта → «Разрешения» → «Микрофон» → разрешить.<br>3. Вернитесь и нажмите «🎙 Подключить микрофон» ниже.'
+    : '1. Нажмите значок замка слева от адреса сайта → «Микрофон» → «Разрешить».<br>2. Затем нажмите «🎙 Подключить микрофон» ниже.';
+  $('#sheet').innerHTML = `<h2>🎙 Доступ к микрофону</h2><div class="card">
+    <p style="margin-bottom:10px">${why}</p>
+    <p style="line-height:1.7">${steps}</p>
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="document.getElementById('overlay').style.display='none';roomMicRetry()">🎙 Подключить микрофон</button>
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Позже (пока послушаю)</button></div>`;
+  $('#overlay').style.display = 'flex';
 }
 async function roomCamToggle(){
   if(!RM.on) return;
