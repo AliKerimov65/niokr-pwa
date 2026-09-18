@@ -269,6 +269,54 @@ body{overscroll-behavior-y:contain}
 body{background:var(--bg) !important;color:var(--txt) !important}
 .card{background:var(--card) !important;color:var(--txt) !important}
 header{background:var(--card) !important}
+/* ================= КОМНАТА СОВЕЩАНИЙ ================= */
+#roomOv{position:fixed;inset:0;z-index:45;display:none;flex-direction:column;background:#262b33;color:#eef1f5;font-family:inherit}
+#roomOv.on{display:flex}
+.rm-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#1b1f26;border-bottom:1px solid #323945;flex:none}
+.rm-head b{flex:1;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.rm-badge{font-size:11px;padding:3px 9px;border-radius:11px;background:#2c333e;color:#aeb7c4;white-space:nowrap;flex:none}
+.rm-badge.rec{background:#5c1f1a;color:#ff9d92;font-weight:700;animation:rmBlink 1.6s infinite}
+@keyframes rmBlink{50%{opacity:.55}}
+.rm-x{flex:none;width:30px;height:30px;border-radius:9px;border:1px solid #3a424f;background:#262d37;color:#c7cfdb;font-size:15px;cursor:pointer;line-height:1}
+#rmScene{position:relative;flex:1;overflow:hidden;background:linear-gradient(180deg,#3d4552 0%,#39414d 44%,#2e3440 44.2%,#262b34 100%)}
+.rm-win{position:absolute;top:6%;width:15%;height:26%;border-radius:8px;background:linear-gradient(180deg,#a8c4dc 0%,#7e9ab8 60%,#64809e 100%);border:5px solid #4a5260;box-shadow:inset 0 0 0 2px #8fa9c4,0 2px 8px rgba(0,0,0,.3);opacity:.85}
+.rm-win::after{content:'';position:absolute;left:50%;top:0;bottom:0;width:3px;background:#4a5260}
+.rm-win::before{content:'';position:absolute;top:50%;left:0;right:0;height:3px;background:#4a5260}
+.rm-pic{position:absolute;top:10%;width:11%;height:16%;border-radius:4px;background:linear-gradient(135deg,#8a7455,#5f4f38);border:4px solid #6e5c40;box-shadow:0 2px 6px rgba(0,0,0,.35);opacity:.8}
+.rm-table{position:absolute;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(ellipse at 42% 34%,#a97f4e 0%,#8f6a3f 42%,#77552f 75%,#664827 100%);box-shadow:0 10px 26px rgba(0,0,0,.5),inset 0 2px 6px rgba(255,235,200,.25),inset 0 -8px 18px rgba(40,24,8,.45);border:3px solid #543c20;display:flex;align-items:center;justify-content:center}
+.rm-plate{background:rgba(43,30,15,.55);border:1px solid rgba(255,225,170,.35);color:#f0dcb4;border-radius:20px;padding:5px 16px;font-size:12px;letter-spacing:.4px;text-align:center;max-width:82%;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.rm-plate small{display:block;font-size:9.5px;color:#c9b68e;letter-spacing:.2px}
+.rm-chair{position:absolute;transform:translate(-50%,-50%);width:96px;text-align:center;z-index:2;transition:left .45s ease,top .45s ease}
+.rm-seat{position:relative;width:64px;height:64px;margin:0 auto;border-radius:50%;background:#3a4150;padding:4px;box-shadow:0 4px 10px rgba(0,0,0,.45),inset 0 1px 2px rgba(255,255,255,.08)}
+.rm-seat::before{content:'';position:absolute;inset:-5px;border-radius:50%;border:3px solid transparent;transition:border-color .2s}
+.rm-chair.speak .rm-seat::before{border-color:#4ade80;box-shadow:0 0 14px rgba(74,222,128,.65)}
+.rm-ava{width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:19px;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.rm-vid{width:100%;height:100%;border-radius:50%;object-fit:cover;background:#111}
+.rm-chair.me .rm-vid{transform:scaleX(-1)}
+.rm-micoff{position:absolute;right:-4px;bottom:-4px;background:#5c2a24;border-radius:50%;width:22px;height:22px;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid #262b33}
+.rm-hand{position:absolute;left:-6px;top:-6px;background:#7a5410;border-radius:50%;width:24px;height:24px;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #262b33;animation:rmBlink 1.2s infinite}
+.rm-name{margin-top:5px;font-size:11.5px;color:#e6ebf2;background:rgba(20,24,31,.72);border-radius:9px;padding:2px 7px;display:inline-block;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rm-chair.me .rm-name{background:#14395c;color:#bcd9ff}
+.rm-empty{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);color:#9aa5b3;font-size:12.5px;text-align:center;background:rgba(20,24,31,.55);padding:8px 14px;border-radius:12px;max-width:88%}
+
+#rmBar{display:flex;gap:6px;justify-content:center;padding:9px 6px calc(9px + env(safe-area-inset-bottom));background:#1b1f26;border-top:1px solid #323945;flex:none;flex-wrap:nowrap;overflow-x:auto}
+.rm-btn{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:54px;padding:7px 5px;border-radius:12px;border:1px solid #3a424f;background:#272e38;color:#dfe5ee;font-size:10px;cursor:pointer;flex:none;font-family:inherit}
+.rm-btn .bi{font-size:19px;line-height:1.1}
+.rm-btn.off{background:#46251f;border-color:#6e362c;color:#ff9d92}
+.rm-btn.live{background:#14395c;border-color:#1f5c94;color:#9cc8ff}
+.rm-btn.rec-on{background:#5c1f1a;border-color:#8a3a30;color:#ffb3ab}
+#rmPanel{position:absolute;top:53px;right:0;bottom:0;width:min(350px,92%);background:#f8f5ea;color:#1f190e;box-shadow:-6px 0 20px rgba(0,0,0,.5);display:none;flex-direction:column;z-index:5}
+#rmPanel.on{display:flex}
+.rm-ph{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--brd);background:#fff}
+.rm-ph b{flex:1;font-size:14px}
+.rm-ph button{border:1px solid var(--brd2);background:var(--card2);border-radius:8px;width:28px;height:28px;cursor:pointer}
+#rmLines{flex:1;overflow-y:auto;padding:10px}
+#rmLines .pentry{margin-bottom:8px}
+#rmInterim{padding:6px 12px;font-size:12.5px;color:#a83427;min-height:20px}
+.rm-foot{padding:8px 10px;border-top:1px solid var(--brd);background:#fff}
+#roomMini{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tbh,64px) + 10px);z-index:60;display:none;align-items:center;gap:9px;background:#20242b;color:#eef1f5;border:1px solid #3a424f;border-radius:24px;padding:8px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);cursor:pointer;font-size:12.5px;user-select:none}
+#roomMini .dot{width:9px;height:9px;border-radius:50%;background:#4ade80;animation:rmBlink 1.6s infinite}
+#roomMini button{border:none;background:#5c2a24;color:#ffb3ab;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;flex:none}
 </style>
 </head>
 <body>
@@ -317,6 +365,32 @@ header{background:var(--card) !important}
   <span id="dynTabs" style="display:contents"></span>
 </nav>
 <div id="overlay"><div class="sheet" id="sheet"></div></div>
+<div id="roomOv">
+  <div class="rm-head">
+    <b id="rmTitle">Комната совещаний</b>
+    <span class="rm-badge rec" id="rmRec" style="display:none">● ИДЁТ ПРОТОКОЛ</span>
+    <span class="rm-badge" id="rmCount">1 чел.</span>
+    <button class="rm-x" onclick="roomMinimize()" title="Свернуть (совещание продолжится)">—</button>
+  </div>
+  <div id="rmScene"></div>
+  <div id="rmPanel">
+    <div class="rm-ph"><b>📜 Протокол совещания</b><button onclick="roomPanelToggle(false)" title="Закрыть панель">✕</button></div>
+    <div id="rmLines"></div>
+    <div id="rmInterim"></div>
+    <div class="rm-foot">
+      <div class="row"><input id="rmManual" placeholder="Добавить реплику текстом…" onkeydown="if(event.key==='Enter')roomManualAdd()"><button class="pri" style="flex:none;padding:9px 13px" onclick="roomManualAdd()">＋</button></div>
+    </div>
+  </div>
+  <div id="rmBar">
+    <button class="rm-btn" id="rmMicBtn" onclick="roomMicToggle()"><span class="bi">🎙</span>Микрофон</button>
+    <button class="rm-btn" id="rmCamBtn" onclick="roomCamToggle()"><span class="bi">📷</span>Камера</button>
+    <button class="rm-btn" id="rmHandBtn" onclick="roomHandToggle()"><span class="bi">✋</span>Рука</button>
+    <button class="rm-btn" id="rmProtoBtn" onclick="roomProtoToggle()"><span class="bi">📜</span>Протокол</button>
+    <button class="rm-btn" id="rmPanelBtn" onclick="roomPanelToggle()"><span class="bi">💬</span>Текст</button>
+    <button class="rm-btn off" onclick="roomLeave(true)"><span class="bi">📵</span>Выйти</button>
+  </div>
+</div>
+<div id="roomMini" onclick="roomShow()"><span class="dot"></span><span id="rmMiniTxt">Совещание</span><button onclick="event.stopPropagation();roomLeave(true)" title="Выйти из совещания">✕</button></div>
 <div id="pview"><div id="pvStage"><img id="pvImg" alt=""></div>
   <button id="pvX" onclick="closePhoto()" title="Закрыть">✕</button>
   <div id="pvBar"><span id="pvName"></span><a id="pvDl" href="#" download title="Скачать">⬇</a></div>
@@ -3359,6 +3433,8 @@ function moreSheet(){
       ${sec('news','📢','Объявления','инфолента')}
       ${sec('files','📁','Файлы','документы')}
       ${sec('misc','🔧','Разное','сервисы')}
+      <div class="more-cell" onclick="document.getElementById('overlay').style.display='none';roomOpen()">
+        <span class="ic">🎥</span><b>Комната совещаний</b><span>голос · видео · протокол</span></div>
       ${custTabs.map(tabCell).join('')}
     </div>
     <div style="height:10px"></div>
@@ -6073,6 +6149,509 @@ new MutationObserver(() => {
 document.getElementById('overlay').addEventListener('click', (e) => {
   if(e.target === document.getElementById('overlay')){ if(!appStarted) return; document.getElementById('overlay').style.display='none'; }
 });
+
+/* ================= КОМНАТА СОВЕЩАНИЙ =================
+   Онлайн-совещание команды: сцена «стол и кресла» (кресла = участники онлайн),
+   голос/видео по WebRTC (mesh, сигналинг через Supabase Realtime канал room:team),
+   распознавание речи (Web Speech API) и автоматическое ведение протокола
+   (реестр протоколов общий с инструментом «Протокол совещания»). */
+const RM = {
+  on: false, key: null, joinedAt: 0, ch: null,
+  local: null, camTrack: null, selfStream: null,
+  muted: false, camOn: false, hand: false,
+  peers: {},            // key -> {pc, stream, polite, makingOffer, ignoreOffer, audioEl}
+  parts: [],            // presence: [{key, name, muted, cam, hand, at}]
+  meeting: null,        // {id, owner, ownerName, title, startedAt}
+  proto: null,          // объект протокола (только у ведущего)
+  lines: [],            // [{id, speaker, text, t, raw}]
+  lineSeq: 0, dirty: false, saveTimer: null,
+  rec: null, recOn: false, recFailed: false,
+  actx: null, analysers: {}, speaking: {}, speakCnt: {}, speakTimer: null
+};
+const roomIsOwner = () => !!(RM.meeting && RM.meeting.owner === RM.key);
+function roomBc(event, payload){ if(RM.ch){ try{ RM.ch.send({type:'broadcast', event, payload}); }catch(e){} } }
+function roomTrackPresence(){
+  if(RM.ch){ try{ RM.ch.track({name: me.name, muted: RM.muted, cam: RM.camOn, hand: RM.hand, at: RM.joinedAt}); }catch(e){} }
+}
+
+/* ---------- вход / выход / сворачивание ---------- */
+async function roomOpen(){
+  if(RM.on){ roomShow(); return; }
+  if(!SYNC){ alert('Комната совещаний требует связи с базой — в офлайн-режиме недоступна.'); return; }
+  if(!team || !me) return;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ alert('Этот браузер не поддерживает аудио/видеосвязь — откройте приложение в Chrome.'); return; }
+  if(typeof RTCPeerConnection === 'undefined'){ alert('Этот браузер не поддерживает WebRTC — откройте приложение в Chrome.'); return; }
+  $('#roomOv').classList.add('on');
+  $('#rmTitle').textContent = 'Комната совещаний · ' + team.name;
+  Object.assign(RM, {on:true, key: me.name, joinedAt: Date.now(), muted:false, camOn:false, hand:false,
+    lines: [], meeting: null, proto: null, lineSeq: 0, dirty: false, recFailed: false, peers: {}, analysers: {}, speaking: {}, speakCnt: {}});
+  try{
+    RM.local = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation:true, noiseSuppression:true, autoGainControl:true}, video: false});
+  }catch(e){
+    RM.local = new MediaStream(); RM.muted = true;
+    roomPanelNote('Микрофон не подключён — вы в режиме слушателя. Разрешите доступ к микрофону и войдите заново.');
+  }
+  if(!document.getElementById('rmAudios')){
+    const box = document.createElement('div'); box.id = 'rmAudios'; box.style.display = 'none';
+    document.getElementById('roomOv').appendChild(box);
+  }
+  const ch = sb.channel('room:' + tid(), {config: {presence: {key: RM.key}}});
+  RM.ch = ch;
+  ch.on('presence', {event: 'sync'}, roomPresenceSync)
+    .on('broadcast', {event: 'rtc'}, m => roomRtc(m.payload))
+    .on('broadcast', {event: 'line'}, m => roomAddLine(m.payload.line))
+    .on('broadcast', {event: 'line-upd'}, m => roomLineUpd(m.payload))
+    .on('broadcast', {event: 'meet'}, m => roomMeet(m.payload))
+    .on('broadcast', {event: 'state-req'}, m => roomStateReq(m.payload))
+    .on('broadcast', {event: 'state'}, m => roomState(m.payload));
+  ch.subscribe(status => {
+    if(status === 'SUBSCRIBED'){
+      roomTrackPresence();
+      roomBc('state-req', {from: RM.key}); /* поздний вход: запросить состояние протокола у ведущего */
+    }
+  });
+  try{ RM.actx = new (window.AudioContext || window.webkitAudioContext)(); if(RM.actx.state === 'suspended') RM.actx.resume().catch(()=>{}); }catch(e){}
+  if(RM.actx && RM.local.getAudioTracks().length) roomAnalyserAdd(RM.key, RM.local);
+  clearInterval(RM.speakTimer);
+  RM.speakTimer = setInterval(roomSpeakTick, 350);
+  roomBtnUpd(); roomRenderLines(); roomMiniUpd();
+  window.addEventListener('resize', roomOnResize);
+}
+function roomLeave(ask){
+  if(!RM.on) return;
+  if(ask){
+    const own = roomIsOwner();
+    if(!confirm(own ? 'Вы ведёте протокол — он будет завершён и сохранён в реестр. Выйти из комнаты?' : 'Выйти из комнаты совещаний?')) return;
+  }
+  (async () => {
+    if(roomIsOwner()) await roomProtoEnd(true);
+    roomStopRec();
+    clearInterval(RM.saveTimer); RM.saveTimer = null;
+    Object.keys(RM.peers).forEach(roomDropPeer);
+    if(RM.local){ try{ RM.local.getTracks().forEach(t => t.stop()); }catch(e){} RM.local = null; }
+    if(RM.camTrack){ try{ RM.camTrack.stop(); }catch(e){} RM.camTrack = null; RM.selfStream = null; }
+    if(RM.ch){ try{ await sb.removeChannel(RM.ch); }catch(e){} RM.ch = null; }
+    clearInterval(RM.speakTimer);
+    if(RM.actx){ try{ RM.actx.close(); }catch(e){} RM.actx = null; }
+    Object.assign(RM, {on:false, parts:[], lines:[], meeting:null, proto:null, analysers:{}, speaking:{}, camOn:false, muted:false, hand:false});
+    $('#roomOv').classList.remove('on'); $('#roomMini').style.display = 'none';
+    window.removeEventListener('resize', roomOnResize);
+  })();
+}
+window.addEventListener('beforeunload', () => { if(RM.on && RM.ch){ try{ RM.ch.untrack(); }catch(e){} } });
+function roomMinimize(){ if(!RM.on) return; $('#roomOv').classList.remove('on'); $('#roomMini').style.display = 'flex'; roomMiniUpd(); }
+function roomShow(){ if(!RM.on) return; $('#roomMini').style.display = 'none'; $('#roomOv').classList.add('on'); requestAnimationFrame(renderScene); }
+function roomMiniUpd(){
+  const el = document.getElementById('rmMiniTxt'); if(!el) return;
+  el.textContent = '🎥 ' + (team ? team.name : 'Совещание') + ' · ' + (RM.parts.length || 1) + ' чел.' + (RM.meeting ? ' · ● протокол' : '');
+}
+function roomOnResize(){ if(RM.on && $('#roomOv').hasClass('on')) renderScene(); }
+
+/* ---------- presence ---------- */
+function roomPresenceSync(){
+  if(!RM.ch) return;
+  const st = RM.ch.presenceState();
+  const parts = [];
+  Object.keys(st).forEach(k => {
+    const m = (st[k] && st[k][0]) || {};
+    parts.push({key: k, name: m.name || k, muted: !!m.muted, cam: !!m.cam, hand: !!m.hand, at: m.at || 0});
+  });
+  parts.sort((a,b) => (a.at - b.at) || String(a.key).localeCompare(String(b.key)));
+  RM.parts = parts;
+  parts.forEach(p => { if(p.key !== RM.key && !RM.peers[p.key]) roomPeer(p.key); });
+  Object.keys(RM.peers).forEach(k => { if(!parts.find(p => p.key === k)) roomDropPeer(k); });
+  roomCheckOwnerAlive();
+  $('#rmCount').textContent = parts.length + ' чел.';
+  renderScene(); roomMiniUpd();
+}
+
+/* ---------- WebRTC mesh (perfect negotiation) ---------- */
+const RM_RTC_CFG = {iceServers: [{urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']}]};
+function roomPeer(key){
+  if(RM.peers[key]) return RM.peers[key];
+  const pc = new RTCPeerConnection(RM_RTC_CFG);
+  const P = {pc, stream: new MediaStream(), polite: String(RM.key) > String(key), makingOffer: false, ignoreOffer: false, audioEl: null};
+  if(RM.local) RM.local.getTracks().forEach(t => { try{ pc.addTrack(t, RM.local); }catch(e){} });
+  if(RM.camOn && RM.camTrack){ try{ pc.addTrack(RM.camTrack, RM.local || RM.selfStream); }catch(e){} }
+  pc.onnegotiationneeded = async () => {
+    try{
+      P.makingOffer = true;
+      await pc.setLocalDescription();
+      roomBc('rtc', {from: RM.key, to: key, kind: 'desc', data: pc.localDescription.toJSON ? pc.localDescription.toJSON() : {type: pc.localDescription.type, sdp: pc.localDescription.sdp}});
+    }catch(e){} finally{ P.makingOffer = false; }
+  };
+  pc.onicecandidate = e => { if(e.candidate) roomBc('rtc', {from: RM.key, to: key, kind: 'ice', data: e.candidate.toJSON()}); };
+  pc.ontrack = e => {
+    if(e.streams && e.streams[0]) P.stream = e.streams[0];
+    else P.stream.addTrack(e.track);
+    if(!P.audioEl){
+      P.audioEl = document.createElement('audio');
+      P.audioEl.autoplay = true; P.audioEl.playsInline = true;
+      const box = document.getElementById('rmAudios'); if(box) box.appendChild(P.audioEl);
+    }
+    P.audioEl.srcObject = P.stream;
+    roomAnalyserAdd(key, P.stream);
+    renderScene();
+  };
+  pc.oniceconnectionstatechange = () => { if(pc.iceConnectionState === 'failed'){ try{ pc.restartIce(); }catch(e){} } };
+  RM.peers[key] = P;
+  return P;
+}
+function roomDropPeer(key){
+  const P = RM.peers[key]; if(!P) return;
+  try{ P.pc.close(); }catch(e){}
+  if(P.audioEl){ try{ P.audioEl.srcObject = null; P.audioEl.remove(); }catch(e){} }
+  delete RM.peers[key];
+  if(RM.analysers[key]) delete RM.analysers[key];
+  delete RM.speaking[key];
+}
+async function roomRtc(m){
+  if(!RM.on || !m || m.to !== RM.key || m.from === RM.key) return;
+  const P = roomPeer(m.from), pc = P.pc;
+  try{
+    if(m.kind === 'desc'){
+      const desc = m.data;
+      const collision = desc.type === 'offer' && (P.makingOffer || pc.signalingState !== 'stable');
+      P.ignoreOffer = !P.polite && collision;
+      if(P.ignoreOffer) return;
+      if(collision){ try{ await pc.setLocalDescription({type: 'rollback'}); }catch(e){} }
+      await pc.setRemoteDescription(desc);
+      if(desc.type === 'offer'){
+        await pc.setLocalDescription();
+        roomBc('rtc', {from: RM.key, to: m.from, kind: 'desc', data: pc.localDescription.toJSON ? pc.localDescription.toJSON() : {type: pc.localDescription.type, sdp: pc.localDescription.sdp}});
+      }
+    } else if(m.kind === 'ice'){
+      try{ await pc.addIceCandidate(m.data); }catch(e){ if(!P.ignoreOffer) throw e; }
+    }
+  }catch(e){ console.warn('rtc:', e && e.message); }
+}
+
+/* ---------- индикатор «говорит» ---------- */
+function roomAnalyserAdd(key, stream){
+  if(!RM.actx || !stream || RM.analysers[key]) return;
+  try{
+    const src = RM.actx.createMediaStreamSource(stream);
+    const an = RM.actx.createAnalyser(); an.fftSize = 512;
+    src.connect(an);
+    RM.analysers[key] = an;
+  }catch(e){}
+}
+const _rmBuf = new Uint8Array(256);
+function roomSpeakTick(){
+  if(!RM.on) return;
+  Object.keys(RM.analysers).forEach(k => {
+    const an = RM.analysers[k];
+    try{
+      an.getByteTimeDomainData(_rmBuf);
+      let sum = 0;
+      for(let i = 0; i < _rmBuf.length; i++){ const d = (_rmBuf[i] - 128) / 128; sum += d * d; }
+      const rms = Math.sqrt(sum / _rmBuf.length);
+      const c = (RM.speakCnt[k] || 0);
+      if(rms > 0.03){ RM.speakCnt[k] = 3; if(!RM.speaking[k]){ RM.speaking[k] = true; roomChairSpeak(k, true); } }
+      else if(c > 0){ RM.speakCnt[k] = c - 1; if(c - 1 === 0 && RM.speaking[k]){ RM.speaking[k] = false; roomChairSpeak(k, false); } }
+    }catch(e){}
+  });
+}
+function roomChairSpeak(k, on){ const el = document.getElementById('rmc-' + k); if(el) el.classList.toggle('speak', on); }
+
+/* ---------- сцена: стол и кресла ---------- */
+function renderScene(){
+  const sc = document.getElementById('rmScene'); if(!sc || !RM.on) return;
+  const parts = RM.parts.length ? RM.parts : [{key: RM.key, name: me.name, muted: RM.muted, cam: RM.camOn, hand: RM.hand}];
+  const N = Math.max(parts.length, 1);
+  const W = sc.clientWidth || 360, H = sc.clientHeight || 480;
+  const cx = W / 2, cy = H * 0.58;
+  const rx = Math.min(W * 0.41, 400), ry = Math.min(H * 0.37, 250);
+  let html = '<div class="rm-win" style="left:7%"></div><div class="rm-win" style="right:7%"></div>' +
+    '<div class="rm-pic" style="left:29%"></div><div class="rm-pic" style="right:29%"></div>' +
+    `<div class="rm-table" style="left:${cx}px;top:${cy}px;width:${Math.round(rx * 1.5)}px;height:${Math.round(ry * 1.12)}px"><div class="rm-plate">${esc(team ? team.name : 'Команда')}<small>комната совещаний</small></div></div>`;
+  if(parts.length === 1) html += '<div class="rm-empty">Вы пока одни в комнате.<br>Коллеги появятся здесь, как только войдут:<br>«⋯ Ещё» → «Комната совещаний».</div>';
+  parts.forEach((p, i) => {
+    const ang = (-90 + i * 360 / N) * Math.PI / 180;
+    let x = cx + rx * Math.cos(ang), y = cy + ry * Math.sin(ang);
+    x = Math.max(54, Math.min(W - 54, x)); y = Math.max(44, Math.min(H - 60, y));
+    const isMe = p.key === RM.key;
+    const camOn = isMe ? RM.camOn : !!p.cam;
+    const micOff = isMe ? RM.muted : !!p.muted;
+    const ini = String(p.name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const nm = String(p.name || '?').trim().split(/\s+/)[0];
+    html += `<div class="rm-chair${isMe ? ' me' : ''}${RM.speaking[p.key] ? ' speak' : ''}" id="rmc-${p.key}" style="left:${Math.round(x)}px;top:${Math.round(y)}px">
+      <div class="rm-seat">
+        ${camOn ? `<video class="rm-vid" id="rmv-${p.key}" autoplay playsinline${isMe ? ' muted' : ''}></video>` : `<div class="rm-ava" style="background:${avNameColor(p.name)}">${esc(ini)}</div>`}
+        ${micOff ? '<span class="rm-micoff">🔇</span>' : ''}
+        ${p.hand ? '<span class="rm-hand">✋</span>' : ''}
+      </div>
+      <div class="rm-name">${esc(nm)}${isMe ? ' · вы' : ''}</div>
+    </div>`;
+  });
+  sc.innerHTML = html;
+  /* видеопотоки после пересоздания DOM */
+  Object.keys(RM.peers).forEach(k => {
+    const v = document.getElementById('rmv-' + k);
+    if(v && RM.peers[k].stream) v.srcObject = RM.peers[k].stream;
+  });
+  const sv = document.getElementById('rmv-' + RM.key);
+  if(sv && RM.camOn && RM.selfStream) sv.srcObject = RM.selfStream;
+  const pn = document.getElementById('rmPanel');
+  if(pn && !pn.classList.contains('on') && RM.meeting) roomPanelToggle(true);
+}
+
+/* ---------- пульт ---------- */
+function roomBtnUpd(){
+  const set = (id, ic, label, cls) => { const b = document.getElementById(id); if(b){ b.innerHTML = `<span class="bi">${ic}</span>${label}`; b.className = 'rm-btn' + (cls ? ' ' + cls : ''); } };
+  set('rmMicBtn', RM.muted ? '🔇' : '🎙', RM.muted ? 'Немой' : 'Микрофон', RM.muted ? 'off' : '');
+  set('rmCamBtn', '📷', RM.camOn ? 'Стоп' : 'Камера', RM.camOn ? 'live' : '');
+  set('rmHandBtn', '✋', RM.hand ? 'Опустить' : 'Рука', RM.hand ? 'live' : '');
+  set('rmProtoBtn', RM.meeting ? '⏹' : '📜', RM.meeting ? (roomIsOwner() ? 'Стоп' : 'Идёт…') : 'Протокол', RM.meeting ? 'rec-on' : '');
+}
+function roomMicToggle(){
+  if(!RM.on) return;
+  if(!RM.local || !RM.local.getAudioTracks().length){ alert('Микрофон не подключён — выйдите и войдите в комнату заново, разрешив доступ.'); return; }
+  RM.muted = !RM.muted;
+  RM.local.getAudioTracks().forEach(t => t.enabled = !RM.muted);
+  roomTrackPresence(); roomBtnUpd(); renderScene();
+}
+async function roomCamToggle(){
+  if(!RM.on) return;
+  if(RM.camOn){
+    RM.camOn = false;
+    const tr = RM.camTrack;
+    if(tr){
+      Object.values(RM.peers).forEach(P => { const s = P.pc.getSenders().find(x => x.track === tr); if(s){ try{ P.pc.removeTrack(s); }catch(e){} } });
+      try{ tr.stop(); }catch(e){}
+    }
+    RM.camTrack = null; RM.selfStream = null;
+  } else {
+    try{
+      const vs = await navigator.mediaDevices.getUserMedia({video: {width: {ideal: 640}, height: {ideal: 480}}, audio: false});
+      RM.camTrack = vs.getVideoTracks()[0];
+      RM.selfStream = new MediaStream([RM.camTrack]);
+      RM.camOn = true;
+      Object.values(RM.peers).forEach(P => { try{ P.pc.addTrack(RM.camTrack, RM.local || RM.selfStream); }catch(e){} });
+    }catch(e){ alert('Камера недоступна: ' + (e && e.message || e)); return; }
+  }
+  roomTrackPresence(); roomBtnUpd(); renderScene();
+}
+function roomHandToggle(){ if(!RM.on) return; RM.hand = !RM.hand; roomTrackPresence(); roomBtnUpd(); renderScene(); }
+function roomPanelToggle(force){
+  const p = document.getElementById('rmPanel'); if(!p) return;
+  const on = typeof force === 'boolean' ? force : !p.classList.contains('on');
+  p.classList.toggle('on', on);
+  const b = document.getElementById('rmPanelBtn'); if(b) b.classList.toggle('live', on);
+  /* на широком экране сдвигаем сцену, чтобы панель не перекрывала кресла */
+  const sc = document.getElementById('rmScene');
+  if(sc){
+    const wide = window.innerWidth > 560;
+    sc.style.marginRight = (on && wide) ? Math.min(350, window.innerWidth * 0.92) + 'px' : '0';
+    if(wide) renderScene(); /* чтение clientWidth внутри даст синхронный reflow после смены margin */
+  }
+}
+function roomPanelNote(txt){
+  const box = document.getElementById('rmLines'); if(!box) return;
+  const d = document.createElement('div');
+  d.className = 'pentry'; d.style.borderLeftColor = 'var(--warn)';
+  d.innerHTML = `<div class="pt2 mut">${esc(txt)}</div>`;
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+
+/* ---------- протокол: распознавание речи + ведение ---------- */
+function roomProtoToggle(){
+  if(!RM.on) return;
+  if(RM.meeting){
+    if(roomIsOwner()){
+      if(confirm('Завершить запись протокола и сформировать документ?')) roomProtoEnd(false);
+    } else {
+      alert('Протокол сейчас ведёт ' + (RM.meeting.ownerName || 'ведущий') + '. Завершить запись может только он.');
+    }
+    return;
+  }
+  const d = new Date();
+  RM.meeting = {id: 'm' + Date.now().toString(36), owner: RM.key, ownerName: me.name,
+    title: 'Онлайн-совещание команды «' + (team ? team.name : '') + '»', startedAt: d.toISOString()};
+  RM.proto = roomProtoSkeleton();
+  RM.lines = [];
+  roomBc('meet', {action: 'start', meeting: RM.meeting});
+  const rc = document.getElementById('rmRec'); rc.style.display = ''; rc.textContent = '● ПРОТОКОЛ · вы ведёте';
+  roomStartRec();
+  roomPanelToggle(true); roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+  roomPanelNote('Идёт запись: речь каждого участника переводится в текст с его устройства. Говорите по очереди; без наушников реплики коллег могут попасть в вашу дорожку — лишнее удалите при формировании.');
+}
+function roomProtoSkeleton(){
+  const d = new Date(), pad = x => String(x).padStart(2, '0');
+  const azt = TABS.find(x => x.kind === 'az'); const azc = azt ? azt.config : {};
+  return { id: Date.now(), num: 0,
+    title: 'Онлайн-совещание команды «' + (team ? team.name : '') + '»',
+    date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+    time: pad(d.getHours()) + ':' + pad(d.getMinutes()),
+    place: 'Онлайн (комната совещаний)', object: azc.object || '', agenda: '',
+    participants: RM.parts.map(p => p.name), chair: '', secretary: me.name,
+    entries: [], decisions: [], speaker: me.name,
+    created_by: me.name, created_at: d.toISOString(), status: 'draft', online: true };
+}
+async function roomProtoEnd(auto){
+  if(!RM.meeting) return;
+  const wasOwner = roomIsOwner();
+  const mid = RM.meeting.id;
+  roomBc('meet', {action: 'end', id: mid});
+  roomStopRec();
+  RM.meeting = null;
+  document.getElementById('rmRec').style.display = 'none';
+  roomBtnUpd(); roomMiniUpd();
+  if(wasOwner && RM.proto){
+    const p = RM.proto; RM.proto = null;
+    p.entries = RM.lines.map(l => ({speaker: l.speaker, text: l.text, t: l.t, raw: !!l.raw}));
+    const names = new Set([...(p.participants || []), ...RM.parts.map(x => x.name), ...p.entries.map(e => e.speaker)]);
+    p.participants = [...names].filter(Boolean);
+    p.secretary = me.name;
+    try{
+      await loadProtos();
+      p.num = (PROTOS || []).reduce((m, x) => Math.max(m, x.num || 0), 0) + 1;
+      PROTO_CUR = p; PROTOS = [p].concat(PROTOS || []);
+      await ProtoStore.save(p);
+      if(auto){ roomPanelNote('Протокол №' + p.num + ' сохранён в реестр (раздел «Протоколы»).'); }
+      else { roomMinimize(); protoForm(); }
+    }catch(e){ alert('Протокол не сохранился в базе: ' + (e && e.message)); }
+  }
+  clearInterval(RM.saveTimer); RM.saveTimer = null;
+}
+function roomMeet(m){
+  if(!RM.on || !m) return;
+  if(m.action === 'start' && (!RM.meeting || RM.meeting.id !== m.meeting.id)){
+    RM.meeting = m.meeting;
+    const rc = document.getElementById('rmRec'); rc.style.display = ''; rc.textContent = '● ПРОТОКОЛ · ведёт ' + (m.meeting.ownerName || '');
+    if(!roomIsOwner()){ roomPanelToggle(true); roomPanelNote(m.meeting.ownerName + ' начал(а) запись протокола — ваша речь тоже переводится в текст.'); }
+    roomStartRec();
+    roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+  }
+  if(m.action === 'end' && RM.meeting && RM.meeting.id === m.id){
+    RM.meeting = null; RM.proto = null;
+    roomStopRec();
+    document.getElementById('rmRec').style.display = 'none';
+    roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+    roomPanelNote('Запись протокола завершена.');
+  }
+  if(m.action === 'adopt' && RM.meeting && RM.meeting.id === m.id){
+    RM.meeting.owner = m.owner; RM.meeting.ownerName = m.ownerName;
+    const rc = document.getElementById('rmRec'); rc.textContent = '● ПРОТОКОЛ · ' + (roomIsOwner() ? 'вы ведёте' : 'ведёт ' + (m.ownerName || ''));
+    roomBtnUpd();
+  }
+}
+function roomCheckOwnerAlive(){
+  if(!RM.meeting) return;
+  if(RM.parts.find(p => p.key === RM.meeting.owner)) return;
+  const first = RM.parts[0];
+  if(first && first.key === RM.key){
+    RM.meeting.owner = RM.key; RM.meeting.ownerName = me.name;
+    if(!RM.proto) RM.proto = roomProtoSkeleton();
+    RM.proto.entries = RM.lines;
+    RM.dirty = true;
+    roomBc('meet', {action: 'adopt', id: RM.meeting.id, owner: RM.key, ownerName: me.name});
+    const rc = document.getElementById('rmRec'); rc.textContent = '● ПРОТОКОЛ · вы ведёте';
+    roomPanelNote('Ведущий вышел из комнаты — протокол продолжаю я. Нажмите «⏹ Стоп», чтобы завершить и сформировать.');
+    roomBtnUpd();
+  }
+}
+function roomStateReq(m){
+  if(!m || m.from === RM.key) return;
+  if(RM.meeting && roomIsOwner()) roomBc('state', {to: m.from, meeting: RM.meeting, lines: RM.lines});
+}
+function roomState(m){
+  if(!RM.on || !m || m.to !== RM.key || !m.meeting) return;
+  if(RM.meeting && RM.meeting.id === m.meeting.id && RM.lines.length >= (m.lines || []).length) return;
+  RM.meeting = m.meeting;
+  RM.lines = (m.lines || []).slice();
+  const rc = document.getElementById('rmRec'); rc.style.display = ''; rc.textContent = '● ПРОТОКОЛ · ведёт ' + (m.meeting.ownerName || '');
+  roomRenderLines(); roomBtnUpd(); roomMiniUpd();
+  roomStartRec();
+}
+function roomLine(text){
+  text = String(text || '').trim();
+  if(!text || !RM.meeting) return;
+  const line = {id: String(RM.key).replace(/\W/g, '') + '-' + Date.now().toString(36) + '-' + (++RM.lineSeq),
+    speaker: me.name, text, t: now().split(' ')[1] || '', raw: true};
+  roomAddLine(line, true);
+  roomBc('line', {line});
+}
+function roomAddLine(line){
+  if(!line || !line.id || !RM.meeting) return;
+  if(RM.lines.find(l => l.id === line.id)) return;
+  RM.lines.push(line);
+  roomRenderLines();
+  if(roomIsOwner()){
+    RM.dirty = true;
+    roomProtoAutoSave();
+    (async () => {
+      const fixed = await protoPolish(line.text);
+      if(fixed && fixed !== line.text){
+        line.text = fixed;
+        line.raw = false;
+        RM.dirty = true;
+        roomRenderLines();
+        roomBc('line-upd', {id: line.id, text: line.text});
+      } else { line.raw = false; }
+    })();
+  }
+}
+function roomLineUpd(m){
+  if(!m) return;
+  const l = RM.lines.find(x => x.id === m.id);
+  if(l){ l.text = m.text; l.raw = false; roomRenderLines(); }
+}
+function roomProtoAutoSave(){
+  if(RM.saveTimer) return;
+  RM.saveTimer = setInterval(() => {
+    if(RM.proto && RM.dirty){
+      RM.proto.entries = RM.lines.map(l => ({speaker: l.speaker, text: l.text, t: l.t, raw: !!l.raw}));
+      ProtoStore.save(RM.proto).catch(() => {});
+      RM.dirty = false;
+    }
+  }, 15000);
+}
+function roomStartRec(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){
+    if(!RM.recFailed){ RM.recFailed = true; roomPanelNote('Ваш браузер не распознаёт речь (нужен Chrome/Edge) — добавляйте реплики текстом внизу панели.'); }
+    return;
+  }
+  if(RM.recOn) return;
+  const rec = new SR();
+  rec.lang = 'ru-RU'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec.onresult = e => {
+    let interim = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if(r.isFinal) roomLine(r[0].transcript);
+      else interim += r[0].transcript;
+    }
+    const el = document.getElementById('rmInterim');
+    if(el) el.textContent = interim ? '🔴 ' + interim : '';
+  };
+  rec.onerror = e => {
+    if(e && e.error === 'not-allowed'){
+      RM.recOn = false; RM.recFailed = true;
+      roomPanelNote('Нет доступа к микрофону для распознавания речи — разрешите в настройках браузера и перезапустите протокол.');
+    }
+  };
+  rec.onend = () => { if(RM.recOn && RM.meeting){ try{ rec.start(); }catch(e){} } };
+  RM.rec = rec; RM.recOn = true;
+  try{ rec.start(); }catch(e){}
+}
+function roomStopRec(){ RM.recOn = false; if(RM.rec){ try{ RM.rec.stop(); }catch(e){} RM.rec = null; } const el = document.getElementById('rmInterim'); if(el) el.textContent = ''; }
+function roomRenderLines(){
+  const box = document.getElementById('rmLines'); if(!box) return;
+  const head = RM.meeting ? '' : '<p class="mut" style="padding:2px 2px 8px">Протокол пока не ведётся. Нажмите «📜 Протокол» на пульте — речь участников начнёт переводиться в текст.</p>';
+  box.innerHTML = head + (RM.lines.map(l =>
+    `<div class="pentry"><div class="ph"><b style="color:${avNameColor(l.speaker)}">${esc(l.speaker)}</b><span class="mut">${esc(l.t || '')}</span>${l.raw ? '<span class="mut" title="идёт автоисправление">⏳</span>' : ''}</div><div class="pt2">${esc(l.text)}</div></div>`).join('')
+    || (RM.meeting ? '<p class="mut" style="padding:2px">Слушаю… реплики появятся здесь.</p>' : ''));
+  box.scrollTop = box.scrollHeight;
+}
+function roomManualAdd(){
+  const inp = document.getElementById('rmManual'); if(!inp) return;
+  const t = inp.value.trim(); if(!t) return;
+  inp.value = '';
+  if(!RM.meeting){ alert('Сначала начните запись протокола (кнопка «📜 Протокол»).'); return; }
+  roomLine(t);
+}
 
 init();
 </script>
