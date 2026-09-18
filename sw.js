@@ -1,5 +1,5 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v139';
+const CACHE = 'niokr-pwa-v140';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -42,14 +42,17 @@ self.addEventListener('push', (e) => {
     body: d.body || 'Новое сообщение',
     icon: './icon-192.png',
     badge: './icon-192.png',
-    data: { url: './' }
+    tag: d.tag || 'niokr',
+    data: { url: d.url || './' }
   }));
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
   e.waitUntil(clients.matchAll({type:'window', includeUncontrolled:true}).then(cs => {
     const c = cs.find(x => x.url.indexOf('niokr') > -1);
-    return c ? c.focus() : clients.openWindow('./');
+    if(c){ c.focus(); try{ c.navigate(url); }catch(err){} return; }
+    return clients.openWindow(url);
   }));
 });
 

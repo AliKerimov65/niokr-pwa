@@ -13,6 +13,7 @@
 | `sms-gateway` | ✅ 200 | `{action:'send', member, text}` | SMS/мессенджер-шлюз уведомлений |
 | `max-bot` | ✅ 200 | `{action:'send', member, text}` | Отправка в MAX по `max_links.chat_id` |
 | `az-polish` | ✅ 200 | `{text}` | Обработка голосовой диктовки журнала АН |
+| `push-send` | ⚠️ ЗАГЛУШКА (v140: код подготовлен в `supabase/functions/push-send/`, требует деплоя + секретов `VAPID_PUBLIC`/`VAPID_PRIVATE`) | `{members[], title, body, url?}` | Web Push-рассылка по подпискам `push_subs`; вызывается клиентом после сообщений/задач/объявлений |
 | `dev-executor` | 🔄 ПЕРЕНЕСЁН в GitHub Actions (2026-09-14) | очередь `dev_tasks` → коммит | Автоисполнитель задач: см. `.github/workflows/dev-executor.yml` + `tools/dev-executor.mjs` |
 
 ## dev-executor (архитектура с 2026-09-14)

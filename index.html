@@ -1294,6 +1294,7 @@ async function reportBuild(scope){
 async function reportPublish(){
   if(!window._reportText) return;
   await sb.from('announcements').insert({team_id: tid(), body: window._reportText.slice(0, 4000), author: me.name});
+  pushNotify(pushMemberNames(), '📢 Отчёт · ' + (team ? team.name : ''), me.name + ' опубликовал отчёт в объявлениях', './#/news');
   alert('Опубликовано в объявлениях ✅');
 }
 
@@ -1534,13 +1535,23 @@ $('#syncBadge').onclick = async () => {
   b.textContent = 'Синхрон'; b.classList.add('on');
   setTimeout(() => syncBadge(), 1500);
 };
-const VAPID_PUBLIC = '${VAPID_PUBLIC}';
+const VAPID_PUBLIC = 'BDRQPJ_ENu6asn7w7BDP6iQGNnFVIeg6axHhnQ0gxrqmoVCobY_xQSZVJEwWIWFhnHIL_8qtUwH5gcwv_K46xT0';
 function urlB64ToUint8(b){ const p = '='.repeat((4-b.length%4)%4); const s = (b+p).replace(/-/g,'+').replace(/_/g,'/'); const r = atob(s); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))); }
 async function pushSync(){
   const b = $('#pushBtn'); if(!b) return;
-  if(!('Notification' in window) || !('serviceWorker' in window) || !('PushManager' in window)){ b.classList.add('hidden'); return; }
+  if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)){ b.classList.add('hidden'); return; }
   const reg = await navigator.serviceWorker.ready;
-  const sub = await reg.pushManager.getSubscription().catch(()=>null);
+  let sub = await reg.pushManager.getSubscription().catch(()=>null);
+  // Автопродление: разрешение дано и флаг включён — держим подписку живой (endpoint мог смениться)
+  if(SYNC && me && Notification.permission === 'granted' && store.get('pushOn')){
+    try{
+      if(!sub){
+        sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)});
+      }
+      const j = sub.toJSON();
+      await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
+    }catch(e){}
+  }
   b.classList.remove('hidden');
   const denied = Notification.permission === 'denied';
   b.textContent = '🔔';
@@ -1548,6 +1559,20 @@ async function pushSync(){
   b.style.borderColor = sub ? 'var(--acc)' : 'var(--brd2)';
   b.style.background = sub ? '#7a541014' : 'none';
   b.title = denied ? 'Уведомления заблокированы в настройках браузера' : (sub ? 'Пуш-уведомления: вкл — нажмите для отключения' : 'Включить пуш-уведомления');
+}
+/* ---------- Web Push: отправка уведомлений участникам ---------- */
+function pushMemberNames(){ return (TEAM_MEMBERS||[]).map(m => m.member).filter(Boolean); }
+/* fire-and-forget: серверная функция push-send рассылает web-push по подпискам из push_subs */
+function pushNotify(members, title, body, url){
+  try{
+    if(!SYNC || !me) return;
+    const list = [...new Set((members||[]).filter(m => m && m !== me.name))];
+    if(!list.length) return;
+    fetch(SUPABASE_URL + '/functions/v1/push-send', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({members:list, title:String(title||'НИОКР Команда').slice(0,80), body:String(body||'').slice(0,180), url:url||'./#/chat'})
+    }).catch(()=>{});
+  }catch(e){}
 }
 /* ---------- Настройки ---------- */
 function settingsSheet(){
@@ -1569,9 +1594,9 @@ function settingsSheet(){
   $('#overlay').style.display='flex';
 }
 function settingsPush(){
-  $('#pushBtn').click();
   $('#overlay').style.display='none';
-  setTimeout(() => { $('#pushBtn').click(); $('#overlay').style.display='none'; settingsSheet(); }, 700);
+  $('#pushBtn').click();
+  setTimeout(() => settingsSheet(), 1200);
 }
 function settingsAuto(){ AUTO = !AUTO; store.set('auto', AUTO); autoSet(); settingsSheet(); }
 async function settingsSms(){
@@ -1603,19 +1628,27 @@ $('#cacheBtn').onclick = async () => {
   location.reload();
 };
 $('#pushBtn').onclick = async () => {
-  if(!('Notification' in window)) return alert('Уведомления не поддерживаются этим браузером');
+  if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return alert('Уведомления не поддерживаются этим браузером');
   const reg = await navigator.serviceWorker.ready;
-  let sub = await reg.pushManager.getSubscription();
+  let sub = await reg.pushManager.getSubscription().catch(()=>null);
   if(sub){
-    await sub.unsubscribe();
-    if(SYNC) await sb.from('push_subs').delete().eq('endpoint', sub.endpoint);
-  } else {
+    if(!confirm('Отключить пуш-уведомления на этом устройстве?')) return;
+    try{
+      await sub.unsubscribe();
+      if(SYNC) await sb.from('push_subs').delete().eq('endpoint', sub.endpoint);
+      store.set('pushOn', false);
+    }catch(e){ alert('Не удалось отключить: '+e.message); }
+    pushSync(); return;
+  }
+  try{
     const perm = await Notification.requestPermission();
-    if(perm !== 'granted'){ pushSync(); return alert('Разрешение на уведомления не получено'); }
+    if(perm !== 'granted'){ pushSync(); return alert('Разрешение на уведомления не получено.\nЕсли браузер заблокировал запрос — откройте настройки сайта (значок замка в адресной строке) → Уведомления → Разрешить.'); }
     sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)});
     const j = sub.toJSON();
-    if(SYNC) await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
-  }
+    if(SYNC && me) await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
+    store.set('pushOn', true);
+    alert('✅ Пуш-уведомления включены на этом устройстве.\nВключите на каждом устройстве, где хотите их получать.');
+  }catch(e){ alert('Не удалось включить уведомления: '+e.message); }
   pushSync();
 };
 $('#exitBtn').onclick = () => {
@@ -4994,6 +5027,8 @@ async function sendMsg(){
     rMsgs.push({n:me.name, r:me.role, x:body, t:now()}); render();
     const {error} = await sb.from('messages').insert(row);
     if(error) alert('Не отправлено: '+error.message);
+    else if(dmWith) pushNotify([dmWith], '💬 Личное: ' + me.name, txt);
+    else pushNotify(pushMemberNames(), '💬 ' + (team ? team.name : 'Чат') + ' · ' + chan, me.name + ': ' + txt);
   } else pushLocal({n:me.name, r:me.role, x:body, t:now()});
 }
 $('#mText')?.addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
@@ -5007,7 +5042,8 @@ $('#fileInp').addEventListener('change', async e => {
       const {data:u} = sb.storage.from('files').getPublicUrl(path);
       const row = {team_id:tid(), channel:chan, author:me.name, role:me.role, body:'', file_name:f.name, file_url:u.publicUrl, client_id:cid};
       rMsgs.push(rowToMsg({...row, created_at:new Date().toISOString()})); render();
-      await sb.from('messages').insert(row);
+      const {error: msgErr} = await sb.from('messages').insert(row);
+      if(!msgErr) pushNotify(dmWith ? [dmWith] : pushMemberNames(), '📎 ' + me.name + ': файл', f.name);
     }catch(err){ alert('Ошибка загрузки файла: '+err.message); }
   } else {
     const r = new FileReader();
@@ -5085,7 +5121,12 @@ function taskList(ts){
 }
 async function addTask(){
   const t = $('#tt').value.trim(); if(!t) return;
-  if(SYNC){ await sb.from('tasks').insert({team_id:tid(), title:t, assignee:$('#ta').value, deadline:$('#td').value||null, status:'Новая', author:me.name}); loadTasks(); }
+  if(SYNC){
+    const dl = $('#td').value || null;
+    const {error} = await sb.from('tasks').insert({team_id:tid(), title:t, assignee:$('#ta').value, deadline:dl, status:'Новая', author:me.name});
+    if(!error && $('#ta').value) pushNotify([$('#ta').value], '✅ Новая задача от ' + me.name, t + (dl ? ' · до ' + dl : ''), './#/tasks');
+    loadTasks();
+  }
   else { const ts = store.get('tasks_'+(team?team.id:'x'), []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks_'+(team?team.id:'x'), ts); render(); }
 }
 async function setTask(id,s){
@@ -5139,7 +5180,8 @@ async function addNews(){
       file_url = sb.storage.from('files').getPublicUrl(path).data.publicUrl;
       file_name = annFile.name;
     }
-    await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name, file_name, file_url});
+    const {error: annErr} = await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name, file_name, file_url});
+    if(!annErr) pushNotify(pushMemberNames(), '📢 Объявление · ' + (team ? team.name : ''), me.name + ': ' + t, './#/news');
     annFile = null;
     loadNews();
   }
@@ -5547,6 +5589,7 @@ async function deliverViaApp(name){
   rMsgs.push({n:me.name, r:me.role, x:t, t:now()}); render();
   const {error} = await sb.from('messages').insert(row);
   if(error) alert('Ошибка: '+error.message);
+  else pushNotify([name], '💬 Личное: ' + me.name, t);
   // 2. SMS-дубль
   try{
     const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/sms-gateway', {
