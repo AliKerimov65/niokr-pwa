@@ -794,7 +794,9 @@ function onboarding2(){
       <button class="sec" style="width:100%" onclick="store.del('user'); store.del('team'); me=null; team=null; appStarted=false; loadMembers().then(onboarding1)">← Выбрать другого участника</button>
     </div>`}
     <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Создать свою команду (видят только приглашённые):</p>
-      <div class="row"><input id="newTeamName" placeholder="Название команды / проекта"><button class="pri" onclick="createTeam()">Создать</button></div></div>
+      <button class="pri" style="width:100%" onclick="wzStart()">🧭 Мастер создания команды</button>
+      <div style="height:8px"></div>
+      <div class="row"><input id="newTeamName" placeholder="Или пустую: название"><button class="sec" onclick="createTeam()">Создать</button></div></div>
     <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду приглашения:</p>
       <div class="row"><input id="joinCode" placeholder="Код (6 символов)" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div></div>`;
   $('#overlay').style.display = 'flex';
@@ -828,6 +830,264 @@ async function joinTeam(){
   $('#overlay').style.display='none'; dmWith = null; reloadAll();
 }
 
+/* ================= МАСТЕР СОЗДАНИЯ КОМАНДЫ (умные шаблоны по направлениям) ================= */
+const TEAM_TYPES = {
+  design: {name:'Проектирование', icon:'📐', desc:'Проектная и рабочая документация, экспертиза, авторский надзор',
+    roles:['ГИП','ГАП','Проектировщик КЖ','Проектировщик АР','Инженер ВК/ЭО','Сметчик'],
+    stages:[
+      {n:'Сбор и анализ исходных данных', rec:1, works:['Реестр исходно-разрешительной документации','Анализ исходных данных','Задание на инженерные изыскания']},
+      {n:'Техническое задание', rec:1, works:['Проект ТЗ','Согласование ТЗ с заказчиком','Утверждение ТЗ']},
+      {n:'Предпроектные проработки', rec:0, works:['Концепция / эскизный проект','Вариантные проработки','Выбор основного проектного решения']},
+      {n:'Проектная документация (ПД)', rec:1, works:['Раздел 1. Пояснительная записка','Раздел 2. СПОЗУ','Раздел 3. Архитектурные решения','Раздел 4. Конструктивные решения','Раздел 5. Инженерное оборудование','Раздел 8. Проект организации строительства','Раздел 9. Смета']},
+      {n:'Экспертиза проектной документации', rec:1, works:['Передача комплекта в экспертизу','Отработка замечаний','Положительное заключение экспертизы']},
+      {n:'Рабочая документация (РД)', rec:1, works:['Чертежи КЖ/КМ','Архитектурные решения РД','ВК / ЭОМ / СС','Спецификации и ведомости']},
+      {n:'Авторский надзор и сопровождение', rec:0, works:['Ведение журнала авторского надзора','Выезды на объект','Ответы на запросы строителей']},
+    ],
+    xtabs:[
+      {k:'pd87', name:'Состав ПД (87-ПП РФ)', icon:'☑', kind:'list', config:{items:['Раздел 1. Пояснительная записка','Раздел 2. СПОЗУ','Раздел 3. АР','Раздел 4. КР','Раздел 5. ИОС','Раздел 6. ПОМ','Раздел 7. ОДИ','Раздел 8. ПОС','Раздел 9. Смета','Раздел 10. ГОЧС','Раздел 11. ООС','Раздел 12. Иная документация'].map(t=>({text:t, done:false}))}},
+      {k:'notes', name:'Замечания и отработка', icon:'📰', kind:'feed', config:{}},
+    ]},
+  niokr: {name:'НИОКР', icon:'🔬', desc:'Исследования, разработка, испытания и внедрение результатов',
+    roles:['Руководитель НИОКР','Ведущий инженер-исследователь','Инженер-конструктор','Инженер-испытатель','Патентный специалист'],
+    stages:[
+      {n:'Инициация и обоснование темы', rec:1, works:['Анализ проблематики','Обоснование актуальности','Паспорт темы НИОКР']},
+      {n:'Техническое задание на НИОКР', rec:1, works:['Проект ТЗ','Согласование ТЗ','Утверждение ТЗ']},
+      {n:'План-график и организация', rec:1, works:['Календарный план-график','Состав команды и ответственные','Ресурсное обеспечение']},
+      {n:'Исследовательская часть', rec:1, works:['Аналитический обзор','Патентный поиск','Теоретические исследования']},
+      {n:'Опытно-конструкторская часть', rec:1, works:['Разработка технических решений','Лабораторные исследования','Корректировка решений по результатам']},
+      {n:'Испытания и валидация', rec:1, works:['Программа испытаний','Проведение испытаний','Анализ результатов']},
+      {n:'Отчётность и приёмка', rec:1, works:['Отчёт о НИР','Предъявление комиссии','Приёмка результатов']},
+      {n:'Внедрение результатов', rec:0, works:['Передача документации','Сопровождение внедрения']},
+    ],
+    xtabs:[
+      {k:'milestones', name:'Контрольные точки НИОКР', icon:'☑', kind:'list', config:{items:['ТЗ утверждено','План-график утверждён','Отчёт по этапу представлен','Испытания завершены','Результаты приняты комиссией'].map(t=>({text:t, done:false}))}},
+      {k:'lab', name:'Лабораторный дневник', icon:'🧪', kind:'feed', config:{}},
+    ]},
+  survey: {name:'Изыскания', icon:'🧭', desc:'Инженерные изыскания: геодезия, геология, экология, отчёт',
+    roles:['Руководитель изысканий','Инженер-геодезист','Инженер-геолог','Инженер-эколог','Лаборант'],
+    stages:[
+      {n:'Подготовка и программа изысканий', rec:1, works:['Исходные данные и ТЗ','Программа инженерных изысканий','Допуски и согласования']},
+      {n:'Инженерно-геодезические изыскания', rec:1, works:['Рекогносцировка','Топографическая съёмка','Камеральная обработка']},
+      {n:'Инженерно-геологические изыскания', rec:1, works:['Бурение и полевые работы','Отбор образцов','Лабораторные исследования грунтов']},
+      {n:'Инженерно-экологические изыскания', rec:0, works:['Полевые наблюдения','Отбор проб','Оценка воздействий']},
+      {n:'Инженерно-гидрометеорологические изыскания', rec:0, works:['Полевые наблюдения','Анализ режимных данных']},
+      {n:'Камеральные работы и отчёт', rec:1, works:['Сводный анализ материалов','Технический отчёт по изысканиям','Экспертиза отчёта']},
+    ],
+    xtabs:[
+      {k:'field', name:'Полевой дневник', icon:'📰', kind:'feed', config:{}},
+      {k:'program', name:'Программа изысканий', icon:'☑', kind:'list', config:{items:['Геодезические работы','Геологические работы','Экологические работы','Гидрометеорологические работы','Лабораторные исследования','Камеральные работы'].map(t=>({text:t, done:false}))}},
+    ]},
+  build: {name:'Строительство', icon:'🏗', desc:'СМР полного цикла: от подготовки до сдачи объекта',
+    roles:['Руководитель проекта','Производитель работ','Мастер участка','Инженер ПТО','Инженер-геодезист','Специалист по охране труда'],
+    stages:[
+      {n:'Подготовительный период', rec:1, works:['Оформление допусков и СРО','Ограждение и временные здания','Временные сети','Геодезическая разбивка']},
+      {n:'Земляные работы', rec:1, works:['Планировка площадки','Котлованы и траншеи','Обратная засыпка']},
+      {n:'Фундаменты', rec:1, works:['Подготовка основания','Армирование и бетонирование','Гидроизоляция']},
+      {n:'Возведение конструкций', rec:1, works:['Монтаж несущих конструкций','Перекрытия и покрытия','Ограждающие конструкции']},
+      {n:'Инженерные системы', rec:1, works:['Водоснабжение и канализация','Электроснабжение','Вентиляция и отопление','Слаботочные системы']},
+      {n:'Отделочные работы', rec:0, works:['Черновая отделка','Чистовая отделка','Фасадные работы']},
+      {n:'Пусконаладка и сдача', rec:1, works:['Испытания систем','Пусконаладочные работы','Исполнительная документация','Приёмка объекта']},
+    ],
+    xtabs:[
+      {k:'idocs', name:'Исполнительная документация', icon:'☑', kind:'list', config:{items:['АОСР на скрытые работы','Журналы производства работ','Сертификаты и паспорта материалов','Исполнительные схемы','Акты испытаний'].map(t=>({text:t, done:false}))}},
+      {k:'diary', name:'Дневник объекта', icon:'📰', kind:'feed', config:{}},
+    ]},
+  repair: {name:'Ремонт', icon:'🛠', desc:'Обследование, дефектная ведомость, восстановление, приёмка',
+    roles:['Руководитель проекта','Прораб','Инженер по обследованию','Мастер','Инженер ПТО'],
+    stages:[
+      {n:'Обследование и дефектная ведомость', rec:1, works:['Визуально-инструментальное обследование','Дефектная ведомость','Заключение о техническом состоянии']},
+      {n:'Проект и смета ремонта', rec:1, works:['Проектные решения','Ведомость объёмов работ','Смета ремонта']},
+      {n:'Демонтаж', rec:1, works:['Разборка повреждённых конструкций','Вывоз мусора','Подготовка поверхностей']},
+      {n:'Восстановление конструкций', rec:1, works:['Ремонт несущих элементов','Усиление конструкций','Антикоррозионная защита']},
+      {n:'Инженерные системы', rec:0, works:['Замена / ремонт сетей','Проверка и испытания']},
+      {n:'Отделка и благоустройство', rec:0, works:['Ремонт отделки','Герметизация','Окраска']},
+      {n:'Контроль качества и приёмка', rec:1, works:['Входной контроль материалов','Операционный контроль','Приёмка и гарантийные обязательства']},
+    ],
+    xtabs:[
+      {k:'defects', name:'Журнал дефектов', icon:'📰', kind:'feed', config:{}},
+      {k:'qc', name:'Контроль качества', icon:'☑', kind:'list', config:{items:['Входной контроль материалов','Операционный контроль','Приёмочный контроль'].map(t=>({text:t, done:false}))}},
+    ]},
+};
+const WZ_KEYS = [
+  ['niokr',  /ниокр|исследован|разработк|(^|[^\p{L}\p{N}])(нир|окр)([^\p{L}\p{N}]|$)/i],
+  ['survey', /изыскан|геолог|геодез|экологич|гидромет|камерал/i],
+  ['repair', /ремонт|реконструк|восстановлен|модерниз|капрем/i],
+  ['design', /проектир|чертёж|чертеж|(^|[^\p{L}\p{N}])(проект|пд|рд|гип)([^\p{L}\p{N}]|$)/i],
+  ['build',  /строит|монтаж|объект|труб|здание|сооруж|(^|[^\p{L}\p{N}])смр([^\p{L}\p{N}]|$)/i],
+];
+let WZ = null;
+function wzStart(){
+  if(!SYNC) return alert('Мастеру нужна связь с сервером. Создайте пустую команду кнопкой ниже.');
+  WZ = {step:1, name:'', guess:null, type:null, stages:null, xtabs:{}, exp:-1, busy:false};
+  wzRender();
+}
+function wzBar(){
+  return `<div style="display:flex;gap:4px;margin-bottom:12px">${[1,2,3,4,5].map(i=>`<span style="flex:1;height:4px;border-radius:2px;background:${i<=WZ.step?'var(--acc)':'#2a2f3a'}"></span>`).join('')}</div>`;
+}
+function wzRender(){
+  if(!WZ) return;
+  const s = WZ.step;
+  let h = '';
+  if(s===1){
+    h = `<h2>🧭 Новая команда — шаг 1/5</h2>${wzBar()}
+     <div class="card">
+      <p class="mut">Название команды / объекта:</p>
+      <input id="wzName" placeholder="Например: НИОКР по…, Ремонт трубы №2…" value="${esc(WZ.name)}" oninput="WZ.name=this.value;wzGuessLine()">
+      <div id="wzGuess" style="margin-top:8px">${wzGuessHtml()}</div>
+      <div style="height:12px"></div>
+      <button class="pri" style="width:100%" onclick="wzNext1()">Далее →</button>
+      <div style="height:8px"></div>
+      <button class="sec" style="width:100%" onclick="wzSkipWizard()">Создать пустую без мастера</button>
+     </div>`;
+  } else if(s===2){
+    h = `<h2>🧭 Тип команды — шаг 2/5</h2>${wzBar()}
+     <p class="mut" style="margin-bottom:8px">Команда: <b style="color:var(--txt)">${esc(WZ.name)}</b>. Выберите направление — дальнейшие этапы, вкладки и состав подберутся автоматически:</p>
+     ${Object.keys(TEAM_TYPES).map(k => { const t = TEAM_TYPES[k]; const on = WZ.type===k;
+       return `<div class="card" style="cursor:pointer;${on?'border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)':''}" onclick="wzPickType('${k}')">
+        <div class="row"><span style="font-size:24px">${t.icon}</span><div style="flex:1"><b>${t.name}</b>${WZ.guess===k?' <span class="badge" style="background:var(--acc);color:#fff">подходит по названию</span>':''}<br><span class="mut" style="font-size:12px">${t.desc}</span></div>${on?'<span style="color:var(--acc);font-size:18px">✓</span>':''}</div>
+        <p class="mut" style="font-size:11.5px;margin-top:6px">Этапов в шаблоне: ${t.stages.length} · доп. вкладок: ${(t.xtabs||[]).length}</p></div>`; }).join('')}
+     <button class="sec" style="width:100%" onclick="WZ.step=1;wzRender()">← Назад</button>`;
+  } else if(s===3){
+    const onS = WZ.stages.filter(x=>x.on).length, onW = WZ.stages.reduce((a,x)=>a+x.works.filter(w=>w.on).length,0);
+    h = `<h2>🧭 Этапы и работы — шаг 3/5</h2>${wzBar()}
+     <p class="mut" style="margin-bottom:8px">${TEAM_TYPES[WZ.type].icon} ${TEAM_TYPES[WZ.type].name}: умный шаблон предложил состав. Отключите лишнее, включите нужное — всё попадёт в технический план команды. Выбрано: <b style="color:var(--txt)">${onS} этапов · ${onW} работ</b></p>
+     ${WZ.stages.map((st,i)=>`<div class="card" style="padding:10px 12px">
+        <div class="row">
+         <label class="sw"><input type="checkbox" ${st.on?'checked':''} onchange="wzTglStage(${i},this.checked)"><span></span></label>
+         <div style="flex:1;cursor:pointer" onclick="WZ.exp=(WZ.exp===${i}?-1:${i});wzRender()"><b>${esc(st.n)}</b>${st.rec?' <span class="badge" style="color:var(--acc)">рекомендовано</span>':''}<br><span class="mut" style="font-size:11px">${st.works.filter(w=>w.on).length}/${st.works.length} работ</span></div>
+         <span class="mut" style="cursor:pointer;padding:4px" onclick="WZ.exp=(WZ.exp===${i}?-1:${i});wzRender()">${WZ.exp===i?'▾':'▸'}</span>
+        </div>
+        ${WZ.exp===i?`<div style="margin-top:8px">${st.works.map((w,j)=>`<span class="badge" style="cursor:pointer;margin:3px 4px 0 0;padding:5px 10px;${w.on?'background:var(--acc);color:#fff':''}" onclick="wzTglWork(${i},${j})">${esc(w.t)}</span>`).join('')}</div>`:''}
+       </div>`).join('')}
+     <div class="row" style="margin-bottom:8px"><button class="sec" style="flex:1" onclick="wzRecReset()">↺ Рекомендуемый набор</button><button class="sec" style="flex:1" onclick="WZ.step=2;wzRender()">← Назад</button></div>
+     <button class="pri" style="width:100%" onclick="WZ.step=4;wzRender()">Далее →</button>`;
+  } else if(s===4){
+    const tp = TEAM_TYPES[WZ.type];
+    h = `<h2>🧭 Вкладки и инструменты — шаг 4/5</h2>${wzBar()}
+     <p class="mut" style="margin-bottom:6px">Базовые (входят всегда — контракт оболочки):</p>
+     <div class="card">
+      <div class="mrow"><div class="av">📋</div><div class="inf"><b>Журнал авторского надзора</b><br><span class="mut" style="font-size:11.5px">записи, предписания, акты АОСР (Word)</span></div><span style="color:var(--ok)">✓</span></div>
+      <div class="mrow"><div class="av">🗺</div><div class="inf"><b>Технический план реализации</b><br><span class="mut" style="font-size:11.5px">${WZ.stages.filter(x=>x.on).length} этапов из шага 3 · график готовности · 3D-модель</span></div><span style="color:var(--ok)">✓</span></div>
+     </div>
+     <p class="mut" style="margin:10px 2px 6px">Дополнительные вкладки под «${tp.name}» — на выбор:</p>
+     <div class="card">${(tp.xtabs||[]).map(x=>`<div class="mrow"><div class="av">${x.icon}</div><div class="inf"><b>${esc(x.name)}</b><br><span class="mut" style="font-size:11.5px">${({list:'чек-лист с готовым составом',feed:'лента записей команды',text:'текстовая страница',link:'внешняя ссылка'})[x.kind]||x.kind}</span></div><label class="sw"><input type="checkbox" ${WZ.xtabs[x.k]!==false?'checked':''} onchange="WZ.xtabs['${x.k}']=this.checked"><span></span></label></div>`).join('')}</div>
+     <p class="mut" style="font-size:11.5px;margin:8px 2px">Уже в оболочке любой команды: чат, файлы, объявления, задачи, комната совещаний с протоколом, пуш-уведомления, погодный модуль.</p>
+     <div class="row" style="margin-bottom:8px"><button class="sec" style="flex:1" onclick="WZ.step=3;wzRender()">← Назад</button></div>
+     <button class="pri" style="width:100%" onclick="WZ.step=5;wzRender()">Далее →</button>`;
+  } else {
+    const tp = TEAM_TYPES[WZ.type];
+    const onS = WZ.stages.filter(x=>x.on), onW = onS.reduce((a,x)=>a+x.works.filter(w=>w.on).length,0);
+    const xt = (tp.xtabs||[]).filter(x=>WZ.xtabs[x.k]!==false);
+    h = `<h2>🧭 Итог — шаг 5/5</h2>${wzBar()}
+     <div class="card">
+      <div class="mrow"><div class="av">${tp.icon}</div><div class="inf"><b>${esc(WZ.name)}</b><br><span class="mut" style="font-size:11.5px">${tp.name} · владелец: ${esc(me.name)}</span></div></div>
+      <div style="height:6px"></div>
+      <p class="mut" style="font-size:12px">📦 План: ${onS.length} этапов · ${onW} работ<br>🧩 Вкладки: Журнал АН, Техплан${xt.length?', '+xt.map(x=>esc(x.name)).join(', '):''}</p>
+      <div style="height:6px"></div>
+      <p class="mut" style="font-size:12px">Рекомендуемый состав команды:</p>
+      <div>${tp.roles.map(r=>`<span class="badge" style="margin:3px 4px 0 0;padding:5px 10px">${esc(r)}</span>`).join('')}</div>
+     </div>
+     <div class="row" style="margin-bottom:8px"><button class="sec" style="flex:1" onclick="WZ.step=4;wzRender()">← Назад</button></div>
+     <button class="pri" style="width:100%" ${WZ.busy?'disabled':''} onclick="wzCreate()">${WZ.busy?'⏳ Создаю…':'🚀 Создать команду'}</button>`;
+  }
+  $('#sheet').innerHTML = h;
+  $('#overlay').style.display='flex';
+  if(s===1){ const inp = document.getElementById('wzName'); if(inp){ inp.focus(); } }
+}
+function wzGuessHtml(){
+  const g = wzDetect(WZ.name);
+  WZ.guess = g;
+  return g ? `<span class="mut" style="font-size:12px">Похоже на: <b style="color:var(--acc)">${TEAM_TYPES[g].icon} ${TEAM_TYPES[g].name}</b> — подставлю на следующем шаге</span>` : `<span class="mut" style="font-size:12px">Тип определится автоматически по названию или выберите вручную</span>`;
+}
+function wzGuessLine(){ const el = document.getElementById('wzGuess'); if(el) el.innerHTML = wzGuessHtml(); }
+function wzDetect(name){
+  const n = String(name||'');
+  for(const [k, re] of WZ_KEYS){ if(re.test(n)) return k; }
+  return null;
+}
+function wzNext1(){
+  WZ.name = (document.getElementById('wzName').value||'').trim();
+  if(!WZ.name) return alert('Введите название команды');
+  WZ.guess = wzDetect(WZ.name);
+  if(!WZ.type && WZ.guess) WZ.type = WZ.guess;
+  WZ.step = 2; wzRender();
+}
+function wzSkipWizard(){
+  const v = (document.getElementById('wzName').value||'').trim();
+  $('#overlay').style.display='none';
+  setTimeout(() => { $('#sheet').innerHTML = `<div class="card"><input id="newTeamName" placeholder="Название команды / проекта" value="${esc(v)}"><div style="height:8px"></div><button class="pri" style="width:100%" onclick="createTeam()">Создать пустую команду</button></div>`; $('#overlay').style.display='flex'; }, 50);
+}
+function wzPickType(k){
+  WZ.type = k;
+  const tp = TEAM_TYPES[k];
+  WZ.stages = tp.stages.map(s => ({n:s.n, rec:!!s.rec, on:!!s.rec, works:s.works.map(t=>({t, on:!!s.rec}))}));
+  WZ.xtabs = {}; (tp.xtabs||[]).forEach(x => WZ.xtabs[x.k] = true);
+  WZ.step = 3; wzRender();
+}
+function wzTglStage(i, v){
+  const st = WZ.stages[i]; if(!st) return;
+  st.on = v === undefined ? !st.on : !!v;
+  st.works.forEach(w => w.on = st.on);
+  wzRender();
+}
+function wzTglWork(i, j){
+  const st = WZ.stages[i]; if(!st) return;
+  st.works[j].on = !st.works[j].on;
+  st.on = st.works.some(w => w.on);
+  wzRender();
+}
+function wzRecReset(){
+  WZ.stages.forEach(s => { s.on = !!s.rec; s.works.forEach(w => w.on = !!s.rec); });
+  wzRender();
+}
+async function wzCreate(){
+  if(WZ.busy) return;
+  const name = (WZ.name||'').trim();
+  if(!name) return alert('Введите название');
+  if(!WZ.type) return alert('Выберите тип команды');
+  WZ.busy = true; wzRender();
+  try{
+    const tp = TEAM_TYPES[WZ.type];
+    const code = mkCode();
+    const {data, error} = await sb.from('teams').insert({name, owner:me.name, invite_code:code}).select().single();
+    if(error) throw error;
+    await sb.from('team_members').insert({team_id:data.id, member:me.name, is_owner:true});
+    const tabs = [];
+    const azT = TEAM_TEMPLATE.tabs.find(t=>t.kind==='az');
+    const azCfg = JSON.parse(JSON.stringify(azT.config)); azCfg.team_type = WZ.type;
+    tabs.push({team_id:data.id, name:azT.name, icon:azT.icon, kind:'az', config:azCfg, pos:4, created_by:'Мастер'});
+    const items = (WZ.stages||[]).filter(s=>s.on).map(s => ({n:s.n, works:(s.works||[]).filter(w=>w.on).map(w=>w.t)}));
+    const plT = TEAM_TEMPLATE.tabs.find(t=>t.kind==='plan');
+    tabs.push({team_id:data.id, name:plT.name, icon:plT.icon, kind:'plan', config:{items, team_type:WZ.type}, pos:5, created_by:'Мастер'});
+    (tp.xtabs||[]).forEach((x,i)=>{ if(WZ.xtabs[x.k] !== false) tabs.push({team_id:data.id, name:x.name, icon:x.icon, kind:x.kind, config:JSON.parse(JSON.stringify(x.config)), pos:6+i, created_by:'Мастер'}); });
+    const ir = await sb.from('tabs').insert(tabs);
+    if(ir.error) throw ir.error;
+    MYTEAMS = await fetchMyTeams();
+    team = MYTEAMS.find(t => t.id === data.id); store.set('team', team);
+    dmWith = null;
+    const roles = tp.roles.slice();
+    reloadAll();
+    WZ = null;
+    $('#sheet').innerHTML = `<h2>✅ Команда создана</h2>
+     <div class="card">
+      <p><b>${esc(name)}</b> готова к работе: план, вкладки и инструменты настроены по шаблону «${esc(tp.name)}».</p>
+      <div style="height:10px"></div>
+      <p class="mut" style="margin-bottom:6px">Код приглашения (сообщите только своим):</p>
+      <div class="code">${esc(code)}</div>
+      <div style="height:10px"></div>
+      <p class="mut" style="font-size:12px">Рекомендуемый состав: ${roles.map(esc).join(' · ')}</p>
+      <div style="height:6px"></div>
+      <p class="mut" style="font-size:12px">Дальше: 1) пригласите участников по коду; 2) заполните реквизиты объекта в Журнале АН; 3) скорректируйте сроки этапов в техплане.</p>
+     </div>
+     <button class="pri" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Перейти в команду</button>`;
+    $('#overlay').style.display='flex';
+  }catch(e){
+    WZ.busy = false;
+    alert('Не удалось создать команду: ' + (e.message || e));
+    wzRender();
+  }
+}
+
 /* ---------- панель команды (шапка) ---------- */
 async function teamSheet(){
   MYTEAMS = await fetchMyTeams();
@@ -835,7 +1095,9 @@ async function teamSheet(){
   const list = MYTEAMS.map(x => `<button class="${x.id===tid()?'pri':'sec'}" style="width:100%;margin-bottom:8px" onclick="switchTeam('${x.id}')">👥 ${esc(x.name)}${x.is_owner?' · владелец':''}</button>`).join('');
   $('#sheet').innerHTML = `<h2>Команды</h2>${list || '<p class="mut">Нет команд.</p>'}
     <div class="card"><p class="mut" style="margin-bottom:8px">Создать новую команду:</p>
-      <div class="row"><input id="newTeamName" placeholder="Название"><button class="pri" onclick="createTeam()">Создать</button></div></div>
+      <button class="pri" style="width:100%" onclick="wzStart()">🧭 Мастер создания команды</button>
+      <div style="height:8px"></div>
+      <div class="row"><input id="newTeamName" placeholder="Или пустую: название"><button class="sec" onclick="createTeam()">Создать</button></div></div>
     <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду:</p>
       <div class="row"><input id="joinCode" placeholder="Код" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div></div>
     ${t && t.is_owner ? `<div class="card"><p class="mut">Код приглашения в «${esc(t.name)}» (сообщите только своим):</p><div class="code">${esc(t.invite_code)}</div></div>`:''}
@@ -6314,7 +6576,7 @@ new MutationObserver(() => {
   if(!s || document.getElementById('sheetClose')) return;
   if(document.getElementById('overlay').style.display !== 'flex') return;
   // Приветственные окна не закрываются крестиком — иначе пустой экран без команды
-  if(s.innerHTML.indexOf('existSel') > -1 || s.innerHTML.indexOf('newTeamName') > -1 || s.innerHTML.indexOf('pickExisting') > -1) return;
+  if(s.innerHTML.indexOf('existSel') > -1 || s.innerHTML.indexOf('newTeamName') > -1 || s.innerHTML.indexOf('pickExisting') > -1 || s.innerHTML.indexOf('wzName') > -1) return;
   const c = document.createElement('span');
   c.id = 'sheetClose'; c.textContent = '✕'; c.title = 'Закрыть (отмена)';
   c.onclick = (e) => { e.stopPropagation(); if(!appStarted) return; window._taskSheetId = null; document.getElementById('overlay').style.display='none'; };
