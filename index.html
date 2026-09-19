@@ -324,6 +324,17 @@ header{background:var(--card) !important}
 #roomMini{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tbh,64px) + 10px);z-index:60;display:none;align-items:center;gap:9px;background:#20242b;color:#eef1f5;border:1px solid #3a424f;border-radius:24px;padding:8px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);cursor:pointer;font-size:12.5px;user-select:none}
 #roomMini .dot{width:9px;height:9px;border-radius:50%;background:#4ade80;animation:rmBlink 1.6s infinite}
 #roomMini button{border:none;background:#5c2a24;color:#ffb3ab;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;flex:none}
+/* ---- Шапка: онлайн и уведомления ---- */
+#onlineChip{display:flex;align-items:center;gap:4px;background:var(--card2);border:1px solid var(--brd2);border-radius:14px;padding:5px 9px;font-size:12px;flex:none;cursor:pointer;color:var(--txt);line-height:1}
+#onlineChip .odot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 5px var(--ok);flex:none}
+#onlineChip b{font-size:12px;font-weight:800;color:var(--ok)}
+#bellBtn{position:relative;background:var(--card2);border:1px solid var(--brd2);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:14px;flex:none;cursor:pointer;line-height:1}
+#bellBtn.on{color:var(--acc);border-color:var(--acc);background:#7a541014}
+#bellBtn.blocked{color:var(--bad)}
+#bellBtn.invite{animation:bellPulse 2.2s ease-in-out infinite;border-color:var(--acc)}
+@keyframes bellPulse{0%,100%{box-shadow:0 0 0 0 rgba(166,124,44,.0)}50%{box-shadow:0 0 0 5px rgba(166,124,44,.18)}}
+#bellDot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--bad);border:2px solid var(--bg);display:none}
+#bellDot.show{display:block}
 </style>
 </head>
 <body>
@@ -337,6 +348,8 @@ header{background:var(--card) !important}
   </button>
   
   <span id="viewTitle" style="flex:1;min-width:0;font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--txt)"></span>
+  <button id="onlineChip" class="hidden" title="Кто сейчас в сети" onclick="onlineSheet()"><span class="odot"></span><b id="onlineCnt">0</b></button>
+  <button id="bellBtn" class="hidden" title="Уведомления" onclick="bellTap()">🔔<span id="bellDot"></span></button>
   <span id="syncBadge" title="Обновить данные">Локальный</span>
   <button id="menuBtn" title="Меню" onclick="appMenuSheet()" style="background:var(--card2);border:1px solid var(--brd2);color:var(--txt);border-radius:8px;padding:6px 11px;font-size:16px;flex:none;cursor:pointer;line-height:1">☰</button>
   <span id="hdrAux" style="display:none">
@@ -600,6 +613,15 @@ function updateOnlineUI(){
     (SYNC && n ? ` · <span style="color:var(--ok);font-weight:700">🟢 ${n} в сети</span>` : '');
   $('#who').title = SYNC && n ? 'Кто в сети?' : '';
   $('#who').style.cursor = SYNC && n ? 'pointer' : 'default';
+  const chip = $('#onlineChip');
+  if(chip){
+    const show = !!(SYNC && me);
+    chip.classList.toggle('hidden', !show);
+    if(show){
+      const c = $('#onlineCnt'); if(c) c.textContent = n;
+      chip.title = n ? 'Сейчас в сети (' + n + '): ' + names.join(', ') : 'Пока никого нет в сети';
+    }
+  }
 }
 function onlineSheet(){
   const names = Object.keys(ONLINE);
@@ -1625,27 +1647,101 @@ $('#syncBadge').onclick = async () => {
 const VAPID_PUBLIC = 'BDRQPJ_ENu6asn7w7BDP6iQGNnFVIeg6axHhnQ0gxrqmoVCobY_xQSZVJEwWIWFhnHIL_8qtUwH5gcwv_K46xT0';
 function urlB64ToUint8(b){ const p = '='.repeat((4-b.length%4)%4); const s = (b+p).replace(/-/g,'+').replace(/_/g,'/'); const r = atob(s); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))); }
 async function pushSync(){
-  const b = $('#pushBtn'); if(!b) return;
+  const b = $('#bellBtn'); if(!b) return;
   if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)){ b.classList.add('hidden'); return; }
+  if(!SYNC || !me){ b.classList.add('hidden'); return; }
+  b.classList.remove('hidden');
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription().catch(()=>null);
-  // Автопродление: разрешение дано и флаг включён — держим подписку живой (endpoint мог смениться)
-  if(SYNC && me && Notification.permission === 'granted' && store.get('pushOn')){
+  // АВТОАКТИВАЦИЯ: разрешение уже дано и пользователь не отключал вручную — подписка создаётся/восстанавливается сама
+  if(Notification.permission === 'granted' && store.get('pushOn') !== false){
     try{
       if(!sub){
         sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)});
       }
       const j = sub.toJSON();
       await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
+      store.set('pushOn', true);
     }catch(e){}
   }
-  b.classList.remove('hidden');
   const denied = Notification.permission === 'denied';
-  b.textContent = '🔔';
-  b.style.color = sub ? 'var(--acc)' : (denied ? 'var(--bad)' : 'var(--mut)');
-  b.style.borderColor = sub ? 'var(--acc)' : 'var(--brd2)';
-  b.style.background = sub ? '#7a541014' : 'none';
-  b.title = denied ? 'Уведомления заблокированы в настройках браузера' : (sub ? 'Пуш-уведомления: вкл — нажмите для отключения' : 'Включить пуш-уведомления');
+  b.classList.toggle('on', !!sub);
+  b.classList.toggle('blocked', denied && !sub);
+  b.classList.toggle('invite', !sub && !denied);
+  const dot = $('#bellDot'); if(dot) dot.classList.toggle('show', !sub);
+  b.title = denied ? 'Уведомления заблокированы в настройках браузера — нажмите для инструкции' : (sub ? 'Пуш-уведомления включены — нажмите для отключения' : 'Нажмите, чтобы включить уведомления этого приложения');
+  // Одноразовое авто-предложение включить уведомления при первом входе
+  if(!sub && !denied && Notification.permission === 'default' && !store.get('pushAsked')){
+    store.set('pushAsked', true);
+    setTimeout(() => { try{ if($('#overlay').style.display !== 'flex') bellAskSheet(); }catch(e){} }, 2500);
+  }
+}
+/* ---- Колокольчик в шапке: первое нажатие предлагает активацию (ПК и смартфон) ---- */
+async function bellTap(){
+  if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return alert('Уведомления не поддерживаются этим браузером');
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription().catch(()=>null);
+  if(sub){
+    if(!confirm('Отключить пуш-уведомления на этом устройстве?')) return;
+    try{
+      await sub.unsubscribe();
+      if(SYNC) await sb.from('push_subs').delete().eq('endpoint', sub.endpoint);
+      store.set('pushOn', false);
+    }catch(e){ alert('Не удалось отключить: '+e.message); }
+    pushSync(); return;
+  }
+  if(Notification.permission === 'denied'){ bellHelpSheet(); return; }
+  bellAskSheet();
+}
+function bellAskSheet(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAnd = /android/i.test(navigator.userAgent);
+  $('#sheet').innerHTML = `<h2>🔔 Уведомления приложения</h2>
+   <div class="card">
+    <p>Приложение будет присылать на <b>это устройство</b> уведомления: новые сообщения, задачи, этапы, изменения в команде — даже когда приложение закрыто.</p>
+    <div style="height:8px"></div>
+    <p class="mut" style="font-size:12px">📱 <b>Смартфон${isAnd?' (Android)':''}${isIOS?' (iPhone)':''}</b> — после нажатия «Включить» браузер попросит разрешение: выберите «Разрешить».${isIOS?'<br>На iPhone уведомления работают, когда приложение установлено на экран «Домой» (Safari → Поделиться → На экран «Домой»).':''}<br>💻 <b>ПК</b> — нажмите «Включить» и подтвердите «Разрешить» во всплывающем запросе браузера.</p>
+    <div style="height:6px"></div>
+    <p class="mut" style="font-size:12px">Включите на каждом устройстве, где хотите получать уведомления (телефон, планшет, компьютер).</p>
+    <div style="height:12px"></div>
+    <button class="pri" style="width:100%" onclick="bellEnable()">🔔 Включить уведомления</button>
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Позже</button>
+   </div>`;
+  $('#overlay').style.display='flex';
+}
+async function bellEnable(){
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){
+      $('#overlay').style.display='none'; pushSync();
+      if(Notification.permission === 'denied') bellHelpSheet();
+      else alert('Разрешение на уведомления не получено.');
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)});
+    const j = sub.toJSON();
+    if(SYNC && me) await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
+    store.set('pushOn', true);
+    $('#overlay').style.display='none';
+    pushSync();
+    alert('✅ Уведомления включены на этом устройстве.\nПовторите на других устройствах (телефон, ПК), если нужно.');
+  }catch(e){ alert('Не удалось включить уведомления: '+e.message); }
+}
+function bellHelpSheet(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAnd = /android/i.test(navigator.userAgent);
+  const steps = isIOS
+    ? '1. Откройте <b>Настройки</b> iPhone → «Уведомления».<br>2. Найдите приложение (или Safari, если открываете в браузере).<br>3. Включите «Допуск уведомлений».<br>4. Вернитесь в приложение и нажмите 🔔 ещё раз.'
+    : isAnd
+    ? '1. Нажмите <b>значок замка 🔒</b> слева от адресной строки (или ⋮ → «Сведения о сайте»).<br>2. «Разрешения» → «Уведомления» → <b>Разрешить</b>.<br>3. Вернитесь и нажмите 🔔 ещё раз.'
+    : '1. Нажмите <b>значок замка 🔒</b> слева от адресной строки.<br>2. «Настройки сайта» / «Разрешения» → «Уведомления» → <b>Разрешить</b>.<br>3. Перезагрузите страницу и нажмите 🔔 ещё раз.';
+  $('#sheet').innerHTML = `<h2>🔕 Уведомления заблокированы</h2>
+   <div class="card"><p>Браузер запретил уведомления для этого сайта. Разблокировать можно только вручную:</p>
+   <div style="height:8px"></div><p style="line-height:1.9">${steps}</p>
+   <div style="height:12px"></div><button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Понятно</button></div>`;
+  $('#overlay').style.display='flex';
 }
 /* ---------- Web Push: отправка уведомлений участникам ---------- */
 function pushMemberNames(){ return (TEAM_MEMBERS||[]).map(m => m.member).filter(Boolean); }
@@ -1683,8 +1779,7 @@ function settingsSheet(){
 }
 function settingsPush(){
   $('#overlay').style.display='none';
-  $('#pushBtn').click();
-  setTimeout(() => settingsSheet(), 1200);
+  bellTap();
 }
 function settingsAuto(){ AUTO = !AUTO; store.set('auto', AUTO); autoSet(); settingsSheet(); }
 async function settingsSms(){
@@ -1715,30 +1810,7 @@ $('#cacheBtn').onclick = async () => {
   try{ const r = await navigator.serviceWorker.getRegistration(); if(r) await r.unregister(); }catch(e){}
   location.reload();
 };
-$('#pushBtn').onclick = async () => {
-  if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return alert('Уведомления не поддерживаются этим браузером');
-  const reg = await navigator.serviceWorker.ready;
-  let sub = await reg.pushManager.getSubscription().catch(()=>null);
-  if(sub){
-    if(!confirm('Отключить пуш-уведомления на этом устройстве?')) return;
-    try{
-      await sub.unsubscribe();
-      if(SYNC) await sb.from('push_subs').delete().eq('endpoint', sub.endpoint);
-      store.set('pushOn', false);
-    }catch(e){ alert('Не удалось отключить: '+e.message); }
-    pushSync(); return;
-  }
-  try{
-    const perm = await Notification.requestPermission();
-    if(perm !== 'granted'){ pushSync(); return alert('Разрешение на уведомления не получено.\nЕсли браузер заблокировал запрос — откройте настройки сайта (значок замка в адресной строке) → Уведомления → Разрешить.'); }
-    sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)});
-    const j = sub.toJSON();
-    if(SYNC && me) await sb.from('push_subs').upsert({member:me.name, endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
-    store.set('pushOn', true);
-    alert('✅ Пуш-уведомления включены на этом устройстве.\nВключите на каждом устройстве, где хотите их получать.');
-  }catch(e){ alert('Не удалось включить уведомления: '+e.message); }
-  pushSync();
-};
+$('#pushBtn').onclick = () => bellTap(); /* старый скрытый дубль — вся логика теперь в колокольчике шапки */
 $('#exitBtn').onclick = () => {
   if(!confirm('Выйти из приложения?\nПотребуется повторный выбор участника.')) return;
   store.del('user'); store.del('team'); me = null; team = null;
