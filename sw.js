@@ -1,5 +1,5 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v149';
+const CACHE = 'niokr-pwa-v150';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -35,16 +35,39 @@ self.addEventListener('fetch', (e) => {
 });
 
 // ---------- Web Push ----------
+function idbGetPushPrefs(){
+  return new Promise((res) => {
+    try{
+      const r = indexedDB.open('niokr-push', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => {
+        try{
+          const g = r.result.transaction('kv').objectStore('kv').get('prefs');
+          g.onsuccess = () => res((g.result && g.result.prefs) || null);
+          g.onerror = () => res(null);
+        }catch(e){ res(null); }
+      };
+      r.onerror = () => res(null);
+    }catch(e){ res(null); }
+  });
+}
 self.addEventListener('push', (e) => {
   let d = {};
   try{ d = e.data ? e.data.json() : {}; }catch(err){}
-  e.waitUntil(self.registration.showNotification(d.title || 'НИОКР Команда', {
-    body: d.body || 'Новое сообщение',
-    icon: './icon-192.png',
-    badge: './icon-192.png',
-    tag: d.tag || 'niokr',
-    data: { url: d.url || './' }
-  }));
+  e.waitUntil((async () => {
+    // Фильтр категорий: пользователь отключил этот тип уведомлений (резервный уровень; основная фильтрация — на сервере)
+    if(d.kind){
+      const prefs = await idbGetPushPrefs();
+      if(prefs && prefs[d.kind] === false) return;
+    }
+    await self.registration.showNotification(d.title || 'НИОКР Команда', {
+      body: d.body || 'Новое сообщение',
+      icon: './icon-192.png',
+      badge: './icon-192.png',
+      tag: d.tag || 'niokr',
+      data: { url: d.url || './' }
+    });
+  })());
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();

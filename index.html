@@ -335,6 +335,13 @@ header{background:var(--card) !important}
 @keyframes bellPulse{0%,100%{box-shadow:0 0 0 0 rgba(166,124,44,.0)}50%{box-shadow:0 0 0 5px rgba(166,124,44,.18)}}
 #bellDot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--bad);border:2px solid var(--bg);display:none}
 #bellDot.show{display:block}
+/* ---- переключатель (настройки уведомлений) ---- */
+.sw{position:relative;width:44px;height:25px;flex:none}
+.sw input{display:none}
+.sw span{position:absolute;inset:0;background:#4b515c;border-radius:13px;transition:.2s;cursor:pointer}
+.sw span:before{content:'';position:absolute;left:3px;top:3px;width:19px;height:19px;border-radius:50%;background:#fff;transition:.2s}
+.sw input:checked+span{background:var(--ok)}
+.sw input:checked+span:before{transform:translateX(19px)}
 </style>
 </head>
 <body>
@@ -697,7 +704,7 @@ function start(){
   syncBadge();
   initPresence();
   const _tc0=document.getElementById('teamChip'); if(_tc0) _tc0.classList.remove('hidden');
-  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync(); refreshVerTag();
+  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync(); pushPrefsLoad(); pushPrefsPull(); refreshVerTag();
   loadTabs().then(() => {
     const pt = TABS.find(x => x.kind === 'plan');
     if(pt) loadPlanRows(pt.id);
@@ -1403,7 +1410,7 @@ async function reportBuild(scope){
 async function reportPublish(){
   if(!window._reportText) return;
   await sb.from('announcements').insert({team_id: tid(), body: window._reportText.slice(0, 4000), author: me.name});
-  pushNotify(pushMemberNames(), '📢 Отчёт · ' + (team ? team.name : ''), me.name + ' опубликовал отчёт в объявлениях', './#/news');
+  pushNotify(pushMemberNames(), '📢 Отчёт · ' + (team ? team.name : ''), me.name + ' опубликовал отчёт в объявлениях', './#/news', 'news');
   alert('Опубликовано в объявлениях ✅');
 }
 
@@ -1706,6 +1713,8 @@ function bellAskSheet(){
     <div style="height:12px"></div>
     <button class="pri" style="width:100%" onclick="bellEnable()">🔔 Включить уведомления</button>
     <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="pushCatsSheet()">⚙ Выбрать категории уведомлений</button>
+    <div style="height:8px"></div>
     <button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Позже</button>
    </div>`;
   $('#overlay').style.display='flex';
@@ -1747,16 +1756,67 @@ function bellHelpSheet(){
 function pushMemberNames(){ return (TEAM_MEMBERS||[]).map(m => m.member).filter(Boolean); }
 /* fire-and-forget: серверная функция push-send рассылает web-push по подпискам из push_subs */
 const PUSH_SEND_URL = 'https://nlgxrendtkxlzisqikoj.supabase.co/functions/v1/push-send'; /* функция развёрнута в резервном проекте akProject (v141) — данные читает из основного */
-function pushNotify(members, title, body, url){
+function pushNotify(members, title, body, url, kind){
   try{
     if(!SYNC || !me) return;
     const list = [...new Set((members||[]).filter(m => m && m !== me.name))];
     if(!list.length) return;
     fetch(PUSH_SEND_URL, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({members:list, title:String(title||'НИОКР Команда').slice(0,80), body:String(body||'').slice(0,180), url:url||'./#/chat'})
+      body: JSON.stringify({members:list, title:String(title||'НИОКР Команда').slice(0,80), body:String(body||'').slice(0,180), url:url||'./#/chat', kind:String(kind||'').slice(0,24)})
     }).catch(()=>{});
   }catch(e){}
+}
+/* ---------- Настройки категорий пуш-уведомлений ---------- */
+const PUSH_CATS = [
+  {k:'chat', ic:'💬', t:'Сообщения чата', d:'общий чат команды, файлы'},
+  {k:'dm',   ic:'✉️', t:'Личные сообщения', d:'директ-сообщения от участников'},
+  {k:'task', ic:'✅', t:'Задачи', d:'новые задачи, назначенные вам'},
+  {k:'news', ic:'📢', t:'Объявления и отчёты', d:'лента объявлений команды'},
+];
+let PUSH_PREFS = {};
+function pushPrefsLoad(){ try{ PUSH_PREFS = store.get('pushCats') || {}; }catch(e){ PUSH_PREFS = {}; } }
+function pushCatOn(k){ return PUSH_PREFS[k] !== false; }
+function pushPrefsIDB(){
+  try{
+    const r = indexedDB.open('niokr-push', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => { try{ r.result.transaction('kv','readwrite').objectStore('kv').put({member: me?me.name:'', prefs: PUSH_PREFS}, 'prefs'); }catch(e){} };
+  }catch(e){}
+}
+async function pushPrefsPull(){
+  if(!SYNC || !me) return;
+  try{
+    const r = await fetch(PUSH_SEND_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'prefs-get', member: me.name})});
+    const j = await r.json();
+    if(j && j.ok && j.prefs && Object.keys(j.prefs).length){ PUSH_PREFS = j.prefs; store.set('pushCats', PUSH_PREFS); pushPrefsIDB(); }
+    else pushPrefsIDB();
+  }catch(e){}
+}
+function pushPrefsPush(){
+  if(!SYNC || !me) return;
+  fetch(PUSH_SEND_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'prefs-set', member: me.name, prefs: PUSH_PREFS})}).catch(()=>{});
+}
+function pushCatSet(k, v){
+  PUSH_PREFS[k] = !!v; store.set('pushCats', PUSH_PREFS); pushPrefsIDB(); pushPrefsPush();
+}
+async function pushCatsSheet(){
+  pushPrefsLoad();
+  let sub = null, denied = false;
+  try{
+    denied = ('Notification' in window) && Notification.permission === 'denied';
+    if('serviceWorker' in navigator){ const reg = await navigator.serviceWorker.ready; sub = await reg.pushManager.getSubscription().catch(()=>null); }
+  }catch(e){}
+  const row = c => `<div class="mrow"><div class="av">${c.ic}</div><div class="inf"><b>${c.t}</b><br><span class="mut" style="font-size:11.5px">${c.d}</span></div><label class="sw"><input type="checkbox" ${pushCatOn(c.k)?'checked':''} onchange="pushCatSet('${c.k}', this.checked)"><span></span></label></div>`;
+  $('#sheet').innerHTML = `<h2>🔔 Уведомления</h2>
+   <div class="card">
+    <div class="mrow"><div class="av">📳</div><div class="inf"><b>На этом устройстве</b><br><span class="mut" style="font-size:11.5px">${denied?'заблокированы браузером — нажмите для инструкции':(sub?'включены: приходят даже при закрытом приложении':'выключены — включите, чтобы получать пуши')}</span></div><button class="${sub?'sec':'pri'}" style="flex:none" onclick="${denied?'bellHelpSheet()':'bellTap().then(()=>setTimeout(pushCatsSheet,600))'}">${denied?'Инструкция':(sub?'Отключить':'Включить')}</button></div>
+   </div>
+   <p class="mut" style="margin:8px 2px 2px">Какие уведомления получать — выбор действует сразу на всех ваших устройствах:</p>
+   <div class="card">${PUSH_CATS.map(row).join('')}</div>
+   <div style="height:10px"></div>
+   <button class="sec" style="width:100%" onclick="settingsSheet()">← Назад</button>`;
+  $('#overlay').style.display='flex';
 }
 /* ---------- Настройки ---------- */
 function settingsSheet(){
@@ -1768,7 +1828,7 @@ function settingsSheet(){
     ${sec('👥','Текущая команда: '+esc(team?team.name:'—'), isOwner?'владелец · код '+esc(team.invite_code||''):(TEAM_MEMBERS.length+' участников'), 'teamSheet()')}
     ${SYNC ? sec('🗂','Мои команды','переключение, создание, вступление по коду','teamSheet()') : ''}
     ${SYNC ? sec('📱','SMS-шлюз','дубль на телефон для территории РФ','settingsSms()') : ''}
-    ${SYNC ? sec('🔔','Push-уведомления', denied?'заблокированы в браузере — откройте настройки сайта':'сообщения, задачи, этапы, участники','settingsPush()') : ''}
+    ${SYNC ? sec('🔔','Push-уведомления', denied?'заблокированы в браузере — откройте настройки сайта':'настройка категорий: чат, личные, задачи, объявления','pushCatsSheet()') : ''}
     ${SYNC ? sec('⟳','Автообновление', AUTO?'вкл · каждые 5 мин':'выкл · нажмите для вкл','settingsAuto()') : ''}
     ${SYNC ? sec('💾','Ручная синхронизация','обновить все данные сейчас','syncBadge().click()') : ''}
     ${isOwner ? sec('🧩','Вкладки команды','конструктор: текст, ссылки, чек-листы, ленты','manageTabs()') : ''}
@@ -1779,7 +1839,7 @@ function settingsSheet(){
 }
 function settingsPush(){
   $('#overlay').style.display='none';
-  bellTap();
+  pushCatsSheet();
 }
 function settingsAuto(){ AUTO = !AUTO; store.set('auto', AUTO); autoSet(); settingsSheet(); }
 async function settingsSms(){
@@ -5386,8 +5446,8 @@ async function sendMsg(){
     rMsgs.push({n:me.name, r:me.role, x:body, t:now()}); render();
     const {error} = await sb.from('messages').insert(row);
     if(error) alert('Не отправлено: '+error.message);
-    else if(dmWith) pushNotify([dmWith], '💬 Личное: ' + me.name, txt);
-    else pushNotify(pushMemberNames(), '💬 ' + (team ? team.name : 'Чат') + ' · ' + chan, me.name + ': ' + txt);
+    else if(dmWith) pushNotify([dmWith], '💬 Личное: ' + me.name, txt, undefined, 'dm');
+    else pushNotify(pushMemberNames(), '💬 ' + (team ? team.name : 'Чат') + ' · ' + chan, me.name + ': ' + txt, undefined, 'chat');
   } else pushLocal({n:me.name, r:me.role, x:body, t:now()});
 }
 $('#mText')?.addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
@@ -5402,7 +5462,7 @@ $('#fileInp').addEventListener('change', async e => {
       const row = {team_id:tid(), channel:chan, author:me.name, role:me.role, body:'', file_name:f.name, file_url:u.publicUrl, client_id:cid};
       rMsgs.push(rowToMsg({...row, created_at:new Date().toISOString()})); render();
       const {error: msgErr} = await sb.from('messages').insert(row);
-      if(!msgErr) pushNotify(dmWith ? [dmWith] : pushMemberNames(), '📎 ' + me.name + ': файл', f.name);
+      if(!msgErr) pushNotify(dmWith ? [dmWith] : pushMemberNames(), '📎 ' + me.name + ': файл', f.name, undefined, 'chat');
     }catch(err){ alert('Ошибка загрузки файла: '+err.message); }
   } else {
     const r = new FileReader();
@@ -5483,7 +5543,7 @@ async function addTask(){
   if(SYNC){
     const dl = $('#td').value || null;
     const {error} = await sb.from('tasks').insert({team_id:tid(), title:t, assignee:$('#ta').value, deadline:dl, status:'Новая', author:me.name});
-    if(!error && $('#ta').value) pushNotify([$('#ta').value], '✅ Новая задача от ' + me.name, t + (dl ? ' · до ' + dl : ''), './#/tasks');
+    if(!error && $('#ta').value) pushNotify([$('#ta').value], '✅ Новая задача от ' + me.name, t + (dl ? ' · до ' + dl : ''), './#/tasks', 'task');
     loadTasks();
   }
   else { const ts = store.get('tasks_'+(team?team.id:'x'), []); ts.unshift({id:Date.now(), title:t, assignee:$('#ta').value, deadline:$('#td').value, status:'Новая'}); store.set('tasks_'+(team?team.id:'x'), ts); render(); }
@@ -5540,7 +5600,7 @@ async function addNews(){
       file_name = annFile.name;
     }
     const {error: annErr} = await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name, file_name, file_url});
-    if(!annErr) pushNotify(pushMemberNames(), '📢 Объявление · ' + (team ? team.name : ''), me.name + ': ' + t, './#/news');
+    if(!annErr) pushNotify(pushMemberNames(), '📢 Объявление · ' + (team ? team.name : ''), me.name + ': ' + t, './#/news', 'news');
     annFile = null;
     loadNews();
   }
@@ -5948,7 +6008,7 @@ async function deliverViaApp(name){
   rMsgs.push({n:me.name, r:me.role, x:t, t:now()}); render();
   const {error} = await sb.from('messages').insert(row);
   if(error) alert('Ошибка: '+error.message);
-  else pushNotify([name], '💬 Личное: ' + me.name, t);
+  else pushNotify([name], '💬 Личное: ' + me.name, t, undefined, 'dm');
   // 2. SMS-дубль
   try{
     const r = await fetch('https://lxgipzdybigdpdcmcnez.supabase.co/functions/v1/sms-gateway', {
