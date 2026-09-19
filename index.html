@@ -5677,14 +5677,33 @@ function msgHTML(m, i, grp){
       <div class="t">${tm}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div>
     </div></div>`;
 }
-async function editMsg(id){
+function editMsg(id){
+  const m = rMsgs.find(x=>x.id===id); if(!m) return;
+  if(m.n !== me.name) return alert('Можно исправлять только свои сообщения');
+  if(!SYNC) return alert('Нужна связь с сервером');
+  const pr = parseReply(m.x);
+  $('#sheet').innerHTML = `<h2>✏️ Исправить сообщение</h2>
+   <div class="card"><textarea id="emT" rows="5" style="width:100%">${esc(pr.text)}</textarea>
+   <div style="height:12px"></div>
+   <button class="pri" style="width:100%" onclick="editMsgSave(${id})">💾 Сохранить</button>
+   <div style="height:8px"></div>
+   <button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Отмена</button></div>`;
+  $('#overlay').style.display='flex';
+  const t = document.getElementById('emT');
+  if(t){ t.focus(); try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){} }
+}
+async function editMsgSave(id){
   const m = rMsgs.find(x=>x.id===id); if(!m) return;
   const pr = parseReply(m.x);
-  const t = prompt('Исправить сообщение:', pr.text); if(t===null) return;
-  const nt = t.trim(); if(!nt || nt===pr.text) return;
+  const nt = (document.getElementById('emT').value||'').trim();
+  if(!nt || nt===pr.text){ document.getElementById('overlay').style.display='none'; return; }
   const prefix = m.x.slice(0, m.x.length - pr.text.length);
-  const {error} = await sb.from('messages').update({body: prefix + nt, edited:true}).eq('id',id);
-  if(error) alert(error.message);
+  const nb = prefix + nt;
+  const {error} = await sb.from('messages').update({body: nb, edited:true}).eq('id',id);
+  if(error) return alert(error.message);
+  m.x = nb; m.edited = true;
+  document.getElementById('overlay').style.display='none';
+  if(view==='chat') render();
 }
 function renderChat(v){
   if(dmWith){
@@ -5884,12 +5903,29 @@ async function addNews(){
   }
   else { const ns = store.get('news_'+(team?team.id:'x'), []); ns.unshift({id:Date.now(), body:t, author:me.name, created_at:new Date().toISOString()}); store.set('news_'+(team?team.id:'x'), ns); render(); }
 }
-async function editNews(id){
+function editNews(id){
   const n = (rNews||[]).find(x=>x.id===id); if(!n) return;
-  const t = prompt('Исправить объявление:', n.body); if(t===null) return;
-  const body = t.trim(); if(!body || body===n.body) return;
+  if(n.author !== me.name) return alert('Можно исправлять только свои объявления');
+  if(!SYNC) return alert('Нужна связь с сервером');
+  $('#sheet').innerHTML = `<h2>✏️ Исправить объявление</h2>
+   <div class="card"><textarea id="enT" rows="6" style="width:100%">${esc(n.body||'')}</textarea>
+   <div style="height:12px"></div>
+   <button class="pri" style="width:100%" onclick="editNewsSave(${id})">💾 Сохранить</button>
+   <div style="height:8px"></div>
+   <button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Отмена</button></div>`;
+  $('#overlay').style.display='flex';
+  const t = document.getElementById('enT');
+  if(t){ t.focus(); try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){} }
+}
+async function editNewsSave(id){
+  const n = (rNews||[]).find(x=>x.id===id); if(!n) return;
+  const body = (document.getElementById('enT').value||'').trim();
+  if(!body || body===n.body){ document.getElementById('overlay').style.display='none'; return; }
   const {error} = await sb.from('announcements').update({body, edited:true}).eq('id',id);
-  if(error) alert(error.message);
+  if(error) return alert(error.message);
+  document.getElementById('overlay').style.display='none';
+  await loadNews();
+  if(view==='news') render();
 }
 async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news_'+(team?team.id:'x'), store.get('news_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); } }
 
