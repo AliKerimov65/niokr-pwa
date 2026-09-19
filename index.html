@@ -5954,6 +5954,7 @@ function editCard(name){
   const canDelete = team && team.is_owner && name!==me.name;
   $('#sheet').innerHTML = `<h2>Карточка: ${esc(name)}</h2>
    <div class="card">
+    <input id="ec_n" placeholder="ФИО" value="${esc(name)}"><div style="height:8px"></div>
     <input id="ec_r" placeholder="Роль" value="${esc(m.role||'')}"><div style="height:8px"></div>
     <input id="ec_p" placeholder="Телефон" value="${esc(m.phone||'')}"><div style="height:8px"></div>
     <input id="ec_e" placeholder="E-mail" value="${esc(m.email||'')}"><div style="height:8px"></div>
@@ -5966,12 +5967,25 @@ function editCard(name){
    </div>`;
 }
 async function saveCard(name){
-  const {error} = await sb.from('members').update({role:$('#ec_r').value||null, phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null, max:$('#ec_m').value||null}).eq('name', name);
-  if($('#ec_p').value) await sb.from('wa_chats').upsert({member:name, phone:$('#ec_p').value.replace(/[^\d]/g,'')}, {onConflict:'member'});
-  if(error) return alert(error.message);
-  if(name===me.name){ me.role = $('#ec_r').value; store.set('user', me); }
-  await loadMembers(); render();
-  memberCard(name);
+  const nn = ($('#ec_n').value||'').trim().replace(/\s+/g,' ');
+  if(!nn) return alert('ФИО не может быть пустым');
+  const renaming = nn !== name;
+  if(renaming){
+    const clash = MEMBERS.find(m => m.name !== name && (m.name||'').toLowerCase() === nn.toLowerCase());
+    if(clash) return alert('Участник «'+clash.name+'» уже есть в системе. Выберите другое ФИО.');
+  }
+  const data = {role:$('#ec_r').value||null, phone:$('#ec_p').value||null, email:$('#ec_e').value||null, telegram:$('#ec_t').value||null, max:$('#ec_m').value||null};
+  if(renaming) data.name = nn;
+  const {error} = await sb.from('members').update(data).eq('name', name);
+  if(error){ if(error.code==='23505') return alert('Такое ФИО уже зарегистрировано'); return alert(error.message); }
+  if(renaming){
+    await sb.from('team_members').update({member:nn}).eq('member', name);
+    await sb.from('wa_chats').update({member:nn}).eq('member', name);
+  }
+  if($('#ec_p').value) await sb.from('wa_chats').upsert({member:renaming?nn:name, phone:$('#ec_p').value.replace(/[^\d]/g,'')}, {onConflict:'member'});
+  if(name===me.name){ me.role = $('#ec_r').value; if(renaming) me.name = nn; store.set('user', me); }
+  await loadMembers(); if(renaming) await loadTeamMembers(); render();
+  memberCard(renaming?nn:name);
 }
 async function deleteMember(name){
   if(!confirm('Удалить участника «'+name+'» из системы? Он будет исключён из всех команд; история сообщений сохранится.')) return;
