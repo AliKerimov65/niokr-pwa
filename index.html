@@ -704,7 +704,7 @@ function start(){
   syncBadge();
   initPresence();
   const _tc0=document.getElementById('teamChip'); if(_tc0) _tc0.classList.remove('hidden');
-  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync(); pushPrefsLoad(); pushPrefsPull(); refreshVerTag();
+  render(); loadTeamMembers(); loadDmPartners(); autoSet(); pushSync(); pushPrefsLoad(); pushPrefsPull(); pushLoginNotify(); refreshVerTag();
   loadTabs().then(() => {
     const pt = TABS.find(x => x.kind === 'plan');
     if(pt) loadPlanRows(pt.id);
@@ -1773,6 +1773,7 @@ const PUSH_CATS = [
   {k:'dm',   ic:'✉️', t:'Личные сообщения', d:'директ-сообщения от участников'},
   {k:'task', ic:'✅', t:'Задачи', d:'новые задачи, назначенные вам'},
   {k:'news', ic:'📢', t:'Объявления и отчёты', d:'лента объявлений команды'},
+  {k:'online', ic:'👋', t:'Вход участников', d:'когда член команды открыл приложение'},
 ];
 let PUSH_PREFS = {};
 function pushPrefsLoad(){ try{ PUSH_PREFS = store.get('pushCats') || {}; }catch(e){ PUSH_PREFS = {}; } }
@@ -1799,6 +1800,21 @@ function pushPrefsPush(){
 }
 function pushCatSet(k, v){
   PUSH_PREFS[k] = !!v; store.set('pushCats', PUSH_PREFS); pushPrefsIDB(); pushPrefsPush();
+}
+/* ---- Пуш «участник вошёл в приложение»: раз в сессию, не чаще 3 часов с устройства ---- */
+async function pushLoginNotify(){
+  try{
+    if(!SYNC || !me || !team) return;
+    if(sessionStorage.getItem('loginPushed')) return; // перезагрузка страницы — не вход
+    sessionStorage.setItem('loginPushed', '1');
+    const last = +store.get('loginPushedAt') || 0;
+    if(Date.now() - last < 3*3600*1000) return; // не чаще раза в 3 часа с этого устройства
+    await loadTeamMembers();
+    const others = pushMemberNames().filter(m => m && m !== me.name);
+    if(!others.length) return;
+    store.set('loginPushedAt', Date.now());
+    pushNotify(others, '👋 ' + me.name + ' в сети', 'Вошёл в приложение · ' + (team.name || ''), './', 'online');
+  }catch(e){}
 }
 async function pushCatsSheet(){
   pushPrefsLoad();
