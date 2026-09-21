@@ -657,6 +657,48 @@ async function loadNews(){
   if(view==='news') render();
 }
 async function loadDocs(){ if(!SYNC) return; rDocs = (await sbList('documents', [['team_id', tid()]])).reverse(); if(view==='files') render(); }
+/* ---------- АВТОРЕГИСТРАЦИЯ ФАЙЛОВ В РАЗДЕЛЕ «ДОКУМЕНТЫ» ----------
+   Файл, загруженный в чат, объявление или работу техплана, автоматически
+   появляется в разделе «Документы»: создаётся запись-ссылка на тот же объект
+   хранилища (физического дубля нет — место не расходуется дважды).
+   Дедупликация по url: один и тот же файл не регистрируется дважды. */
+async function docRegister(name, url, author, sizeBytes){
+  try{
+    if(!SYNC || !url || !name) return;
+    if((rDocs || []).some(d => d.url === url)) return;
+    const ex = await sb.from('documents').select('id').eq('team_id', tid()).eq('url', url).limit(1);
+    if(ex.data && ex.data.length) return;
+    const size = sizeBytes ? (sizeBytes/1024).toFixed(1)+' КБ' : '';
+    const ins = await sb.from('documents').insert({team_id: tid(), name, size, url, author: author || (me && me.name) || ''});
+    if(!ins.error){
+      if(rDocs) rDocs.unshift({id: Date.now(), name, size, url, author: author || (me && me.name) || '', created_at: new Date().toISOString()});
+      if(view === 'files') loadDocs();
+    }
+  }catch(e){}
+}
+/* Разовая регистрация файлов, загруженных ДО появления авторегистрации:
+   сканирует каналы чата (личные переписки НЕ трогаем — они приватны),
+   объявления и вложения работ техплана. Запуск — только у владельца команды,
+   один раз на устройстве; дедупликация по url не даёт дублей. */
+async function docSyncLegacy(){
+  try{
+    if(!SYNC || !me || !team || !team.is_owner) return;
+    const flag = 'docSync_' + tid();
+    if(store.get(flag)) return;
+    store.set(flag, Date.now());
+    const regs = [];
+    const ms = await sb.from('messages').select('file_name,file_url,author').eq('team_id', tid()).is('dm', null).not('file_url', 'is', null).limit(1000);
+    (ms.data || []).forEach(m => regs.push([m.file_name, m.file_url, m.author]));
+    const an = await sb.from('announcements').select('file_name,file_url,author').eq('team_id', tid()).not('file_url', 'is', null).limit(500);
+    (an.data || []).forEach(a => regs.push([a.file_name, a.file_url, a.author]));
+    const pt = TABS.filter(x => x.kind === 'plan').map(x => x.id);
+    if(pt.length){
+      const pw = await sb.from('plan_works').select('files').in('tab_id', pt).not('files', 'is', null).limit(500);
+      (pw.data || []).forEach(r => (r.files || []).forEach(f => { if(f.url && f.name) regs.push([f.name, f.url, f.by || '']); }));
+    }
+    for(const [n, u, a] of regs) await docRegister(n, u, a, 0);
+  }catch(e){}
+}
 async function loadStages(){
   if(!SYNC) return;
   const r = await sb.from('stages').select('*').eq('team_id', tid()).order('num');
@@ -715,6 +757,7 @@ function start(){
   loadTabs().then(() => {
     const pt = TABS.find(x => x.kind === 'plan');
     if(pt) loadPlanRows(pt.id);
+    docSyncLegacy();
   });
   if(SYNC){
     loadChan();
@@ -1527,6 +1570,7 @@ async function planWorkAttach(tabId, n, work){
     const r = planRowKey(tabId, n, work);
     const files = [...((r && r.files) || []), {name: f.name, url, img: f.type.startsWith('image/'), by: me.name, at: now()}];
     await planWorkUpsert(tabId, n, work, {files});
+    docRegister(f.name, url, me.name, f.size); /* копия-ссылка в раздел «Документы» */
     render();
   };
   inp.click();
@@ -3514,7 +3558,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Модели, погода — автоматически, титул и выгрузка в Word.');
 /* Протоколы */          helpReg('📝','#44506b','Протокол совещания','Голосовая расшифровка со спикерами, исправление диктовки, решения и поручения, предпросмотр и выгрузка в Word.');
 /* Комната совещаний */  helpReg('🎙','#3d6b5e','Комната совещаний','Видеосвязь команды: вход по кнопке, бегущая строка протокола, автозапись реплик распознаванием речи.');
-/* Документы */          helpReg('📁','#5a6a33','Документы','Файлы команды: проектные PDF, фото, ведомости. Фоновая загрузка с прогрессом, просмотр фото, таблиц и Word внутри приложения, скачивание кнопкой ⬇ — у всех участников.',156);
+/* Документы */          helpReg('📁','#5a6a33','Документы','Файлы команды: проектные PDF, фото, ведомости. Файлы из чата, объявлений и работ техплана попадают сюда автоматически. Фоновая загрузка с прогрессом, просмотр фото, таблиц и Word внутри приложения, скачивание кнопкой ⬇ — у всех участников.',157);
 /* Участники */          helpReg('👥','#7a5410','Участники','Карточка участника: роль, написать сообщение, ✏ — исправить ФИО. Зелёная точка — сейчас онлайн; счётчик «кто в сети» — в шапке.',149);
 /* Уведомления */        helpReg('🔔','#8a5f16','Уведомления','Колокольчик в шапке: включение push одним нажатием, автоактивация на ПК и смартфоне, выбор категорий (чат, личные, задачи, объявления, вход участников) — ⚙ Настройки → Push-уведомления.',151);
 /* Мастер создания */    helpReg('🧭','#33608a','Мастер создания команды','Пошаговое создание команды: направление определяется по названию (Проектирование, НИОКР, Изыскания, Строительство, Ремонт), готовые шаблоны этапов, работ, вкладок и ролей — с выбором нужных позиций.',152);
@@ -5845,7 +5889,10 @@ $('#fileInp').addEventListener('change', async e => {
       const row = {team_id:tid(), channel:chan, author:me.name, role:me.role, body:'', file_name:f.name, file_url:u.publicUrl, client_id:cid};
       rMsgs.push(rowToMsg({...row, created_at:new Date().toISOString()})); render();
       const {error: msgErr} = await sb.from('messages').insert(row);
-      if(!msgErr) pushNotify(dmWith ? [dmWith] : pushMemberNames(), '📎 ' + me.name + ': файл', f.name, undefined, 'chat');
+      if(!msgErr){
+        pushNotify(dmWith ? [dmWith] : pushMemberNames(), '📎 ' + me.name + ': файл', f.name, undefined, 'chat');
+        docRegister(f.name, u.publicUrl, me.name, f.size); /* копия-ссылка в раздел «Документы» */
+      }
     }catch(err){ alert('Ошибка загрузки файла: '+err.message); }
   } else {
     const r = new FileReader();
@@ -5983,7 +6030,10 @@ async function addNews(){
       file_name = annFile.name;
     }
     const {error: annErr} = await sb.from('announcements').insert({team_id:tid(), body:t, author:me.name, file_name, file_url});
-    if(!annErr) pushNotify(pushMemberNames(), '📢 Объявление · ' + (team ? team.name : ''), me.name + ': ' + t, './#/news', 'news');
+    if(!annErr){
+      pushNotify(pushMemberNames(), '📢 Объявление · ' + (team ? team.name : ''), me.name + ': ' + t, './#/news', 'news');
+      if(file_url) docRegister(file_name, file_url, me.name, annFile.size); /* копия-ссылка в раздел «Документы» */
+    }
     annFile = null;
     loadNews();
   }
