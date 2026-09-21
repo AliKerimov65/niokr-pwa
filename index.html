@@ -3505,7 +3505,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 
 /* ---- Реестр подсказок: одна строка на функцию, порядок строк = порядок показа ---- */
 /* Главное окно */       helpReg('🏠','#7a5410','Главная','Сводка дня: погода с предупреждениями для наружных работ, график готовности по неделям, дайджест команды, мои задачи и быстрые действия.');
-/* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять: нажмите на сообщение → ✏.',153);
+/* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять и удалять: нажмите на сообщение → ✏ или 🗑.',155);
 /* Объявления */         helpReg('📢','#a03d2d','Объявления','Лента объявлений команды с файлами и фото. Свои объявления можно редактировать — кнопка ✏ рядом с текстом.',153);
 /* Задачи */             helpReg('✅','#2e7d4f','Задачи','Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи. Напоминания приходят в push.');
 /* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.');
@@ -5723,7 +5723,7 @@ function msgHTML(m, i, grp){
   return `<div class="mwrap ${isMe?'me':''} ${grp?'grp':''}">
     <div class="mav ${grp?'sp':''}" style="background:${avGrad(m.n)}" title="${esc(m.n)}">${esc(String(m.n||'?').trim().charAt(0).toUpperCase())}</div>
     <div class="msg ${isMe?'me':''} ${tome?'tome':''}" ${m.id?`id="m${m.id}"`:''}>
-      <span class="acts"><span title="Ответить" onclick="setReply(${i})">↩</span>${mine?`<span title="Исправить" onclick="editMsg(${m.id})">✏️</span>`:''}</span>
+      <span class="acts"><span title="Ответить" onclick="setReply(${i})">↩</span>${mine?`<span title="Исправить" onclick="editMsg(${m.id})">✏️</span><span title="Удалить" onclick="delMsg(${m.id})">🗑</span>`:''}</span>
       ${grp?'':`<div class="hd"><b ${isMe?'':`style="color:${avNameColor(m.n)}"`}>${esc(m.n)}</b>${m.r?` <span class="mut">${esc(m.r)}</span>`:''}</div>`}
       ${qte}
       ${pr.text?`<div class="bd">${mentionify(linkify(pr.text))}</div>`:''}
@@ -5757,6 +5757,37 @@ async function editMsgSave(id){
   const {error} = await sb.from('messages').update({body: nb, edited:true}).eq('id',id);
   if(error) return alert(error.message);
   m.x = nb; m.edited = true;
+  document.getElementById('overlay').style.display='none';
+  if(view==='chat') render();
+}
+/* ---- Удаление своего сообщения (автором) ---- */
+function delMsg(id){
+  const m = rMsgs.find(x=>x.id===id); if(!m) return;
+  if(m.n !== me.name) return alert('Можно удалять только свои сообщения');
+  if(!SYNC) return alert('Нужна связь с сервером');
+  const pr = parseReply(m.x);
+  const pv = pr.text ? esc(String(pr.text).slice(0,140)) : ('📎 ' + esc(m.fn||'файл'));
+  $('#sheet').innerHTML = `<h2>🗑 Удалить сообщение?</h2>
+   <div class="card"><p style="font-size:13.5px;padding:8px 10px;border-left:3px solid var(--brd2);margin:0 0 10px">${pv}</p>
+   <p class="mut" style="font-size:12px;margin:0 0 12px">Сообщение исчезнет у всех участников без возможности восстановления.</p>
+   <button class="dng" style="width:100%" onclick="delMsgDo(${id})">🗑 Удалить безвозвратно</button>
+   <div style="height:8px"></div>
+   <button class="sec" style="width:100%" onclick="document.getElementById('overlay').style.display='none'">Отмена</button></div>`;
+  $('#overlay').style.display='flex';
+}
+async function delMsgDo(id){
+  const m = rMsgs.find(x=>x.id===id); if(!m) return;
+  if(m.n !== me.name) return;
+  const {error} = await sb.from('messages').delete().eq('id',id);
+  if(error) return alert(error.message);
+  try{ await sb.from('reads').delete().eq('kind','msg').eq('ref_id', id); }catch(e){} /* отметки прочтения — best effort */
+  if(m.f){ /* файл сообщения — из хранилища тоже, best effort */
+    try{
+      const p0 = m.f.split('/object/public/files/')[1];
+      if(p0) await sb.storage.from('files').remove([decodeURIComponent(p0)]);
+    }catch(e){}
+  }
+  rMsgs = rMsgs.filter(x=>x.id!==id);
   document.getElementById('overlay').style.display='none';
   if(view==='chat') render();
 }
@@ -6573,6 +6604,10 @@ function subscribeAll(){
       const m = p.new;
       const inView = m.dm ? (dmWith && m.dm===dmKey(me.name, dmWith)) : (!dmWith && m.team_id===tid() && m.channel===chan);
       if(inView) loadChan();
+    })
+    .on('postgres_changes', {event:'DELETE', schema:'public', table:'messages'}, p => {
+      /* удаление сообщения автором — обновить открытый чат у остальных */
+      if(view==='chat') loadChan();
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'announcements'}, p => { if((p.new&&p.new.team_id===tid())||(p.old&&p.old.team_id===tid())) loadNews(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, async () => { await loadMembers(); if(view==='misc') render(); })
