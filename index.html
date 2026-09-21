@@ -188,7 +188,9 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 .composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid var(--brd)}
 .composer input{flex:1}
 .composer button{background:var(--acc);color:#fff;border:0;border-radius:10px;width:46px;font-size:18px}
-.chans{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px}
+.chans{display:flex;gap:6px;overflow-x:auto;padding:10px;background:var(--bg);position:sticky;top:-10px;z-index:6;margin:-10px -10px 10px;border-bottom:1px solid var(--brd);scrollbar-width:none}
+.chans::-webkit-scrollbar{display:none}
+.cstick{position:sticky;top:-10px;z-index:6;margin:-10px -10px 10px;padding:10px;background:var(--bg);border-bottom:1px solid var(--brd)}
 .chans button{flex:0 0 auto;background:var(--card2);border:1px solid var(--brd2);color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px}
 .chans button.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:none;align-items:flex-end}
@@ -3579,7 +3581,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 
 /* ---- Реестр подсказок: одна строка на функцию, порядок строк = порядок показа ---- */
 /* Главное окно */       helpReg('🏠','#7a5410','Главная','Сводка дня: погода с предупреждениями для наружных работ, график готовности по неделям, дайджест команды, мои задачи и быстрые действия.');
-/* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении, ⬇ — скачать файл может любой участник. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять и удалять: нажмите на сообщение → ✏ или 🗑.',156);
+/* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам: панель разделов закреплена вверху и всегда видна при прокрутке. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении, ⬇ — скачать файл может любой участник. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять и удалять: нажмите на сообщение → ✏ или 🗑.',160);
 /* Объявления */         helpReg('📢','#a03d2d','Объявления','Лента объявлений команды с файлами и фото. Свои объявления можно редактировать — кнопка ✏ рядом с текстом.',153);
 /* Задачи */             helpReg('✅','#2e7d4f','Задачи','Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи. Напоминания приходят в push.');
 /* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. Кружок слева от работы — отметка о выполнении: коснитесь, и приложение зафиксирует, кто и когда её отметил. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.', 158);
@@ -5869,7 +5871,7 @@ async function delMsgDo(id){
 }
 function renderChat(v){
   if(dmWith){
-    v.innerHTML = `<div class="row" style="margin-bottom:10px"><button class="sec" style="padding:6px 12px" onclick="dmWith=null;loadChan()">← Каналы</button><b>💬 Личное: ${esc(dmWith)}</b></div><div class="ch" id="msgs"></div>`;
+    v.innerHTML = `<div class="row cstick"><button class="sec" style="padding:6px 12px" onclick="dmWith=null;loadChan()">← Каналы</button><b>💬 Личное: ${esc(dmWith)}</b></div><div class="ch" id="msgs"></div>`;
   } else {
     const dmN = Object.keys(DM_PARTNERS).length;
     const dmHasNew = Object.values(DM_PARTNERS).some(p => dmUnread(p));
