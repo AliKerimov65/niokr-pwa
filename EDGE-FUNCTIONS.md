@@ -14,6 +14,7 @@
 | `max-bot` | ✅ 200 | `{action:'send', member, text}` | Отправка в MAX по `max_links.chat_id` |
 | `az-polish` | ✅ 200 | `{text}` | Обработка голосовой диктовки журнала АН |
 | `push-send` | ✅ РАБОТАЕТ с v141 — развёрнута в резервном проекте `nlgxrendtkxlzisqikoj` (akProject), данные читает/чистит в основном (`lxgipzdybigdpdcmcnez`) через NIOKR_SB_URL/NIOKR_SB_KEY; секреты VAPID_PUBLIC/VAPID_PRIVATE заданы. С v150: категории (`kind`) + фильтр по `push_prefs` (таблица живёт в akProject, RLS открыт); код в `supabase/functions/push-send/index.ts` | отправка `{members[], title, body, url?, kind?}`; настройки `{action:'prefs-get'/'prefs-set', member, prefs?}` | Web Push-рассылка по подпискам `push_subs` с учётом пользовательских категорий (chat/dm/task/news); вызывается клиентом после сообщений/задач/объявлений |
+| `ai-fill` | ✅ РАБОТАЕТ с v162 — резервный проект `nlgxrendtkxlzisqikoj` (akProject), `--no-verify-jwt`; секрет MOONSHOT_API_KEY задан; код в `supabase/functions/ai-fill/index.ts` | `{kind:'az'|'ojr'|'act', ctx}` | Умное автозаполнение исполнительной документации: черновик полей ТОЛЬКО из фактов контекста (проект, техплан, погода, прошлые записи, ППР); клиент подставляет в обычные поля формы — пользователь правит вручную перед записью |
 | `dev-executor` | 🔄 ПЕРЕНЕСЁН в GitHub Actions (2026-09-14) | очередь `dev_tasks` → коммит | Автоисполнитель задач: см. `.github/workflows/dev-executor.yml` + `tools/dev-executor.mjs` |
 
 ## dev-executor (архитектура с 2026-09-14)

@@ -1802,6 +1802,7 @@ async function renderAz(v, t){
     <div class="row" style="margin-top:6px;flex-wrap:wrap">
       <button class="sec" style="padding:7px 12px" id="azMicBtn" onclick="azVoice()">🎙 Диктовать</button>
       <button class="sec" style="padding:7px 12px" onclick="azPolish()">✨ Интеллектуальная обработка</button>
+      <button class="sec" style="padding:7px 12px" title="ИИ-черновик записи по техплану, погоде и прошлым записям — проверьте и поправьте" onclick="azSmartFill(this)">🧠 Умное заполнение</button>
     </div>
     <div class="row" style="margin-top:8px">
       <select id="azConf" style="flex:1"><option>Соответствует проектным решениям</option><option>Частично соответствует</option><option>Не соответствует</option></select>
@@ -2108,6 +2109,84 @@ function pushNotify(members, title, body, url, kind){
     }).catch(()=>{});
   }catch(e){}
 }
+/* ---------- Умное автозаполнение ИД (v162): серверная ai-fill в akProject ----------
+   Черновик полей из реальных данных (проект, техплан, погода, прошлые записи, ППР);
+   поля остаются обычными — пользователь проверяет и правит вручную перед записью. */
+const AI_FILL_URL = 'https://nlgxrendtkxlzisqikoj.supabase.co/functions/v1/ai-fill';
+async function aiFill(kind, ctx){
+  try{
+    const r = await fetch(AI_FILL_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({kind, ctx})});
+    const j = await r.json().catch(()=>({}));
+    if(j && j.ok && j.fields) return j.fields;
+  }catch(e){}
+  return null;
+}
+function aiCtxBase(){
+  const azt = TABS.find(x => x.kind === 'az'); const azc = azt ? azt.config : {};
+  const pt = TABS.find(x => x.kind === 'plan');
+  const items = (pt && pt.config && pt.config.items) || [];
+  const mt = (OJR && OJR.meta) || {};
+  return {
+    object: azc.object || '', project_code: azc.project_code || '',
+    designer: azc.designer || '', customer: azc.customer || '',
+    builder: mt.builder || '', az_head: azc.az_head || '',
+    plan: items.map(it => ({n: it.n, title: it.title, works: (it.works || []).filter(Boolean)})),
+    plan_status: (PLAN_ROWS || []).map(r => ({work: r.work, status: r.status, done_at: r.done_at}))
+  };
+}
+async function azSmartFill(btn){
+  const old = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Думаю…';
+  try{
+    const ctx = aiCtxBase();
+    ctx.date = (document.getElementById('azD') || {}).value || '';
+    ctx.weather = (document.getElementById('azW') || {}).value || '';
+    ctx.selected = [...document.querySelectorAll('#azWorks .badge.on')].map(x => x.textContent);
+    ctx.recent_entries = (AZ_ENTRIES || []).slice(-5).map(e => ({date: e.entry_date, works: e.works, conformity: e.conformity, remarks: e.remarks || ''}));
+    const f = await aiFill('az', ctx);
+    if(!f){ alert('Умное заполнение недоступно — заполните вручную'); return; }
+    if(f.works){ const ta = document.getElementById('azWorksT'); if(ta) ta.value = f.works; }
+    if(f.conformity){ const s = document.getElementById('azConf'); if(s) [...s.options].forEach(o => { o.selected = o.text === f.conformity; }); }
+    if(f.remarks !== undefined){ const r = document.getElementById('azRem'); if(r) r.value = f.remarks || ''; }
+  } finally { btn.disabled = false; btn.textContent = old; }
+}
+async function ojrSmartFill(btn){
+  const old = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Думаю…';
+  try{
+    const ctx = aiCtxBase();
+    const sel = document.getElementById('ojr_mw');
+    if(sel && +sel.value >= 0){ const o = planWorksFlat()[+sel.value]; if(o) ctx.selected_work = o; }
+    const azt = TABS.find(x => x.kind === 'az');
+    const w = await fetchWeather(azt ? azt.config : {});
+    ctx.weather = (w.desc || '') + (w.temp !== null && w.temp !== undefined ? ', ' + w.temp + ' °C' : '') + (w.precip ? ', осадки ' + w.precip + ' мм' : '');
+    ctx.recent = ojrRows('works').slice(-5);
+    const f = await aiFill('ojr', ctx);
+    if(!f){ alert('Умное заполнение недоступно — заполните вручную'); return; }
+    if(f.name){ const nm = document.getElementById('ojr_name'); if(nm) nm.value = f.name; }
+    if(f.cond){ const cd = document.getElementById('ojr_cond'); if(cd) cd.value = f.cond; }
+  } finally { btn.disabled = false; btn.textContent = old; }
+}
+async function actSmartFill(btn){
+  const old = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Думаю…';
+  try{
+    const ctx = aiCtxBase();
+    const k = (document.getElementById('acK') || {}).value || 'aosr';
+    ctx.act_kind = k;
+    const azt = TABS.find(x => x.kind === 'az');
+    const AW = (azt && azt.config.act_works) || [];
+    const wsel = document.getElementById('acW');
+    if(k === 'aosr' && wsel && +wsel.value >= 0 && AW[+wsel.value]) ctx.ppr_work = AW[+wsel.value];
+    const fr = document.getElementById('acWFree');
+    if(fr && fr.value.trim()) ctx.work_free = fr.value.trim();
+    ctx.recent_acts = (ACTS || []).slice(-5).map(a => ({num: actLabel(a), work: a.work_name, date: a.date_act}));
+    const f = await aiFill('act', ctx);
+    if(!f){ alert('Умное заполнение недоступно — заполните вручную'); return; }
+    const set = (id, v) => { if(v){ const el = document.getElementById(id); if(el) el.value = v; } };
+    set('acBasisP', f.basis_project); set('acBasisQ', f.basis_quality);
+    set('acFrom', f.date_from); set('acTo', f.date_to);
+    set('acAttach', f.attach);
+  } finally { btn.disabled = false; btn.textContent = old; }
+}
+
 /* ---------- Настройки категорий пуш-уведомлений ---------- */
 const PUSH_CATS = [
   {k:'chat', ic:'💬', t:'Сообщения чата', d:'общий чат команды, файлы'},
@@ -3043,6 +3122,8 @@ function actForm(editId){
      </div>
      <input id="acWFree" placeholder="Наименование работ / этапа" value="${a && k0!=='aosr' ? esc(a.work_name) : ''}" style="display:${k0==='aosr'?'none':'block'};margin-top:0">
      <div style="height:8px"></div>
+     <button class="sec" style="width:100%;font-size:12.5px" title="ИИ-черновик по ППР и техплану: основание, документы о качестве, даты, приложения — проверьте и поправьте" onclick="actSmartFill(this)">🧠 Умное заполнение (основание, документы, даты, приложения)</button>
+     <div style="height:8px"></div>
      <input id="acBasisP" placeholder="Основание (проектная документация, ППР, раздел)" value="${esc(a ? (a.basis_project||'') : (AW[wix] ? AW[wix].section : ''))}">
      <div style="height:8px"></div>
      <input id="acBasisQ" placeholder="Документы о качестве / предъявленные документы" value="${esc(a ? (a.basis_quality||'') : (AW[wix] ? AW[wix].doc : ''))}">
@@ -3326,6 +3407,9 @@ function ojrRowForm(sec, ix){
       <div class="row" style="gap:6px;margin-top:6px;margin-bottom:4px">
         <button class="sec" style="flex:1;font-size:12px" onclick="ojrWorksWx()">🌡 Погоду в «Условия»</button>
         <button class="sec" style="flex:1;font-size:12px" onclick="ojrWorksIdle()">🚫 Работы не производились</button>
+      </div>
+      <div class="row" style="gap:6px;margin-top:6px;margin-bottom:4px">
+        <button class="sec" style="flex:1;font-size:12px" title="ИИ-черновик записи по техплану и погоде — проверьте и поправьте" onclick="ojrSmartFill(this)">🧠 Умное заполнение</button>
       </div>`;
   }
   const inputs = s.cols.map(c => {
@@ -3592,9 +3676,9 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* Объявления */         helpReg('📢','#a03d2d','Объявления','Лента объявлений команды с файлами и фото. Свои объявления можно редактировать — кнопка ✏ рядом с текстом.',153);
 /* Задачи */             helpReg('✅','#2e7d4f','Задачи','Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи. Напоминания приходят в push.');
 /* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. Кружок слева от работы — отметка о выполнении: коснитесь, и приложение зафиксирует, кто и когда её отметил. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.', 158);
-/* Журнал АН */          helpReg('📋','#7a4a8a','Журнал авторского надзора','Записи обходов: дата и погода подставляются автоматически, 🎙 — голосовой набор, предписания со статусами. Записи коллег появляются мгновенно.', 159);
-/* Акты и ИД */          helpReg('📄','#8a3a2e','Акты и документы','АОСР (РД-11-02-2006), промежуточная и окончательная приёмка; требуемые акты по ППР с предварительными формами; авто-реестр исполнительной документации; выгрузка в Word. Изменения коллег видны сразу.', 159);
-/* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Технического плана реализации, погода — автоматически, титул и выгрузка в Word. Записи коллег появляются мгновенно.', 161);
+/* Журнал АН */          helpReg('📋','#7a4a8a','Журнал авторского надзора','Записи обходов: дата и погода подставляются автоматически, 🎙 — голосовой набор, 🧠 — умное заполнение записи (проверьте и поправьте), предписания со статусами. Записи коллег появляются мгновенно.', 162);
+/* Акты и ИД */          helpReg('📄','#8a3a2e','Акты и документы','АОСР (РД-11-02-2006), промежуточная и окончательная приёмка; требуемые акты по ППР с предварительными формами; 🧠 — умное заполнение полей акта (проверьте и поправьте); авто-реестр исполнительной документации; выгрузка в Word. Изменения коллег видны сразу.', 162);
+/* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Технического плана реализации, 🧠 — умное заполнение записи (проверьте и поправьте), погода — автоматически, титул и выгрузка в Word. Записи коллег появляются мгновенно.', 162);
 /* Протоколы */          helpReg('📝','#44506b','Протокол совещания','Голосовая расшифровка со спикерами, исправление диктовки, решения и поручения, предпросмотр и выгрузка в Word. Правки коллег видны сразу.', 159);
 /* Комната совещаний */  helpReg('🎙','#3d6b5e','Комната совещаний','Видеосвязь команды: вход по кнопке, бегущая строка протокола, автозапись реплик распознаванием речи.');
 /* Документы */          helpReg('📁','#5a6a33','Документы','Файлы команды: проектные PDF, фото, ведомости. Файлы из чата, объявлений и работ техплана попадают сюда автоматически. Фоновая загрузка с прогрессом, просмотр фото, таблиц и Word внутри приложения, скачивание кнопкой ⬇ — у всех участников.',157);
