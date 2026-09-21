@@ -3303,6 +3303,14 @@ function ojrDefault(sec, k, azc){
   if(sec === 'control' && (k === 'sign' || k === 'sign2')) return mt.developer_rep || '';
   return '';
 }
+/* Плоский список работ Технического плана реализации (этап → работы) */
+function planWorksFlat(){
+  const pt = TABS.find(x => x.kind === 'plan');
+  const items = (pt && pt.config && pt.config.items) || [];
+  const flat = [];
+  items.forEach(it => (it.works || []).filter(Boolean).forEach(w => flat.push({n: it.n, title: it.title || '', w})));
+  return flat;
+}
 /* Форма записи раздела (авто + ручное заполнение) */
 function ojrRowForm(sec, ix){
   if(!(team && team.is_owner)) return alert('Записи в журнал вносит владелец команды.');
@@ -3311,10 +3319,10 @@ function ojrRowForm(sec, ix){
   const azt = TABS.find(x => x.kind === 'az'); const azc = azt ? azt.config : {};
   let extra = '';
   if(sec === 'works'){
-    const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
-    const opts = W.map((w, i) => `<option value="${i}">Этап ${(ST[map[i] || 0] || {}).n || '—'} · ${esc(w)}</option>`).join('');
-    extra = `<p class="mut" style="font-size:11.5px;margin:0 0 3px">Автозаполнение из Модели команды:</p>
-      <select id="ojr_mw" onchange="ojrWorksPick()"><option value="-1">— выбрать работу по проекту (ППР) —</option>${opts}</select>
+    const FL = planWorksFlat();
+    const opts = FL.map((o, i) => `<option value="${i}">Этап ${o.n || '—'} · ${esc(o.w)}</option>`).join('');
+    extra = `<p class="mut" style="font-size:11.5px;margin:0 0 3px">Автозаполнение из Технического плана реализации:</p>
+      ${FL.length ? `<select id="ojr_mw" onchange="ojrWorksPick()"><option value="-1">— выбрать работу из техплана —</option>${opts}</select>` : '<p class="mut" style="font-size:12px;margin:0 0 4px">Состав работ техплана пуст — заполните вручную.</p>'}
       <div class="row" style="gap:6px;margin-top:6px;margin-bottom:4px">
         <button class="sec" style="flex:1;font-size:12px" onclick="ojrWorksWx()">🌡 Погоду в «Условия»</button>
         <button class="sec" style="flex:1;font-size:12px" onclick="ojrWorksIdle()">🚫 Работы не производились</button>
@@ -3335,14 +3343,13 @@ function ojrRowForm(sec, ix){
     <button class="sec" style="width:100%" onclick="ojrOpen('${sec}')">← К разделу</button></div>`;
   $('#overlay').style.display = 'flex';
 }
-/* Выбор работы из Модели → наименование с этапом и местом */
+/* Выбор работы из Техплана → наименование с этапом и местом */
 function ojrWorksPick(){
   const el = document.getElementById('ojr_mw'); if(!el) return;
   const i = parseInt(el.value); if(isNaN(i) || i < 0) return;
-  const W = mdlWorks(), ST = mdlStages(), map = mdlWorkStageIdx();
-  const st = ST[map[i] || 0] || {};
+  const o = planWorksFlat()[i]; if(!o) return;
   const nm = document.getElementById('ojr_name');
-  if(nm) nm.value = (W[i] || '') + ' (этап ' + (st.n || '—') + ' — ' + (st.title || '') + '). Место: скв. №____, отм. ____.';
+  if(nm) nm.value = o.w + ' (этап ' + (o.n || '—') + ' — ' + (o.title || '') + '). Место: скв. №____, отм. ____.';
 }
 /* Погода в «Условия производства работ» (open-meteo по координатам объекта) */
 async function ojrWorksWx(){
@@ -3587,7 +3594,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. Кружок слева от работы — отметка о выполнении: коснитесь, и приложение зафиксирует, кто и когда её отметил. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.', 158);
 /* Журнал АН */          helpReg('📋','#7a4a8a','Журнал авторского надзора','Записи обходов: дата и погода подставляются автоматически, 🎙 — голосовой набор, предписания со статусами. Записи коллег появляются мгновенно.', 159);
 /* Акты и ИД */          helpReg('📄','#8a3a2e','Акты и документы','АОСР (РД-11-02-2006), промежуточная и окончательная приёмка; требуемые акты по ППР с предварительными формами; авто-реестр исполнительной документации; выгрузка в Word. Изменения коллег видны сразу.', 159);
-/* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Модели, погода — автоматически, титул и выгрузка в Word. Записи коллег появляются мгновенно.', 159);
+/* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Технического плана реализации, погода — автоматически, титул и выгрузка в Word. Записи коллег появляются мгновенно.', 161);
 /* Протоколы */          helpReg('📝','#44506b','Протокол совещания','Голосовая расшифровка со спикерами, исправление диктовки, решения и поручения, предпросмотр и выгрузка в Word. Правки коллег видны сразу.', 159);
 /* Комната совещаний */  helpReg('🎙','#3d6b5e','Комната совещаний','Видеосвязь команды: вход по кнопке, бегущая строка протокола, автозапись реплик распознаванием речи.');
 /* Документы */          helpReg('📁','#5a6a33','Документы','Файлы команды: проектные PDF, фото, ведомости. Файлы из чата, объявлений и работ техплана попадают сюда автоматически. Фоновая загрузка с прогрессом, просмотр фото, таблиц и Word внутри приложения, скачивание кнопкой ⬇ — у всех участников.',157);
