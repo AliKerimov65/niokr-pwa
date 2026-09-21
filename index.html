@@ -183,6 +183,8 @@ button.dng{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:
 @keyframes mIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--mut)}
 .badge.ok{background:#e6f4ec;color:#1e7a43} .badge.warn{background:#fdf2df;color:#a06a00} .badge.bad{background:#fbe7e5;color:#b3261e}
+.pdone{width:23px;height:23px;border-radius:50%;border:2px solid var(--brd2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;margin-top:2px;font-size:13px;font-weight:700;color:#fff;transition:background .15s}
+.pdone.on{background:var(--ok);border-color:var(--ok)}
 .composer{display:flex;gap:8px;padding:8px 10px;background:var(--card);border-top:1px solid var(--brd)}
 .composer input{flex:1}
 .composer button{background:var(--acc);color:#fff;border:0;border-radius:10px;width:46px;font-size:18px}
@@ -1495,6 +1497,7 @@ async function renderPlan(v, t){
        ${works.map((w,j)=>{
          const r = rows[j];
          return `<div class="mrow" style="align-items:flex-start;border-bottom:1px solid var(--brd)">
+           <span class="pdone ${r.status==='Выполнено'?'on':''}" title="${r.status==='Выполнено'?'Выполнено — нажмите, чтобы снять отметку':'Нажмите — отметить работу выполненной'}" onclick="planWorkDone(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">${r.status==='Выполнено'?'✓':''}</span>
            <div style="flex:1;min-width:0">
              <div class="row"><span style="flex:1;font-size:13.5px;${r.status==='Выполнено'?'text-decoration:line-through;color:var(--mut)':''}">${r.status==='Выполнено'?'✓ ':''}${esc(w)}</span></div>
              <div class="row" style="margin-top:5px;flex-wrap:wrap">
@@ -1509,6 +1512,7 @@ async function renderPlan(v, t){
              </div>
              <div class="row" style="margin-top:4px">
                <span class="badge ${r.status==='Выполнено'?'ok':r.status==='В работе'?'warn':''}" style="cursor:pointer;flex:none" title="Нажмите — сменить статус" onclick="planWorkStatus(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">${r.status==='Выполнено' ? '✓ ' + r.status : r.status}</span>
+               ${r.status==='Выполнено' && r.done_at ? `<span class="mut" style="font-size:11px;flex:none" title="Кто и когда отметил выполнение">✓ ${esc((readBy('plan_done', r.id)[0]||'').split(' ')[0])}${readBy('plan_done', r.id)[0] ? ' · ' : ''}${fmtT(r.done_at)}</span>` : ''}
                ${(r.responsibles||[]).filter(Boolean).length ? `<span class="mut" style="font-size:11.5px;flex:1">👥 ${(r.responsibles||[]).filter(Boolean).map(x=>x.split(' ')[0]).join(', ')}</span>` : ''}
              </div>
              ${(r.files&&r.files.length)?`<div style="margin-top:5px">${r.files.map((f,k)=>f.img?`<img src="${f.url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;margin-right:4px;cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(f.url)}','${encodeURIComponent(f.name||'фото')}')">`:`<a href="${f.url}" onclick="dlFile('${f.url}',decodeURIComponent('${encodeURIComponent(f.name||'файл')}'),this);return false" title="Скачать на устройство" style="font-size:12px;color:var(--acc)">📄 ${esc(f.name)}</a>`).join(' ')}</div>`:''}
@@ -1526,7 +1530,11 @@ async function renderPlan(v, t){
 async function loadPlanRows(tabId){
   try{
     const {data, error} = await sb.from('plan_works').select('*').eq('tab_id', tabId);
-    if(!error){ PLAN_ROWS = data || []; PLAN_ROWS_TAB = tabId; }
+    if(!error){
+      PLAN_ROWS = data || []; PLAN_ROWS_TAB = tabId;
+      const ids = PLAN_ROWS.map(r => r.id).filter(Boolean);
+      if(ids.length) await loadReads('plan_done', ids); /* кто поставил отметки о выполнении */
+    }
   }catch(e){ /* оставляем прежнее */ }
 }
 function planRowKey(tabId, n, work){ return PLAN_ROWS.find(r => r.tab_id===tabId && r.item_n===n && r.work===work); }
@@ -1549,6 +1557,21 @@ async function planWorkStatus(tabId, n, work){
   const cur = r ? r.status : 'Не начат';
   const next = cur==='Не начат' ? 'В работе' : cur==='В работе' ? 'Выполнено' : 'Не начат';
   await planWorkUpsert(tabId, n, work, {status: next, done_at: next==='Выполнено' ? new Date().toISOString() : null});
+  render();
+}
+// v158: отметка о выполнении работы (кто и когда отметил — через reads plan_done)
+async function planWorkDone(tabId, n, work){
+  const r = planRowKey(tabId, n, work);
+  const done = !(r && r.status === 'Выполнено');
+  const row = await planWorkUpsert(tabId, n, work, {status: done ? 'Выполнено' : 'Не начат', done_at: done ? new Date().toISOString() : null});
+  try{
+    if(done && row && row.id) await sb.from('reads').upsert([{kind:'plan_done', ref_id: row.id, member: me.name}], {onConflict:'kind,ref_id,member'});
+    if(!done && row && row.id) await sb.from('reads').delete().eq('kind','plan_done').eq('ref_id', row.id).eq('member', me.name);
+  }catch(e){}
+  if(row && row.id){
+    READS = READS.filter(x => !(x.kind==='plan_done' && x.ref_id===row.id && x.member===me.name));
+    if(done) READS.push({kind:'plan_done', ref_id: row.id, member: me.name, created_at: new Date().toISOString()});
+  }
   render();
 }
 async function planWorkResp(tabId, n, work, idx, member){
@@ -3552,7 +3575,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении, ⬇ — скачать файл может любой участник. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять и удалять: нажмите на сообщение → ✏ или 🗑.',156);
 /* Объявления */         helpReg('📢','#a03d2d','Объявления','Лента объявлений команды с файлами и фото. Свои объявления можно редактировать — кнопка ✏ рядом с текстом.',153);
 /* Задачи */             helpReg('✅','#2e7d4f','Задачи','Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи. Напоминания приходят в push.');
-/* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.');
+/* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. Кружок слева от работы — отметка о выполнении: коснитесь, и приложение зафиксирует, кто и когда её отметил. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.', 158);
 /* Журнал АН */          helpReg('📋','#7a4a8a','Журнал авторского надзора','Записи обходов: дата и погода подставляются автоматически, 🎙 — голосовой набор, предписания со статусами.');
 /* Акты и ИД */          helpReg('📄','#8a3a2e','Акты и документы','АОСР (РД-11-02-2006), промежуточная и окончательная приёмка; требуемые акты по ППР с предварительными формами; авто-реестр исполнительной документации; выгрузка в Word.');
 /* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Модели, погода — автоматически, титул и выгрузка в Word.');
