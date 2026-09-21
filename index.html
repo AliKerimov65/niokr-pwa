@@ -1468,7 +1468,7 @@ async function renderPlan(v, t){
                <span class="badge ${r.status==='Выполнено'?'ok':r.status==='В работе'?'warn':''}" style="cursor:pointer;flex:none" title="Нажмите — сменить статус" onclick="planWorkStatus(${t.id},${it.n},'${esc(w).replace(/'/g,"\'")}')">${r.status==='Выполнено' ? '✓ ' + r.status : r.status}</span>
                ${(r.responsibles||[]).filter(Boolean).length ? `<span class="mut" style="font-size:11.5px;flex:1">👥 ${(r.responsibles||[]).filter(Boolean).map(x=>x.split(' ')[0]).join(', ')}</span>` : ''}
              </div>
-             ${(r.files&&r.files.length)?`<div style="margin-top:5px">${r.files.map((f,k)=>f.img?`<img src="${f.url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;margin-right:4px;cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(f.url)}','${encodeURIComponent(f.name||'фото')}')">`:`<a href="${f.url}" target="_blank" style="font-size:12px;color:var(--acc)">📄 ${esc(f.name)}</a>`).join(' ')}</div>`:''}
+             ${(r.files&&r.files.length)?`<div style="margin-top:5px">${r.files.map((f,k)=>f.img?`<img src="${f.url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;margin-right:4px;cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(f.url)}','${encodeURIComponent(f.name||'фото')}')">`:`<a href="${f.url}" onclick="dlFile('${f.url}',decodeURIComponent('${encodeURIComponent(f.name||'файл')}'),this);return false" title="Скачать на устройство" style="font-size:12px;color:var(--acc)">📄 ${esc(f.name)}</a>`).join(' ')}</div>`:''}
            </div>
          </div>`;}).join('')}
      </details>
@@ -3505,7 +3505,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 
 /* ---- Реестр подсказок: одна строка на функцию, порядок строк = порядок показа ---- */
 /* Главное окно */       helpReg('🏠','#7a5410','Главная','Сводка дня: погода с предупреждениями для наружных работ, график готовности по неделям, дайджест команды, мои задачи и быстрые действия.');
-/* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять и удалять: нажмите на сообщение → ✏ или 🗑.',155);
+/* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении, ⬇ — скачать файл может любой участник. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять и удалять: нажмите на сообщение → ✏ или 🗑.',156);
 /* Объявления */         helpReg('📢','#a03d2d','Объявления','Лента объявлений команды с файлами и фото. Свои объявления можно редактировать — кнопка ✏ рядом с текстом.',153);
 /* Задачи */             helpReg('✅','#2e7d4f','Задачи','Статусы: Новая → В работе → Выполнено. Исполнитель и срок — в карточке задачи. Напоминания приходят в push.');
 /* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.');
@@ -3514,7 +3514,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Модели, погода — автоматически, титул и выгрузка в Word.');
 /* Протоколы */          helpReg('📝','#44506b','Протокол совещания','Голосовая расшифровка со спикерами, исправление диктовки, решения и поручения, предпросмотр и выгрузка в Word.');
 /* Комната совещаний */  helpReg('🎙','#3d6b5e','Комната совещаний','Видеосвязь команды: вход по кнопке, бегущая строка протокола, автозапись реплик распознаванием речи.');
-/* Документы */          helpReg('📁','#5a6a33','Документы','Файлы команды: проектные PDF, фото, ведомости. Фоновая загрузка с прогрессом, просмотр фото, таблиц и Word внутри приложения.');
+/* Документы */          helpReg('📁','#5a6a33','Документы','Файлы команды: проектные PDF, фото, ведомости. Фоновая загрузка с прогрессом, просмотр фото, таблиц и Word внутри приложения, скачивание кнопкой ⬇ — у всех участников.',156);
 /* Участники */          helpReg('👥','#7a5410','Участники','Карточка участника: роль, написать сообщение, ✏ — исправить ФИО. Зелёная точка — сейчас онлайн; счётчик «кто в сети» — в шапке.',149);
 /* Уведомления */        helpReg('🔔','#8a5f16','Уведомления','Колокольчик в шапке: включение push одним нажатием, автоактивация на ПК и смартфоне, выбор категорий (чат, личные, задачи, объявления, вход участников) — ⚙ Настройки → Push-уведомления.',151);
 /* Мастер создания */    helpReg('🧭','#33608a','Мастер создания команды','Пошаговое создание команды: направление определяется по названию (Проектирование, НИОКР, Изыскания, Строительство, Ремонт), готовые шаблоны этапов, работ, вкладок и ролей — с выбором нужных позиций.',152);
@@ -5727,7 +5727,7 @@ function msgHTML(m, i, grp){
       ${grp?'':`<div class="hd"><b ${isMe?'':`style="color:${avNameColor(m.n)}"`}>${esc(m.n)}</b>${m.r?` <span class="mut">${esc(m.r)}</span>`:''}</div>`}
       ${qte}
       ${pr.text?`<div class="bd">${mentionify(linkify(pr.text))}</div>`:''}
-      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy" style="cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'фото')}')">` : `<a href="${m.f}" download="${esc(m.fn||'file')}" target="_blank">📄 ${esc(m.fn||'файл')}</a>${isSheetFile(m.fn)?` <a href="javascript:void(0)" onclick="viewFileAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:isDocFile(m.fn)?` <a href="javascript:void(0)" onclick="viewDocAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:''}`) : ''}
+      ${m.f ? (m.img ? `<img src="${m.f}" loading="lazy" style="cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'фото')}')"><div style="margin-top:3px"><a href="javascript:void(0)" onclick="dlFile('${m.f}',decodeURIComponent('${encodeURIComponent(m.fn||'фото')}'),this)" style="font-size:11.5px;color:var(--acc);text-decoration:none" title="Скачать на устройство">⬇ Скачать</a></div>` : `<a href="${m.f}" onclick="dlFile('${m.f}',decodeURIComponent('${encodeURIComponent(m.fn||'файл')}'),this);return false" title="Скачать на устройство">📄 ${esc(m.fn||'файл')}</a>${isSheetFile(m.fn)?` <a href="javascript:void(0)" onclick="viewFileAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:isDocFile(m.fn)?` <a href="javascript:void(0)" onclick="viewDocAt('${encodeURIComponent(m.f)}','${encodeURIComponent(m.fn||'файл')}')" title="Открыть в приложении">👁</a>`:''}`) : ''}
       ${ansd}
       <div class="t">${tm}${m.edited?' · изменено':''}${mine?readReceipt('msg', m.id):''}</div>
     </div></div>`;
@@ -5960,7 +5960,7 @@ function renderNews(v){
   <button class="pri" style="flex:1" onclick="addNews()">Опубликовать</button></div></div>
   <input type="file" id="annFileInp" class="hidden" onchange="pickAnnFile(this)">
   ${ns.map(n=>`<div class="card"><h3>${linkify(n.body)}</h3>
-  ${n.file_url ? (/\.(png|jpe?g|gif|webp)$/i.test(n.file_url) ? `<img src="${n.file_url}" style="max-width:100%;border-radius:8px;margin-top:6px;cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(n.file_url)}','${encodeURIComponent(n.file_name||'фото')}')">` : `<a href="${n.file_url}" download="${esc(n.file_name||'file')}" target="_blank" style="color:var(--acc)">📄 ${esc(n.file_name||'файл')}</a>`) : ''}
+  ${n.file_url ? (/\.(png|jpe?g|gif|webp)$/i.test(n.file_url) ? `<img src="${n.file_url}" style="max-width:100%;border-radius:8px;margin-top:6px;cursor:zoom-in" onclick="viewPhotoAt('${encodeURIComponent(n.file_url)}','${encodeURIComponent(n.file_name||'фото')}')">` : `<a href="${n.file_url}" onclick="dlFile('${n.file_url}',decodeURIComponent('${encodeURIComponent(n.file_name||'файл')}'),this);return false" title="Скачать на устройство" style="color:var(--acc)">📄 ${esc(n.file_name||'файл')}</a>`) : ''}
   <p class="mut">${esc(n.author||'')} · ${fmtT(n.created_at)}${n.edited?' · изменено':''}</p><p class="mut" style="margin-top:2px">👁 Прочтение${readReceipt('ann', n.id)}</p>
   <div style="height:8px"></div><div class="row">${n.author===me.name?`<button class="sec" onclick="editNews(${n.id})">✏️ Исправить</button>`:''}<button class="dng" onclick="delNews(${n.id})">Удалить</button></div></div>`).join('') || '<p class="mut">Объявлений нет.</p>'}`;
 }
@@ -6024,13 +6024,38 @@ function renderFiles(v){
   <p class="mut" style="font-size:11px;margin-top:6px">Лимит 48 МБ на файл · загрузка идёт в фоне, индикатор внизу экрана.</p></div>
   ${fs.map((f,i)=>`<div class="frow"><div class="finf"><b>📄 ${esc(f.name)}</b><span>${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</span></div>
   <div class="fbtns">${isSheetFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:isDocFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewDocIdx(${i})">👁</button>`:isImgFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewPhotoIdx(${i})">👁</button>`:''}
-  <a class="fbtn" href="${f.url||f.d}" download="${esc(f.name)}" target="_blank" title="Скачать">⬇</a>
+  <a class="fbtn" href="javascript:void(0)" onclick="dlFile('${f.url||f.d}',decodeURIComponent('${encodeURIComponent(f.name||'файл')}'),this)" title="Скачать">⬇</a>
   <button class="fbtn del" title="Удалить" onclick="delFile(${f.id})">✖</button></div></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
 /* ---------- ПРОСМОТР ТАБЛИЦ (xlsx/xls/csv) ВНУТРИ ПРИЛОЖЕНИЯ.
    SheetJS подгружается один раз по требованию; при неудаче — кнопка «Скачать». ---------- */
 let _xlsxLibP = null, _xlsWb = null, _xlsUrl = '', _xlsName = '';
 function isSheetFile(n){ return /\.(xlsx|xls|csv)$/i.test(String(n||'')); }
+/* ---------- СКАЧИВАНИЕ ФАЙЛОВ ДЛЯ ВСЕХ УЧАСТНИКОВ: fetch→blob→сохранение.
+   Атрибут download у обычной ссылки браузеры игнорируют для кросс-доменных URL
+   (хранилище Supabase — другой домен), а в установленном PWA/TWA внешняя ссылка
+   может вообще не открыться. Blob-способ работает везде; при сбое — запасной
+   вариант: открыть файл в новой вкладке. ---------- */
+async function dlFile(url, name, el){
+  if(!url) return;
+  name = name || 'файл';
+  const old = el ? el.textContent : null;
+  if(el){ el.textContent = '⏳'; el.style.pointerEvents = 'none'; }
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const b = await r.blob();
+    const u = URL.createObjectURL(b);
+    const a = document.createElement('a');
+    a.href = u; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 8000);
+  }catch(e){
+    try{ window.open(url, '_blank'); }catch(_){ location.href = url; }
+  }finally{
+    if(el){ el.textContent = old; el.style.pointerEvents = ''; }
+  }
+}
 /* ---------- ПРОСМОТР ФОТО ВНУТРИ ПРИЛОЖЕНИЯ: двойной тап — увеличение,
    перетаскивание — сдвиг увеличенного фото, свайп вниз / ✕ / Esc — закрыть. ---------- */
 function isImgFile(n){ return /\.(png|jpe?g|gif|webp)$/i.test(String(n||'')); }
@@ -6044,7 +6069,8 @@ function viewPhoto(url, name){
   img.style.transform = 'translate(0px,0px) scale(1)';
   img.src = url;
   document.getElementById('pvName').textContent = name || 'Фото';
-  const dl = document.getElementById('pvDl'); dl.href = url; dl.setAttribute('download', name || 'photo');
+  const dl = document.getElementById('pvDl');
+  dl.onclick = (e) => { e.preventDefault(); dlFile(url, name || 'photo', dl); };
   document.getElementById('pview').style.display = 'flex';
 }
 function viewPhotoAt(u, n){ viewPhoto(decodeURIComponent(u), decodeURIComponent(n)); }
@@ -6102,7 +6128,7 @@ async function viewFile(url, name){
   _xlsUrl = url; _xlsName = name || 'таблица';
   $('#sheet').innerHTML = `<h2>📊 ${esc(_xlsName)}</h2><div id="xlsBody"><p class="mut">Загрузка таблицы…</p></div>
     <div style="height:10px"></div><div class="row">
-    <a class="sec" style="flex:1;text-align:center" href="${url}" download="${esc(_xlsName)}" target="_blank">⬇ Скачать</a>
+    <a class="sec" style="flex:1;text-align:center" href="javascript:void(0)" onclick="dlFile(_xlsUrl,_xlsName,this)">⬇ Скачать</a>
     <button class="sec" style="flex:1" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button></div>`;
   $('#overlay').style.display='flex';
   try{
@@ -6144,7 +6170,7 @@ async function viewDocFile(url, name){
   const nm = name || 'документ';
   $('#sheet').innerHTML = `<h2>📝 ${esc(nm)}</h2><div id="docBody"><p class="mut">Загрузка документа…</p></div>
     <div style="height:10px"></div><div class="row">
-    <a class="sec" style="flex:1;text-align:center" href="${url}" download="${esc(nm)}" target="_blank">⬇ Скачать</a>
+    <a class="sec" style="flex:1;text-align:center" href="javascript:void(0)" onclick="dlFile('${url}',decodeURIComponent('${encodeURIComponent(nm)}'),this)">⬇ Скачать</a>
     <button class="sec" style="flex:1" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button></div>`;
   $('#overlay').style.display='flex';
   const body = document.getElementById('docBody');
