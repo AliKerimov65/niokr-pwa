@@ -769,8 +769,111 @@ function start(){
   }
 }
 
-/* ---------- ОНБОРДИНГ 1: кто вы ---------- */
+/* ---------- ОНБОРДИНГ (v163): приветствие → два понятных пути ---------- */
 function onboarding1(){
+  if(!SYNC){ onboardingLegacy(); return; } // офлайн-режим — прежняя локальная форма
+  $('#sheet').innerHTML = `<h2 style="text-align:center">👋 Добро пожаловать!</h2>
+    <p class="mut" style="text-align:center;margin-bottom:12px">«НИОКР Команда» — совместная работа: чат, задачи, техплан, журналы и акты.</p>
+    <div class="card" style="margin-bottom:10px">
+      <p style="font-weight:600;margin-bottom:4px">👥 Я уже в команде</p>
+      <p class="mut" style="margin-bottom:8px;font-size:12.5px">Выбираете себя из списка — приложение покажет ваши команды, коснитесь нужной и входите.</p>
+      <button class="pri" style="width:100%" onclick="obExist()">Выбрать себя из списка</button>
+    </div>
+    <div class="card">
+      <p style="font-weight:600;margin-bottom:4px">🆕 Я новый участник</p>
+      <p class="mut" style="margin-bottom:8px;font-size:12.5px">У вас есть код приглашения от руководителя (6 символов): введите код, заполните карточку — и вы в команде.</p>
+      <button class="pri" style="width:100%" onclick="obCodeForm()">Ввести код приглашения</button>
+    </div>
+    <p class="mut" style="text-align:center;margin-top:10px;font-size:12px">Руководителю без кода: <a href="javascript:void(0)" style="color:var(--acc)" onclick="obCardForm(null)">зарегистрироваться и создать свою команду</a></p>`;
+  $('#overlay').style.display = 'flex';
+}
+/* Выбор себя из списка участников (для тех, кто уже в команде) */
+function obExist(){
+  const seen = new Set();
+  const uniq = MEMBERS.filter(m => { const k = surnameKey(m.name); if(seen.has(k)) return false; seen.add(k); return true; });
+  const opts = uniq.map(m => `<option value="${esc(m.name)}">${esc(m.name)} — ${esc(m.role||'')}</option>`).join('');
+  $('#sheet').innerHTML = `<h2>👥 Выберите себя</h2>
+    <div class="card">
+      <p class="mut" style="margin-bottom:10px">Ваше имя в списке участников:</p>
+      <select id="existSel" ${MEMBERS.length?'':'disabled'}>
+        ${MEMBERS.length?opts:'<option value="">— пока никого нет —</option>'}
+      </select>
+      <div style="height:10px"></div>
+      <button class="pri" style="width:100%" onclick="pickExisting()" ${MEMBERS.length?'':'disabled'}>Продолжить</button>
+      <div style="height:8px"></div>
+      <button class="sec" style="width:100%" onclick="onboarding1()">← Назад</button>
+    </div>`;
+  $('#overlay').style.display = 'flex';
+}
+/* Новый участник: шаг 1 — код приглашения */
+function obCodeForm(){
+  $('#sheet').innerHTML = `<h2>🆕 Вход по коду приглашения</h2>
+    <div class="card">
+      <p class="mut" style="margin-bottom:8px">Введите код из 6 символов — его сообщил руководитель команды:</p>
+      <input id="obCode" placeholder="НАПРИМЕР: AB3K7P" maxlength="6" autocomplete="off" style="text-align:center;font-size:20px;letter-spacing:4px;text-transform:uppercase">
+      <div id="obCodeMsg"></div>
+      <div style="height:10px"></div>
+      <button class="pri" style="width:100%" onclick="obCodeCheck()">Продолжить</button>
+      <div style="height:8px"></div>
+      <button class="sec" style="width:100%" onclick="onboarding1()">← Назад</button>
+      <p class="mut" style="font-size:11.5px;margin-top:10px">Нет кода? Попросите руководителя команды прислать его — код указан в разделе «Участники» его приложения.</p>
+    </div>`;
+  $('#overlay').style.display = 'flex';
+  setTimeout(() => { const el = document.getElementById('obCode'); if(el) el.focus(); }, 300);
+}
+async function obCodeCheck(){
+  const el = document.getElementById('obCode');
+  const msg = document.getElementById('obCodeMsg');
+  const code = (el && el.value || '').trim().toUpperCase();
+  if(code.length !== 6){ msg.innerHTML = '<p style="color:var(--bad);font-size:12.5px;margin-top:6px">Код состоит из 6 символов — введите его полностью.</p>'; return; }
+  msg.innerHTML = '<p class="mut" style="font-size:12.5px;margin-top:6px">Проверяю код…</p>';
+  const {data, error} = await sb.from('teams').select('*').eq('invite_code', code).maybeSingle();
+  if(error || !data){ msg.innerHTML = '<p style="color:var(--bad);font-size:12.5px;margin-top:6px">Команда с таким кодом не найдена. Проверьте код или попросите руководителя прислать его ещё раз.</p>'; return; }
+  window._obTeam = data;
+  obCardForm(data);
+}
+/* Новый участник: шаг 2 — карточка; для руководителя (t=null) — регистрация и создание своей команды */
+function obCardForm(t){
+  window._obTeam = t || null;
+  $('#sheet').innerHTML = `<h2>✍️ Ваша карточка</h2>
+    ${t ? `<p class="mut" style="margin-bottom:10px">Команда: <b style="color:var(--txt)">${esc(t.name)}</b>. Заполните карточку — её увидят коллеги:</p>`
+        : `<p class="mut" style="margin-bottom:10px">Заполните карточку — после этого вы сможете создать свою команду:</p>`}
+    <div class="card">
+      <input id="nm" placeholder="Фамилия И.О. — обязательно"><div style="height:8px"></div>
+      <select id="rl"><option>ГИП / руководитель</option><option>Главный инженер</option><option>Инженер-конструктор</option><option>Инженер-геотехник</option><option>Инженер ПТО</option><option>Сметчик</option><option>Лаборант</option><option>Другое</option></select>
+      <div style="height:8px"></div><input id="rc_p" placeholder="Телефон (необязательно)"><div style="height:8px"></div>
+      <input id="rc_e" placeholder="E-mail (необязательно)"><div style="height:8px"></div>
+      <input id="rc_t" placeholder="Telegram, например @ivanov (необязательно)"><div style="height:8px"></div>
+      <input id="rc_m" placeholder="MAX: max.ru/u/… (необязательно)">
+      <div style="height:12px"></div>
+      <button class="pri" style="width:100%" onclick="obEnter()">${t ? '✅ Войти в команду' : 'Продолжить'}</button>
+      <div style="height:8px"></div>
+      <button class="sec" style="width:100%" onclick="${t ? 'obCodeForm()' : 'onboarding1()'}">← Назад</button>
+    </div>`;
+  $('#overlay').style.display = 'flex';
+}
+async function obEnter(){
+  const t = window._obTeam || null;
+  const n = $('#nm').value.trim(); if(!n) return alert('Введите фамилию и инициалы');
+  const role = $('#rl').value;
+  const existing = findMemberCase(n);
+  if(!existing){
+    const {error} = await sb.from('members').insert({name:n, role, phone:$('#rc_p').value||null, email:$('#rc_e').value||null, telegram:$('#rc_t').value||null, max:$('#rc_m').value||null});
+    if(error && error.code!=='23505') return alert(error.message);
+  }
+  me = {name: existing ? existing.name : n, role: existing ? (existing.role || role) : role}; store.set('user', me);
+  if(t){
+    const {error: e2} = await sb.from('team_members').insert({team_id: t.id, member: me.name, is_owner: false});
+    if(e2 && e2.code!=='23505') return alert(e2.message);
+    team = {id: t.id, name: t.name, owner: t.owner, invite_code: t.invite_code, is_owner: false}; store.set('team', team);
+    $('#overlay').style.display='none'; dmWith = null; reloadAll();
+  } else {
+    window._obNewUser = true;
+    MYTEAMS = await fetchMyTeams(); onboarding2();
+  }
+}
+/* Офлайн-режим: прежняя единая форма (выбор из списка / локальная регистрация) */
+function onboardingLegacy(){
   const seen = new Set();
   const uniq = MEMBERS.filter(m => { const k = surnameKey(m.name); if(seen.has(k)) return false; seen.add(k); return true; });
   const opts = uniq.map(m => `<option value="${esc(m.name)}">${esc(m.name)} — ${esc(m.role||'')}</option>`).join('');
@@ -799,6 +902,7 @@ function onboarding1(){
 async function pickExisting(){
   const name = $('#existSel').value; if(!name) return;
   const rec = MEMBERS.find(m => m.name === name);
+  window._obNewUser = false;
   me = {name, role: rec ? rec.role : ''}; store.set('user', me);
   $('#overlay').style.display='none';
   if(SYNC){ MYTEAMS = await fetchMyTeams(); onboarding2(); } else start();
@@ -840,19 +944,24 @@ function onboarding2(){
     <div class="av" style="width:40px;height:40px;background:var(--acc)">👥</div>
     <div style="flex:1"><b style="font-size:15px">${esc(t.name)}</b><br><span class="mut">${t.is_owner?'вы владелец':'участник'}</span></div>
     ${team&&team.id===t.id?'<span style="color:var(--ok);font-size:20px">✓</span>':''}</div>`).join('');
-  $('#sheet').innerHTML = `<h2>Ваши команды</h2><p class="mut" style="margin-bottom:10px">Вы вошли как: <b style="color:var(--txt)">${esc(me.name)}</b>. Выберите команду для работы:</p>
-    ${list || `<div class="card" style="border-color:var(--warn);margin-bottom:10px">
+  $('#sheet').innerHTML = `<h2>👥 Ваши команды</h2><p class="mut" style="margin-bottom:10px">Вы вошли как: <b style="color:var(--txt)">${esc(me.name)}</b>. Коснитесь команды — и вы в работе:</p>
+    ${list || (window._obNewUser ? `<div class="card" style="margin-bottom:10px">
+      <p>✅ Карточка готова, <b>${esc(me.name)}</b>!</p>
+      <p class="mut" style="margin-top:6px">Команд у вас пока нет — создайте первую ниже (мастер подберёт шаблон по направлению работ).</p>
+    </div>` : `<div class="card" style="border-color:var(--warn);margin-bottom:10px">
       <p>⚠️ Под именем <b>${esc(me.name)}</b> команд не найдено.</p>
-      <p class="mut" style="margin-top:6px">Если вы раньше создавали команды — вы вошли под другим написанием имени. Вернитесь и выберите себя точно (<b>Керимов А.Г</b> — без точки в конце).</p>
+      <p class="mut" style="margin-top:6px">Если вы раньше создавали команды — вы вошли под другим написанием имени. Вернитесь и выберите себя точно (<b>Керимов А.Г</b> — без точки в конце). Новому участнику нужен код приглашения от руководителя.</p>
       <div style="height:10px"></div>
-      <button class="sec" style="width:100%" onclick="store.del('user'); store.del('team'); me=null; team=null; appStarted=false; loadMembers().then(onboarding1)">← Выбрать другого участника</button>
-    </div>`}
-    <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Создать свою команду (видят только приглашённые):</p>
-      <button class="pri" style="width:100%" onclick="wzStart()">🧭 Мастер создания команды</button>
+      <button class="sec" style="width:100%" onclick="store.del('user'); store.del('team'); me=null; team=null; appStarted=false; loadMembers().then(onboarding1)">← Назад к началу</button>
+    </div>`)}
+    <div class="card" style="margin-top:10px"><p class="mut" style="margin-bottom:8px">Другие действия:</p>
+      <button class="sec" style="width:100%" onclick="wzStart()">🧭 Создать свою команду — мастер</button>
       <div style="height:8px"></div>
-      <div class="row"><input id="newTeamName" placeholder="Или пустую: название"><button class="sec" onclick="createTeam()">Создать</button></div></div>
-    <div class="card"><p class="mut" style="margin-bottom:8px">Вступить по коду приглашения:</p>
-      <div class="row"><input id="joinCode" placeholder="Код (6 символов)" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div></div>`;
+      <div class="row"><input id="newTeamName" placeholder="Пустую команду: название"><button class="sec" onclick="createTeam()">Создать</button></div>
+      <div style="height:8px"></div>
+      <div class="row"><input id="joinCode" placeholder="Код приглашения (6)" maxlength="6"><button class="sec" onclick="joinTeam()">Вступить</button></div>
+      <div style="height:8px"></div>
+      <button class="sec" style="width:100%" onclick="store.del('user'); store.del('team'); me=null; team=null; appStarted=false; loadMembers().then(onboarding1)">← Войти под другим именем</button></div>`;
   $('#overlay').style.display = 'flex';
 }
 function selectTeam(id){
@@ -3671,6 +3780,7 @@ let APP_VER_N = 0; // номер текущей версии приложени�
 function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 
 /* ---- Реестр подсказок: одна строка на функцию, порядок строк = порядок показа ---- */
+/* Вход (v163) */        helpReg('👋','#33608a','Вход в приложение','Уже в команде — выберите себя из списка и коснитесь команды. Новый участник — введите код приглашения от руководителя, заполните карточку и нажмите «Войти в команду».', 163);
 /* Главное окно */       helpReg('🏠','#7a5410','Главная','Сводка дня: погода с предупреждениями для наружных работ, график готовности по неделям, дайджест команды, мои задачи и быстрые действия.');
 /* Чат */                helpReg('💬','#8a5f16','Чат','Общение по каналам: панель разделов закреплена вверху и всегда видна при прокрутке. 📎 — фото и файлы, просмотр таблиц и Word прямо в приложении, ⬇ — скачать файл может любой участник. Личные сообщения — через 💌 или карточку участника. Свои сообщения можно исправлять и удалять: нажмите на сообщение → ✏ или 🗑.',160);
 /* Объявления */         helpReg('📢','#a03d2d','Объявления','Лента объявлений команды с файлами и фото. Свои объявления можно редактировать — кнопка ✏ рядом с текстом.',153);
