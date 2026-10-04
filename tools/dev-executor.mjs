@@ -9,12 +9,15 @@
 // проверяет (якоря уникальны, число <script> не изменилось, node --check
 // каждого скрипт-блока) → коммитит index.html + sw.js с новой версией →
 // пишет статус/отчёт в dev_tasks.
+// Задачи с префиксом 'DEPLOY:' — детерминированный деплой готовых файлов
+// по URL (с проверкой sha256 и синтаксиса), без LLM.
 //
 // Env: SB_URL, SB_KEY (publishable), GH_TOKEN|GITHUB_TOKEN,
 //      LLM_API_KEY, [LLM_BASE_URL], [LLM_MODEL], [REPO], [BRANCH], [DRY_RUN]
 // ============================================================================
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const SB_URL  = process.env.SB_URL  || 'https://lxgipzdybigdpdcmcnez.supabase.co';
 const SB_KEY  = process.env.SB_KEY  || '';
@@ -137,18 +140,59 @@ function syntaxCheck(html) {
   log('node --check: %d блоков OK', blocks.length);
 }
 
+// ---------- DEPLOY: детерминированный деплой готовых файлов ----------
+// Задача с title 'DEPLOY: ...' и body = JSON {"files":[{path,url,sha256?}],"message":"..."}
+// скачивает файлы по URL, проверяет sha256 и синтаксис index.html, коммитит как есть (без LLM).
+async function deployTask(task) {
+  let spec;
+  try { spec = JSON.parse(task.body || '{}'); }
+  catch { throw new Error('DEPLOY: body не является JSON'); }
+  const files = Array.isArray(spec.files) ? spec.files : [];
+  if (!files.length) throw new Error('DEPLOY: пустой список файлов');
+  const out = [];
+  for (const f of files) {
+    if (!f || !f.path || !f.url) throw new Error('DEPLOY: у файла нет path/url');
+    const r = await fetch(f.url);
+    if (!r.ok) throw new Error(`DEPLOY: скачивание ${f.path}: HTTP ${r.status}`);
+    const text = await r.text();
+    if (f.sha256) {
+      const h = createHash('sha256').update(text, 'utf8').digest('hex');
+      if (h !== f.sha256) throw new Error(`DEPLOY: sha256 не совпал для ${f.path}: ${h}`);
+    }
+    out.push({ path: f.path, text });
+  }
+  const index = out.find(x => x.path === 'index.html');
+  if (index) syntaxCheck(index.text);
+  const msg = String(spec.message || task.title).slice(0, 120);
+  await ghCommit(out, msg);
+  await setTask(task.id, { status: 'Исполнено', agent_note: 'DEPLOY: ' + msg });
+  log('DEPLOY ГОТОВО: %s (%d файлов)', msg, out.length);
+}
+
 // ---------- Основной сценарий ----------
 async function main() {
   if (!GH_TOK) throw new Error('Нет GH_TOKEN/GITHUB_TOKEN');
-  if (!process.env.LLM_API_KEY) throw new Error('Нет LLM_API_KEY');
   if (!SB_KEY) throw new Error('Нет SB_KEY');
 
   const task = await getQueuedTask();
   if (!task) { log('очередь пуста'); return; }
   log('задача #%d: %s', task.id, task.title);
+  if (String(task.title || '').startsWith('DEPLOY:')) {
+    try {
+      await setTask(task.id, { status: 'В работе', agent_note: null });
+      await deployTask(task);
+    } catch (e) {
+      const msg = String(e.message || e).slice(0, 500);
+      await setTask(task.id, { status: 'Ошибка', agent_note: msg });
+      console.error('[dev-executor] ОШИБКА:', msg);
+      process.exitCode = 1;
+    }
+    return;
+  }
   await setTask(task.id, { status: 'В работе', agent_note: null });
 
   try {
+    if (!process.env.LLM_API_KEY) throw new Error('Нет LLM_API_KEY');
     const index = await ghGetFile('index.html');
     const sw = await ghGetFile('sw.js');
 
@@ -156,7 +200,7 @@ async function main() {
     const plan = JSON.parse(await llm(
       'Ты планировщик правок однофайлового PWA (index.html, ~400 КБ, русскоязычный проект «НИОКР Команда»). ' +
       'По задаче и списку функций верни СТРОГО JSON: {"targets":["имя1","имя2"],"notes":"что менять"}. ' +
-      'Выбирай 1–6 функций, реально затронутых задачей. Никакого текста вне JSON.',
+      'Выбирай 1–6 функций, реально затронутых задачи. Никакого текста вне JSON.',
       `ЗАДАЧА: ${task.title}\n\nОПИСАНИЕ:\n${task.body || '(нет)'}\n\nФУНКЦИИ В ФАЙЛЕ: ${map.map(x => x.name).join(', ')}`,
       2000));
     const targets = Array.isArray(plan.targets) ? plan.targets.slice(0, 6) : [];
