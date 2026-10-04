@@ -50,6 +50,18 @@ main{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 .more-cell .ic{font-size:24px;display:block}
 .more-cell b{font-size:12px;display:block;margin-top:4px;font-weight:700}
 .more-cell span{font-size:10px;color:var(--mut);display:block;margin-top:1px}
+/* ОЖР-вкладка (v164): сетка разделов и экран раздела */
+.ojr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:4px}
+.ojr-card{position:relative;background:var(--card);border:1px solid var(--brd);border-radius:14px;padding:14px 12px 11px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ojr-card:active{transform:scale(.97)}
+.ojr-card .cnt{position:absolute;top:9px;right:11px;font-size:11.5px;font-weight:700;color:var(--acc);background:rgba(74,144,226,.12);border-radius:11px;padding:2px 8px}
+.ojr-card .ic{font-size:22px;display:block}
+.ojr-card .title{font-size:12.5px;font-weight:700;margin-top:6px;line-height:1.25}
+.ojr-card .sub{font-size:11px;color:var(--mut);margin-top:3px;line-height:1.3}
+.ojr-back{margin-bottom:10px}
+.ojr-sec-head{display:flex;align-items:center;gap:8px;margin:2px 0 8px;flex-wrap:wrap}
+.ojr-sec-head h3{margin:0;font-size:15px;flex:1;min-width:0}
+.ojr-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .mrow .mst{margin-left:auto;font-size:11px;color:var(--mut);flex:none}
 .card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:12px;margin-bottom:10px}
 .frow{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:8px 10px;margin-bottom:8px}
@@ -2437,6 +2449,7 @@ function renderStructBar(){
   items.push({icon:'🏠', label:'Главная', fn:"navGo('home')", on: view==='home'});
   if(azTab) items.push({icon:'📋', label:'Журнал АН', fn:`openTabView(${azTab.id})`, on: view==='tab:'+azTab.id});
   items.push({icon:'📄', label:'Акты и документы', fn:"navGo('acts')", on: view==='acts'});
+  items.push({icon:'📔', label:'ОЖР', fn:"navGo('ojr')", on: view==='ojr'});
   TABS.filter(t=>t.kind!=='az').forEach(t=>items.push({icon:t.icon||'📄', label:t.name, fn:`openTabView(${t.id})`, on: view==='tab:'+t.id}));
   (rTasks||[]).slice().reverse().forEach(t=>items.push({icon:'✅', label:t.title, fn:`taskSheet(${t.id})`, on:false, done:t.status==='Выполнено'}));
   bar.innerHTML = items.map(x=>`<span class="struct-chip ${x.on?'on':''} ${x.done?'done':''}" onclick="${x.fn}">${x.icon} ${esc(x.label)}</span>`).join('')
@@ -3126,6 +3139,113 @@ function renderActsBody(v){
    </table></div>
    <p class="mut" style="font-size:11px">Реестр автоматически пополняется по мере создания актов, загрузки документов и выполнения работ по техплану. Нажмите на название акта 📄 — откроется полный текст в формате Word.</p>`;
 }
+/* ---------- v164: Общий журнал работ — отдельная профессиональная вкладка ---------- */
+async function renderOjrTab(v, t){
+  if(!SYNC){ v.innerHTML = '<h2 class="pt">📔 Общий журнал работ</h2><p class="mut">Требуется подключение.</p>'; return; }
+  if(!OJR){
+    v.innerHTML = '<h2 class="pt">📔 Общий журнал работ</h2><p class="mut">Загрузка…</p>';
+    loadOjr().then(() => { if(view === 'ojr') render(); });
+    return;
+  }
+  const isOwner = team && team.is_owner;
+  const object = (OJR.meta && OJR.meta.object) || (t && t.name) || 'Объект';
+  const total = Object.keys(OJR_SECS).reduce((sum, k) => sum + ojrRows(k).length, 0);
+  const chips = Object.keys(OJR_SECS).map(k => {
+    const d = OJR_SECS[k], cnt = ojrRows(k).length;
+    return {k: k, cnt: cnt, ...d};
+  });
+  v.innerHTML = `
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+<h2 style="margin:0;font-size:16px">📔 Общий журнал работ</h2>
+<span class="badge" style="font-size:11px">${total} записей</span>
+</div>
+<p class="mut" style="font-size:12px;margin-bottom:10px">${esc(object)} · ${esc(OJR_NORM)}</p>
+<div class="row" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">
+<button class="sec" style="font-size:12px;padding:6px 12px" onclick="ojrTitulForm()">📋 Титул</button>
+<button class="sec" style="font-size:12px;padding:6px 12px" onclick="ojrWord()">📄 В Word</button>
+${isOwner ? '<button class="sec" style="font-size:12px;padding:6px 12px" onclick="ojrFillAll()">📥 Заполнить из ППР / актов</button>' : ''}
+</div>
+<div class="ojr-grid">
+${chips.map(c => `
+<div class="ojr-card" onclick="ojrOpenInView('${c.k}')">
+          <span class="cnt">${c.cnt}</span>
+          <span class="ic">${c.icon}</span>
+          <div class="title">Раздел ${c.n}. ${esc(c.title)}</div>
+          <div class="sub">${esc(c.desc || '')}</div>
+        </div>
+`).join('')}
+</div>
+<div class="card" style="margin-top:10px;background:var(--card2)">
+<div class="row" style="align-items:center;gap:8px">
+<span style="font-size:20px">💡</span>
+<div style="flex:1;min-width:0;font-size:12px">
+<b>Памятка:</b> записи вносятся в день выполнения работ. Если работы не велись — запись «Работы не производились» с указанием причины. Погода подставляется автоматически.
+</div>
+</div>
+</div>
+`;
+}
+/* Экран раздела журнала внутри вкладки (без оверлея) */
+function ojrOpenInView(sec){
+  const v = document.getElementById('view');
+  if(!v) return;
+  _ojrSec = sec || _ojrSec || 'works';
+  if(!OJR_SECS[_ojrSec]) _ojrSec = 'works';
+  const isOwner = team && team.is_owner;
+  const s = OJR_SECS[_ojrSec], rows = ojrRows(_ojrSec);
+  const chips = Object.keys(OJR_SECS).map(k => {
+    const d = OJR_SECS[k], n = ojrRows(k).length;
+    return `<button class="${k === _ojrSec ? 'on' : ''}" style="padding:5px 10px;font-size:11.5px;border-radius:20px;border:1px solid var(--brd);background:${k === _ojrSec ? 'rgba(74,144,226,.08)' : 'var(--card)'};color:${k === _ojrSec ? 'var(--acc)' : 'var(--txt)'};font-weight:${k === _ojrSec ? '700' : '400'};cursor:pointer" onclick="ojrOpenInView('${k}')">${d.icon} Р${d.n}${n ? ' · ' + n : ''}</button>`;
+  }).join('');
+  const list = rows.length ? rows.map((r, ix) => {
+    const c0 = s.cols[0], c1 = s.cols[1];
+    const v0 = c0.type === 'date' ? _ruDate(r[c0.k]) : (r[c0.k] || '—');
+    const v1full = String(r[c1.k] || '');
+    const v1 = v1full.slice(0, 90);
+    return `
+<div class="card" style="padding:9px 11px;margin-bottom:8px">
+      <div class="row" style="align-items:flex-start">
+        <div style="flex:1;min-width:0"><b>№ ${ix + 1}</b> · ${esc(String(v0))}${v1 ? '<br><span class="mut" style="font-size:12px">' + esc(v1) + (v1full.length > 90 ? '…' : '') + '</span>' : ''}</div>
+${isOwner ? `
+<button class="sec" style="font-size:12px;padding:5px 9px;flex:none" onclick="ojrRowForm('${_ojrSec}',${ix})">✎</button>
+        <button class="dng" style="font-size:12px;padding:5px 9px;flex:none" onclick="ojrRowDel('${_ojrSec}',${ix})">🗑</button>
+` : ''}
+</div></div>
+`;
+  }).join('') : '<p class="mut">Записей пока нет' + (isOwner ? ' — добавьте первую' : '') + '.</p>';
+  const fillBtns = [];
+  if(isOwner && _ojrSec === 'spec') fillBtns.push('<button class="sec" style="flex:1;font-size:12px" onclick="ojrFillSpec()">📥 Заполнить из ППР</button>');
+  if(isOwner && _ojrSec === 'exec') fillBtns.push('<button class="sec" style="flex:1;font-size:12px" onclick="ojrFillExec()">📥 Из актов команды</button>');
+  v.innerHTML = `
+<div class="ojr-back">
+<button class="sec" style="padding:6px 12px;font-size:12px" onclick="render()">← К разделам журнала</button>
+</div>
+<div class="ojr-sec-head">
+<h3>${s.icon} Раздел ${s.n}. ${esc(s.title)}</h3>
+<span class="badge">${rows.length} записей</span>
+</div>
+<div class="ojr-chips">
+${chips}
+<button class="sec" style="padding:5px 10px;font-size:11.5px;border-radius:20px" onclick="ojrTitulForm()">📋 Титул</button>
+</div>
+${_ojrSec === 'works' ? '<p class="mut" style="font-size:11.5px;margin-bottom:8px">Записи вносятся в день выполнения работ. Если работы не велись — запись «Работы не производились» с указанием причины.</p>' : ''}
+${list}
+${isOwner ? `
+<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><button class="pri" style="flex:1;min-width:130px" onclick="ojrRowForm('${_ojrSec}',null)">＋ Новая запись</button>
+${fillBtns.join('')}
+</div>
+` : ''}
+<div class="row" style="gap:6px;margin-top:8px">
+<button class="sec" style="flex:1" onclick="ojrWord()">📄 Выгрузить в Word</button>
+</div>
+`;
+}
+/* Кнопка вкладки: заполнить разделы 2 и 5 из ППР и актов команды одним нажатием */
+async function ojrFillAll(){
+  await ojrFillSpec();
+  await ojrFillExec();
+  ojrOpenInView(_ojrSec || 'works');
+}
 /* Карточка «Требуемые акты и документы по ППР»: перечень извлечён из текста ППР
    (config.ppr журнала АН), каждая позиция — с точной цитатой и листом. */
 function actsPprCard(){
@@ -3147,7 +3267,7 @@ function actsPprCard(){
   }).join('');
   const allMade = ppr.acts.every((r, ix) => (ACTS || []).some(a => a.ppr_ix === ix));
   const j = (ppr.journals||[]).length ? `<p class="mut" style="margin-top:8px;font-size:12px"><b>Журналы по ППР:</b> ${ppr.journals.map(x=>esc(x)).join('; ')}.</p>
-    <div style="margin-top:6px"><button class="sec" style="font-size:12px;padding:6px 10px" onclick="ojrOpen('works')">📔 Общий журнал работ${ojrRows('works').length ? ' · записей: ' + ojrRows('works').length : ''} — открыть</button></div>` : '';
+    <div style="margin-top:6px"><button class="sec" style="font-size:12px;padding:6px 10px" onclick="navGo('ojr')">📔 Общий журнал работ${ojrRows('works').length ? ' · записей: ' + ojrRows('works').length : ''} — открыть</button></div>` : '';
   const d = (ppr.exec_docs||[]).length ? `<p class="mut" style="margin-top:4px;font-size:12px"><b>Исполнительные документы:</b> ${ppr.exec_docs.map(x=>esc(x)).join('; ')}.</p>` : '';
   return `<h2 class="pt" style="margin-top:14px">📑 Требуемые акты и документы по ППР</h2>
   <div class="card">
@@ -3366,33 +3486,33 @@ async function actDel(id){
 const OJR_NORM = 'Форма и порядок ведения — приказ Минстроя России от 02.12.2022 № 1026/пр (с 01.09.2023, взамен РД-11-05-2007). Раздел 3 заполняется в день выполнения работ, раздел 4 — не позднее следующего дня.';
 let OJR = null;
 const OJR_SECS = {
-  staff: {n: 1, icon: '👷', title: 'Список инженерно-технического персонала лица, осуществляющего строительство', cols: [
+  staff: {n: 1, icon: '👷', title: 'Список инженерно-технического персонала лица, осуществляющего строительство', desc: 'Кто ведёт строительство: организации, специалисты, сроки', cols: [
     {k: 'org', label: 'Лицо, осуществляющее строительство (наименование)', w: 1900},
     {k: 'person', label: 'Ф.И.О., должность специалиста', w: 1900},
     {k: 'start', label: 'Дата начала работ (с указанием вида работ)', w: 1800, ph: '12.01.2026 — буровые работы'},
     {k: 'end', label: 'Дата окончания работ', w: 1200},
     {k: 'sign', label: 'Подпись уполномоченного представителя', w: 2000}]},
-  spec: {n: 2, icon: '📚', title: 'Перечень специальных журналов и журналов авторского надзора', cols: [
+  spec: {n: 2, icon: '📚', title: 'Перечень специальных журналов и журналов авторского надзора', desc: 'Спецжурналы и журналы АН: кто ведёт, передача застройщику', cols: [
     {k: 'name', label: 'Наименование специального журнала (журнала АН), дата выдачи', w: 2800},
     {k: 'keeper', label: 'Кто ведёт (организация, представитель, должность)', w: 2400},
     {k: 'handed', label: 'Дата передачи застройщику (техническому заказчику)', w: 1600},
     {k: 'sign', label: 'Подпись представителя застройщика (технического заказчика)', w: 2000}]},
-  works: {n: 3, icon: '🛠', title: 'Сведения о выполнении работ', cols: [
+  works: {n: 3, icon: '🛠', title: 'Сведения о выполнении работ', desc: 'Ежедневные записи: работы, условия, погода', cols: [
     {k: 'date', label: 'Дата выполнения работ', w: 1000, type: 'date'},
     {k: 'cond', label: 'Условия производства работ', w: 1800},
     {k: 'name', label: 'Наименование работ с указанием осей, отметок, скважин, секций; методы, материалы, испытания', w: 3900, ta: true},
     {k: 'sign', label: 'Должность, фамилия, инициалы, подпись представителя лица, осуществляющего строительство', w: 2100}]},
-  control: {n: 4, icon: '🔍', title: 'Сведения о строительном контроле', cols: [
+  control: {n: 4, icon: '🔍', title: 'Сведения о строительном контроле', desc: 'Стройконтроль: недостатки, сроки, устранение', cols: [
     {k: 'info', label: 'Сведения о проведении строительного контроля', w: 1700, ta: true},
     {k: 'defects', label: 'Выявленные недостатки', w: 1600, ta: true},
     {k: 'deadline', label: 'Срок устранения недостатков', w: 1000, type: 'date'},
     {k: 'sign', label: 'Представитель заказчика (должность, Ф.И.О., подпись)', w: 1600},
     {k: 'fixed', label: 'Дата устранения недостатков', w: 1000, type: 'date'},
     {k: 'sign2', label: 'Подпись представителя после устранения', w: 1900}]},
-  exec: {n: 5, icon: '🗂', title: 'Перечень исполнительной документации', cols: [
+  exec: {n: 5, icon: '🗂', title: 'Перечень исполнительной документации', desc: 'Акты, схемы, протоколы — формируется из актов команды', cols: [
     {k: 'name', label: 'Наименование исполнительной документации', w: 4800},
     {k: 'signed', label: 'Дата подписания, должности, Ф.И.О. лиц, подписавших документ', w: 4000}]},
-  gsn: {n: 6, icon: '🏛', title: 'Сведения о государственном строительном надзоре', cols: [
+  gsn: {n: 6, icon: '🏛', title: 'Сведения о государственном строительном надзоре', desc: 'Надзорные мероприятия, предписания, отметки об устранении', cols: [
     {k: 'date', label: 'Дата контрольного (надзорного) мероприятия', w: 1300, type: 'date'},
     {k: 'info', label: 'Сведения о мероприятии, выданные предписания', w: 2900, ta: true},
     {k: 'deadline', label: 'Срок устранения нарушений', w: 1200, type: 'date'},
@@ -3434,7 +3554,7 @@ function ojrCard(){
     <p style="margin-top:6px;font-size:13.5px">${mt.object ? 'Объект: <b>' + esc(mt.object) + '</b><br>' : ''}
     Записей в журнале: <b>${total}</b> (раздел 3 «Выполнение работ»: <b>${ojrRows('works').length}</b>)${OJR && OJR.updated_at ? '<br><span class="mut" style="font-size:11.5px">Обновлён ' + esc((OJR.updated_at || '').slice(0, 10)) + ' · ' + esc(OJR.updated_by || '') + '</span>' : ''}</p>
     <div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap">
-      <button class="pri" style="flex:1;min-width:140px" onclick="ojrOpen()">📔 Открыть журнал</button>
+      <button class="pri" style="flex:1;min-width:140px" onclick="navGo('ojr')">📔 Открыть журнал</button>
       <button class="sec" style="flex:1;min-width:110px" onclick="ojrWord()">📄 В Word</button>
     </div>
   </div>`;
@@ -3442,6 +3562,7 @@ function ojrCard(){
 /* Экран журнала: разделы 1-6 + титул */
 let _ojrSec = 'works';
 function ojrOpen(sec){
+  if(typeof view !== 'undefined' && view === 'ojr'){ const ov = document.getElementById('overlay'); if(ov) ov.style.display = 'none'; ojrOpenInView(sec); return; }
   _ojrSec = sec || _ojrSec || 'works';
   if(!OJR_SECS[_ojrSec]) _ojrSec = 'works';
   const isOwner = team && team.is_owner;
@@ -3788,7 +3909,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* Техплан */            helpReg('🗺','#33608a','Технический план','Этапы и состав работ: статусы, ответственные, документы и фото. Кружок слева от работы — отметка о выполнении: коснитесь, и приложение зафиксирует, кто и когда её отметил. ❓ — консультация со ссылками на проект и нормативку. Отчёт руководителю — кнопка вверху раздела.', 158);
 /* Журнал АН */          helpReg('📋','#7a4a8a','Журнал авторского надзора','Записи обходов: дата и погода подставляются автоматически, 🎙 — голосовой набор, 🧠 — умное заполнение записи (проверьте и поправьте), предписания со статусами. Записи коллег появляются мгновенно.', 162);
 /* Акты и ИД */          helpReg('📄','#8a3a2e','Акты и документы','АОСР (РД-11-02-2006), промежуточная и окончательная приёмка; требуемые акты по ППР с предварительными формами; 🧠 — умное заполнение полей акта (проверьте и поправьте); авто-реестр исполнительной документации; выгрузка в Word. Изменения коллег видны сразу.', 162);
-/* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Разделы 1–6 по приказу Минстроя № 1026/пр: работы подбираются из Технического плана реализации, 🧠 — умное заполнение записи (проверьте и поправьте), погода — автоматически, титул и выгрузка в Word. Записи коллег появляются мгновенно.', 162);
+/* ОЖР */                helpReg('📕','#6b4f2a','Общий журнал работ','Отдельная вкладка с шестью разделами по приказу Минстроя № 1026/пр. Карточки разделов — кликабельные, записи вносятся внутри раздела. Титул, выгрузка в Word, умное заполнение.', 164);
 /* Протоколы */          helpReg('📝','#44506b','Протокол совещания','Голосовая расшифровка со спикерами, исправление диктовки, решения и поручения, предпросмотр и выгрузка в Word. Правки коллег видны сразу.', 159);
 /* Комната совещаний */  helpReg('🎙','#3d6b5e','Комната совещаний','Видеосвязь команды: вход по кнопке, бегущая строка протокола, автозапись реплик распознаванием речи.');
 /* Документы */          helpReg('📁','#5a6a33','Документы','Файлы команды: проектные PDF, фото, ведомости. Файлы из чата, объявлений и работ техплана попадают сюда автоматически. Фоновая загрузка с прогрессом, просмотр фото, таблиц и Word внутри приложения, скачивание кнопкой ⬇ — у всех участников.',157);
@@ -4081,7 +4202,7 @@ function navPush(v){
   updBackBtn();
 }
 const NAV_TITLES = {home:'Главная', chat:'Чат', stages:'Этапы', model:'Модель', tasks:'Задачи', news:'Объявления', files:'Файлы', misc:'Разное', acts:'Акты и документы', plan:'Технический план', proto:'Протоколы'};
-const MORE_VIEWS = ['stages','news','files','misc'];
+const MORE_VIEWS = ['stages','news','files','misc','ojr'];
 const viewScroll = {};
 function navTitle(){
   if(view.startsWith('tab:')){ const t = curTab(); return t ? t.name : ''; }
@@ -4186,6 +4307,7 @@ function moreSheet(){
       ${sec('news','📢','Объявления','инфолента')}
       ${sec('files','📁','Файлы','документы')}
       ${sec('misc','🔧','Разное','сервисы')}
+      ${sec('ojr','📔','Общий журнал работ','6 разделов · Word')}
       <div class="more-cell" onclick="document.getElementById('overlay').style.display='none';roomOpen()">
         <span class="ic">🎥</span><b>Комната совещаний</b><span>голос · видео · протокол</span></div>
       ${custTabs.map(tabCell).join('')}
@@ -5915,6 +6037,7 @@ function render(){
   }
   if(view.startsWith('tab:')){ renderCustomTab(v); return; }
   if(view==='acts'){ renderActs(v); return; }
+  if(view==='ojr'){ renderOjrTab(v, team); return; }
   if(view==='proto'){ renderProto(v); return; }
   if(view==='model'){ renderModel(v); return; }
   if(view==='home'){ renderHome(v); return; }
@@ -6901,7 +7024,10 @@ function bcastInit(){
       if(d.team !== t) return;
       if(me && d.who && d.who === me.name) return; // своё изменение уже на экране
       if(d.what === 'az'){ AZ_ENTRIES = null; const ct = curTab(); if(ct && ct.kind === 'az') render(); }
-      if(d.what === 'acts' || d.what === 'ojr'){ if(view === 'acts') render(); }
+      if(d.what === 'acts' || d.what === 'ojr'){
+        if(view === 'acts') render();
+        if(view === 'ojr'){ loadOjr().then(() => { if(view === 'ojr') render(); }); }
+      }
       if(d.what === 'protos'){ PROTOS = null; if(view === 'proto') render(); }
     })
     .subscribe(st => { if(st === 'SUBSCRIBED') _bcastReady = true; });
