@@ -4112,6 +4112,7 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* Мастер создания */    helpReg('🧭','#33608a','Мастер создания команды','Пошаговое создание команды: направление определяется по названию (Проектирование, НИОКР, Изыскания, Строительство, Ремонт), готовые шаблоны этапов, работ, вкладок и ролей — с выбором нужных позиций.',152);
 /* Модель */             helpReg('📊','#44506b','Модель реализации','Визуальная модель объекта своей команды: построение из файла проекта, ход работ по элементам, скорость воспроизведения, отметка «сегодня».');
 /* Настройки */          helpReg('⚙','#555','Настройки','Профиль, мои команды, SMS-шлюз, push-категории, автообновление, установка приложения на рабочий стол.');
+/* Автообновление */     helpReg('🔄','#33608a','Автообновление приложения','При каждом открытии приложение само проверяет наличие новой версии: находит — скачивает, активирует и перезагружается, показывая уведомление «✨ Приложение обновлено». Проверка также идёт каждые 3 минуты и при возврате во вкладку. «Битые» ответы сети не кэшируются — защита от ситуации «приложение не загружается».', 167);
 /* Эксперт */            helpReg('🤖','#241a0e','Эксперт (для владельца)','Кнопка 🤖: постановка задач на доработку приложения, контроль качества кода, голосовой ввод.');
 /* Справка (этот раздел) */ helpReg('❓','#2e7d4f','Этот раздел','Обновляется автоматически: новые функции приложения появляются здесь сами, с бейджем «новое» и номером версии. Строка поиска выше фильтрует темы.',154);
 
@@ -7335,22 +7336,54 @@ if(isIOS && !isInStandalone && me){
     $('#overlay').style.display = 'flex';
   }, 1500);
 }
+/* ===== Автообновление приложения (v167) =====
+   При каждом открытии: немедленная проверка обновления; если новая версия найдена —
+   скачивается, активируется (SKIP_WAITING) и приложение перезагружается само.
+   Дополнительно: рукопожатие версий — сверка APP_BUILD с версией sw.js на сервере
+   (ловит случай, когда update() отдаёт закешированный воркер). */
+const APP_BUILD = 167; /* версия сборки — менять вместе с CACHE в sw.js */
 if('serviceWorker' in navigator){
+  const _hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(reg => {
+    reg.update().catch(() => {}); // проверка сразу при открытии
+    if(reg.waiting) try{ reg.waiting.postMessage('SKIP_WAITING'); }catch(e){}
     // Проверка обновлений: каждые 3 минуты + при возврате в приложение (обход CDN-кэша)
     setInterval(() => { reg.update().catch(() => {}); }, 180000);
     document.addEventListener('visibilitychange', () => { if(!document.hidden) reg.update().catch(() => {}); });
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
       if(w) w.addEventListener('statechange', () => {
+        // Новый воркер скачался — сразу активируем (не ждём закрытия вкладок)
+        if(w.state === 'installed' && navigator.serviceWorker.controller){ try{ w.postMessage('SKIP_WAITING'); }catch(e){} }
+        // Перезагружаем когда НОВЫЙ воркер реально активировался
         if(w.state === 'activated' && navigator.serviceWorker.controller) location.reload();
       });
     });
+    // Рукопожатие версий: если на сервере воркер новее нашей сборки — форсируем update
+    fetch('sw.js?v=' + Date.now(), {cache: 'no-store'}).then(r => r.text()).then(t => {
+      const v = +((t.match(/niokr-pwa-v(\d+)/) || [])[1] || 0);
+      if(v > APP_BUILD) reg.update().catch(() => {});
+    }).catch(() => {});
   }).catch(()=>{});
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if(!refreshing){ refreshing = true; location.reload(); }
+    if(!refreshing){ refreshing = true;
+      if(_hadController){ try{ sessionStorage.setItem('niokrUpd', '1'); }catch(e){} }
+      location.reload(); }
   });
+  // Уведомление об успешном обновлении (один раз после перезагрузки, только если была старая версия)
+  try{
+    if(sessionStorage.getItem('niokrUpd') === '1'){
+      sessionStorage.removeItem('niokrUpd');
+      setTimeout(() => {
+        const t = document.createElement('div');
+        t.textContent = '✨ Приложение обновлено до v' + APP_BUILD;
+        t.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#241a0e;color:#e9dfc8;padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 3000);
+      }, 1200);
+    }
+  }catch(e){}
 }
 
 /* Универсальное закрытие окон: ✕ в каждом окне + клик по фону */
