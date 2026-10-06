@@ -1,5 +1,5 @@
 // Service Worker: офлайн-кэш приложения
-const CACHE = 'niokr-pwa-v167';
+const CACHE = 'niokr-pwa-v168';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-config.js', './icon-192.png', './icon-512.png'];
 // Минимальный размер index.html в байтах: всё меньше — «битый» ответ (заглушка, обрезок,
 // страница ошибки), его нельзя кэшировать и нельзя отдавать как приложение (защита от

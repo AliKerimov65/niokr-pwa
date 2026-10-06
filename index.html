@@ -1836,7 +1836,7 @@ async function reportBuild(scope){
   }
   if(g('az')){
     out += '3. ЖУРНАЛ АВТОРСКОГО НАДЗОРА (СП 246.1325800.2023)\n';
-    (AZ_ENTRIES||[]).forEach(e=>{ out += '  ' + e.entry_date + ' ' + String(e.entry_time).slice(0,5) + ' — ' + e.works + ' [' + e.conformity + ']' + (e.prescription ? ' Предписание: ' + e.prescription + ' (' + e.pres_status + ')' : '') + '\n'; });
+    (AZ_ENTRIES||[]).filter(e => e.pres_status !== 'Черновик').forEach(e=>{ out += '  ' + e.entry_date + ' ' + String(e.entry_time).slice(0,5) + ' — ' + e.works + ' [' + e.conformity + ']' + (e.prescription ? ' Предписание: ' + e.prescription + ' (' + e.pres_status + ')' : '') + '\n'; });
     out += '\n';
   }
   if(g('tasks')){
@@ -1892,9 +1892,153 @@ async function fetchWeather(cfg){
   }catch(e){ azWeatherCache = { temp:null, precip:null, desc:'нет данных', manual:true }; }
   return azWeatherCache;
 }
+/* ---------- Автозаполнение журнала АН из чата (v168) ----------
+   Только команда «Дымовая труба 120 м ЦЗ» и только владелец: у других участников
+   ни черновики, ни кнопки не отображаются (проверка azChatOn в каждой точке).
+   Пара «вопрос участника / ответ владельца» в чате → ИИ-обработка (ai-fill) →
+   ПРЕДВАРИТЕЛЬНАЯ запись журнала АН (pres_status='Черновик'): правка, удаление,
+   сохранение в журнал. Кнопка «Обработать прошедшие события» — разбор истории чата. */
+const AZ_CHAT_TEAM = '3a032c2b-7678-4673-9d98-e82da57bd3c8'; // «Дымовая труба 120 м ЦЗ»
+const azChatOn = () => !!(SYNC && team && team.id === AZ_CHAT_TEAM && team.is_owner);
+const azChatDone = () => store.get('azChatDone_' + (team ? team.id : ''), []);
+const azChatMark = qid => { const d = azChatDone(); if(!d.includes(qid)){ d.push(qid); store.set(azChatDoneKey(), d.slice(-400)); } };
+const azChatDoneKey = () => 'azChatDone_' + (team ? team.id : '');
+const AZ_CHAT_QW = /^(подскажите|подскажи|уточните|уточни|как\b|когда\b|где\b|чем\b|что\b|почему|зачем|есть ли|можно ли|возможно ли|получится ли|а если|а что|а как|а где|сколько|какой|какая|какие|каким|кто\b)/i;
+const azChatIsQ = t => { t = String(t || '').trim(); return t.length >= 8 && (t.indexOf('?') > -1 || AZ_CHAT_QW.test(t)); };
+const azChatTs = m => { // m.t — 'ДД.ММ.ГГГГ ЧЧ:ММ'
+  const p = String(m.t || '').split(' '); const d = (p[0] || '').split('.');
+  if(d.length !== 3) return 0;
+  const tm = (p[1] || '00:00').split(':');
+  return new Date(+d[2], +d[1] - 1, +d[0], +tm[0] || 0, +tm[1] || 0).getTime();
+};
+function azChatFindPairs(msgs, myName){
+  // msgs — один канал в хронологии; пара: вопрос другого автора → мой ответ
+  // (явная reply-ссылка на сообщение либо моё следующее сообщение в течение 12 ч)
+  const byId = {}; msgs.forEach(m => { if(m.id) byId[m.id] = m; });
+  const pairs = [];
+  msgs.forEach((m, idx) => {
+    if(m.n !== myName) return;
+    const pr = parseReply(m.x);
+    let q = null;
+    if(pr.rp && pr.rp.i && byId[pr.rp.i] && byId[pr.rp.i].n !== myName) q = byId[pr.rp.i];
+    if(!q){
+      const tM = azChatTs(m);
+      for(let j = idx - 1; j >= 0; j--){
+        const cnd = msgs[j];
+        if(cnd.n === myName) break;
+        if(tM && azChatTs(cnd) && tM - azChatTs(cnd) > 12 * 3600 * 1000) break;
+        if(azChatIsQ(parseReply(cnd.x).text)){ q = cnd; break; }
+      }
+    }
+    if(q && azChatIsQ(parseReply(q.x).text)) pairs.push({q, a: m});
+  });
+  return pairs;
+}
+let _azChatBusy = false, _azChatFail = {}, _azChatAutoTried = false;
+async function azChatProcess(pairs){
+  if(!azChatOn() || !pairs.length || _azChatBusy) return 0;
+  _azChatBusy = true;
+  let made = 0;
+  try{
+    const azt = TABS.find(x => x.kind === 'az'); if(!azt) return 0;
+    const done = azChatDone();
+    for(const p of pairs){
+      try{
+        if(!p.q.id || done.includes(p.q.id)) continue;
+        if(_azChatFail[p.q.id] && Date.now() - _azChatFail[p.q.id] < 3600000) continue; // после сбоя ИИ — повтор через час
+        if((AZ_ENTRIES || []).some(e => (e.remarks || '').indexOf('вопрос #' + p.q.id) > -1)){ azChatMark(p.q.id); continue; }
+        const qt = parseReply(p.q.x).text.trim(), at = parseReply(p.a.x).text.trim();
+        if(!qt || !at) continue;
+        const ctx = aiCtxBase();
+        ctx.context_type = 'консультация по техническому вопросу из чата команды (это НЕ посещение площадки)';
+        ctx.chat_channel = p.chan || '';
+        ctx.chat_question = qt.slice(0, 1500);
+        ctx.chat_answer = at.slice(0, 1500);
+        ctx.question_author = p.q.n; ctx.question_time = p.q.t; ctx.answer_time = p.a.t;
+        const f = (await aiFill('az_chat', ctx)) || (await aiFill('az', ctx));
+        if(!f || !f.works){ _azChatFail[p.q.id] = Date.now(); continue; }
+        const dts = String(p.a.t || now()).split(' ');
+        const dRu = (dts[0] || '').split('.');
+        const iso = dRu.length === 3 ? dRu.reverse().join('-') : new Date().toISOString().slice(0, 10);
+        const tm = dts[1] || '00:00';
+        const row = {
+          tab_id: azt.id,
+          entry_date: iso, entry_time: (tm.length === 5 ? tm + ':00' : tm),
+          weather: '',
+          works: String(f.works).slice(0, 2000),
+          conformity: ['Соответствует проектным решениям', 'Частично соответствует', 'Не соответствует'].includes(f.conformity) ? f.conformity : 'Соответствует проектным решениям',
+          remarks: ('Источник: чат «' + (p.chan || '') + '», вопрос #' + p.q.id + ' от ' + p.q.n + (f.remarks ? ' — ' + f.remarks : '')).slice(0, 500),
+          prescription: null, pres_deadline: null, pres_status: 'Черновик',
+          author: me.name, author_role: me.role, present: []
+        };
+        const ins = await sb.from('az_entries').insert(row).select();
+        if(ins.error){ _azChatFail[p.q.id] = Date.now(); continue; }
+        azChatMark(p.q.id);
+        const nid = ins.data && ins.data[0] && ins.data[0].id;
+        if(nid){
+          const meta = store.get('azChatMeta_' + team.id, {});
+          meta[nid] = {q: qt.slice(0, 300), a: at.slice(0, 300), qn: p.q.n};
+          store.set('azChatMeta_' + team.id, meta);
+        }
+        made++;
+      }catch(e){ /* одна пара не должна ломать остальные */ }
+    }
+    if(made){
+      AZ_ENTRIES = null;
+      bcastSend('az');
+      const ct = curTab();
+      if(view.startsWith('tab:') && ct && ct.kind === 'az') render();
+      const t = document.createElement('div');
+      t.textContent = '🧠 Черновик записи АН из чата готов — журнал авторского надзора';
+      t.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#241a0e;color:#e9dfc8;padding:10px 18px;border-radius:20px;font-size:13px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+  } finally { _azChatBusy = false; }
+  return made;
+}
+async function azChatScan(manual){
+  if(!azChatOn()) return 0;
+  let pairs = [];
+  for(const ch of CHANNELS){
+    try{
+      const r = await sb.from('messages').select('id,author,body,created_at').eq('team_id', tid()).eq('channel', ch).order('created_at', {ascending: false}).limit(150);
+      const msgs = (r.data || []).reverse().map(rowToMsg);
+      azChatFindPairs(msgs, me.name).forEach(p => { p.chan = ch; pairs.push(p); });
+    }catch(e){}
+  }
+  pairs = pairs.filter(p => p.q.id && !azChatDone().includes(p.q.id)).slice(-10);
+  return azChatProcess(pairs);
+}
+async function azChatScanBtn(btn){
+  const old = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Обработка чата…';
+  try{
+    const n = await azChatScan(true);
+    AZ_ENTRIES = null; render();
+    alert(n ? ('Готово: новых черновиков — ' + n + '. Проверьте и сохраните.') : 'Новых пар «вопрос — ваш ответ» не найдено.');
+  } finally { btn.disabled = false; btn.textContent = old; }
+}
+async function azDraftSave(id){
+  const w = ((document.getElementById('azd_w' + id) || {}).value || '').trim();
+  if(!w) return alert('Пустое содержание — отредактируйте запись или удалите черновик');
+  const c = (document.getElementById('azd_c' + id) || {}).value;
+  const r = ((document.getElementById('azd_r' + id) || {}).value || '').trim();
+  const {error} = await sb.from('az_entries').update({works: w, conformity: c, remarks: r || null, pres_status: 'Нет'}).eq('id', id);
+  if(error) return alert(error.message);
+  AZ_ENTRIES = null; bcastSend('az'); render();
+}
+async function azDraftDel(id){
+  if(!confirm('Удалить черновик? В журнал он не попадёт.')) return;
+  await sb.from('az_entries').delete().eq('id', id);
+  AZ_ENTRIES = null; bcastSend('az'); render();
+}
+
 async function renderAz(v, t){
   const c = t.config, isOwner = team && team.is_owner;
   if(AZ_ENTRIES===null){ v.innerHTML='<p class="mut">Загрузка…</p>'; await loadAz(t.id); }
+  const azDrafts = azChatOn() ? AZ_ENTRIES.filter(e => e.pres_status === 'Черновик') : [];
+  const azVisible = AZ_ENTRIES.filter(e => e.pres_status !== 'Черновик');
+  if(azChatOn() && !_azChatAutoTried){ _azChatAutoTried = true; setTimeout(() => { azChatScan(false).catch(() => {}); }, 2500); }
   const w = await fetchWeather(c);
   const today = new Date().toISOString().slice(0,10);
   const nowT = new Date().toTimeString().slice(0,5);
@@ -1939,8 +2083,26 @@ async function renderAz(v, t){
     <button class="pri" style="width:100%" onclick="azAdd(${t.id})">✍️ Внести запись (от ${esc(me.name)})</button>
   </div>
 
-  <h2 class="pt">Записи журнала (${AZ_ENTRIES.length})</h2>
-  ${AZ_ENTRIES.slice().reverse().map(e=>`
+  ${azChatOn() ? `<div class="card" style="border:1.5px dashed var(--acc)">
+    <div class="row"><b style="flex:1">🧠 Черновики из чата</b><span class="mut" style="font-size:11px">видны только вам</span></div>
+    <p class="mut" style="font-size:12px;margin-top:4px">Пары «вопрос — ваш ответ» из чата становятся предварительными записями журнала АН: проверьте, поправьте и сохраните — или удалите.</p>
+    ${azDrafts.map(e => { const _meta = (store.get('azChatMeta_' + team.id, {}) || {})[e.id] || {}; return `
+      <div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+        <div class="row"><b style="flex:1;font-size:13px">🗓 ${e.entry_date} · ${String(e.entry_time).slice(0,5)}</b><span class="badge warn">черновик</span></div>
+        ${_meta.q ? `<p class="mut" style="font-size:12px;margin-top:4px">Вопрос (${esc(_meta.qn || '')}): ${esc(_meta.q)}<br>Ваш ответ: ${esc(_meta.a)}</p>` : ''}
+        <textarea id="azd_w${e.id}" rows="3" style="margin-top:6px;font-size:13px">${esc(e.works)}</textarea>
+        <div class="row" style="margin-top:6px"><select id="azd_c${e.id}" style="flex:1">${['Соответствует проектным решениям','Частично соответствует','Не соответствует'].map(s => `<option ${s === e.conformity ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+        <input id="azd_r${e.id}" style="margin-top:6px" value="${esc(e.remarks || '')}" placeholder="Замечания / источник">
+        <div class="row" style="margin-top:8px">
+          <button class="pri" style="flex:1" onclick="azDraftSave(${e.id})">✅ Сохранить в журнал</button>
+          <button class="sec" onclick="azDraftDel(${e.id})">🗑</button>
+        </div>
+      </div>`; }).join('') || '<p class="mut" style="font-size:12px;margin-top:6px">Черновиков нет: ответьте на технический вопрос в чате — запись появится здесь сама.</p>'}
+    <div style="height:8px"></div>
+    <button class="sec" style="width:100%" onclick="azChatScanBtn(this)">🔄 Обработать прошедшие события чата</button>
+  </div>` : ''}
+  <h2 class="pt">Записи журнала (${azVisible.length})</h2>
+  ${azVisible.slice().reverse().map(e=>`
   <div class="card">
     <div class="row"><b style="flex:1">🗓 ${e.entry_date} · ${String(e.entry_time).slice(0,5)}</b>
       <span class="badge ${e.conformity.indexOf('Не соотв')===0?'bad':e.conformity.indexOf('Частично')===0?'warn':'ok'}">${esc(e.conformity)}</span>
@@ -2262,7 +2424,7 @@ async function azSmartFill(btn){
     ctx.date = (document.getElementById('azD') || {}).value || '';
     ctx.weather = (document.getElementById('azW') || {}).value || '';
     ctx.selected = [...document.querySelectorAll('#azWorks .badge.on')].map(x => x.textContent);
-    ctx.recent_entries = (AZ_ENTRIES || []).slice(-5).map(e => ({date: e.entry_date, works: e.works, conformity: e.conformity, remarks: e.remarks || ''}));
+    ctx.recent_entries = (AZ_ENTRIES || []).filter(e => e.pres_status !== 'Черновик').slice(-5).map(e => ({date: e.entry_date, works: e.works, conformity: e.conformity, remarks: e.remarks || ''}));
     const f = await aiFill('az', ctx);
     if(!f){ alert('Умное заполнение недоступно — заполните вручную'); return; }
     if(f.works){ const ta = document.getElementById('azWorksT'); if(ta) ta.value = f.works; }
@@ -3322,7 +3484,7 @@ function actsRegistryRows(){
   ACTS.forEach(a => rows.push([actLabel(a), ACT_KINDS[actKind(a)].label + ': ' + a.work_name, (a.date_act||'—'), 'Акты', a.id]));
   (rDocs || []).forEach(d => rows.push(['', 'Документ: ' + d.name, (d.created_at||'').slice(0,10), 'Файлы команды']));
   (PLAN_ROWS || []).filter(r => r.status === 'Выполнено').forEach(r => rows.push(['', 'Исполнена работа: ' + r.work, (r.done_at||'').slice(0,10), 'Техплан']));
-  (AZ_ENTRIES || []).forEach(e => rows.push(['', 'Запись журнала авторского надзора: ' + e.works.slice(0,60), e.entry_date, 'Журнал АН']));
+  (AZ_ENTRIES || []).filter(e => e.pres_status !== 'Черновик').forEach(e => rows.push(['', 'Запись журнала авторского надзора: ' + e.works.slice(0,60), e.entry_date, 'Журнал АН']));
   if(!rows.length) return '<tr><td colspan="4" class="mut" style="padding:8px">Документов пока нет.</td></tr>';
   return rows.map((r,i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${i+1}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${r[4] ? `<a title="Открыть полный текст акта в Word" style="color:var(--acc);text-decoration:underline;cursor:pointer" onclick="actWord(${r[4]})">📄 ${esc(r[1])}</a>` : esc(r[1])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)">${esc(r[2])}</td><td style="padding:6px 8px;border-bottom:1px solid var(--brd)" class="mut">${esc(r[3])}</td></tr>`).join('');
 }
@@ -4092,7 +4254,8 @@ function ojrWord(){
    ПРАВИЛО ДЛЯ КАЖДОЙ ДОРАБОТКИ: новая функция = новая строка helpReg с номером версии. */
 const HELP = [];
 let APP_VER_N = 0; // номер текущей версии приложения (заполняется refreshVerTag из sw.js)
-function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
+function helpReg(ic, bg, t, d, v, own){ HELP.push({ic, bg, t, d, v: v || 0, own: !!own}); }
+const helpVisible = () => HELP.filter(x => !x.own || (team && team.is_owner && team.id === AZ_CHAT_TEAM));
 
 /* ---- Реестр подсказок: одна строка на функцию, порядок строк = порядок показа ---- */
 /* Вход (v163) */        helpReg('👋','#33608a','Вход в приложение','Уже в команде — выберите себя из списка и коснитесь команды. Новый участник — введите код приглашения от руководителя, заполните карточку и нажмите «Войти в команду».', 163);
@@ -4113,6 +4276,8 @@ function helpReg(ic, bg, t, d, v){ HELP.push({ic, bg, t, d, v: v || 0}); }
 /* Модель */             helpReg('📊','#44506b','Модель реализации','Визуальная модель объекта своей команды: построение из файла проекта, ход работ по элементам, скорость воспроизведения, отметка «сегодня».');
 /* Настройки */          helpReg('⚙','#555','Настройки','Профиль, мои команды, SMS-шлюз, push-категории, автообновление, установка приложения на рабочий стол.');
 /* Автообновление */     helpReg('🔄','#33608a','Автообновление приложения','При каждом открытии приложение само проверяет наличие новой версии: находит — скачивает, активирует и перезагружается, показывая уведомление «✨ Приложение обновлено». Проверка также идёт каждые 3 минуты и при возврате во вкладку. «Битые» ответы сети не кэшируются — защита от ситуации «приложение не загружается».', 167);
+/* Текст из PDF */       helpReg('📝','#5a6a33','Текстовая часть проекта (PDF)','В разделе «Файлы» у PDF появилась кнопка 📝: текстовая часть проекта извлекается и читается прямо в приложении, без скачивания. Можно сохранить как .txt (⬇) или в «Документы» (📁) — тогда текст доступен всей команде. Скан без текстового слоя честно сообщит о невозможности извлечения.', 168);
+/* АН из чата */         helpReg('🧠','#7a4a8a','Записи журнала АН из чата (Дымовая труба)','В команде «Дымовая труба 120 м ЦЗ» у владельца: пара «вопрос участника — ваш ответ» в чате автоматически превращается в предварительную запись журнала авторского надзора (раздел «🧠 Черновики из чата» в журнале АН). Черновик можно исправить, удалить или сохранить в журнал; кнопка «🔄 Обработать прошедшие события чата» разбирает историю. Другие участники функцию и черновики не видят.', 168, true);
 /* Эксперт */            helpReg('🤖','#241a0e','Эксперт (для владельца)','Кнопка 🤖: постановка задач на доработку приложения, контроль качества кода, голосовой ввод.');
 /* Справка (этот раздел) */ helpReg('❓','#2e7d4f','Этот раздел','Обновляется автоматически: новые функции приложения появляются здесь сами, с бейджем «новое» и номером версии. Строка поиска выше фильтрует темы.',154);
 
@@ -4125,13 +4290,14 @@ function helpItemHtml(h, first){
 }
 function helpListHtml(q){
   q = (q || '').trim().toLowerCase();
-  const list = q ? HELP.filter(h => (h.t + ' ' + h.d).toLowerCase().indexOf(q) > -1) : HELP;
+  const HV = helpVisible();
+  const list = q ? HV.filter(h => (h.t + ' ' + h.d).toLowerCase().indexOf(q) > -1) : HV;
   if(!list.length) return '<p class="mut" style="padding:8px 2px">Ничего не найдено — попробуйте другое слово.</p>';
   return list.map((h, i) => helpItemHtml(h, i === 0)).join('');
 }
 function helpFilter(q){ const el = document.getElementById('helpList'); if(el) el.innerHTML = helpListHtml(q); }
 function helpFootHtml(){
-  return `<p class="mut" style="font-size:11px;margin-top:10px;text-align:center">Актуально для версии ${APP_VER_N ? 'v' + APP_VER_N : '…'} · тем: ${HELP.length} · раздел обновляется автоматически вместе с приложением</p>`;
+  return `<p class="mut" style="font-size:11px;margin-top:10px;text-align:center">Актуально для версии ${APP_VER_N ? 'v' + APP_VER_N : '…'} · тем: ${helpVisible().length} · раздел обновляется автоматически вместе с приложением</p>`;
 }
 
 /* ================= ГЛАВНОЕ ОКНО (приветствие) ================= */
@@ -4298,7 +4464,7 @@ async function homeDash(){
   const azCnt = async (filter) => {
     if(!az) return 0;
     try{
-      let q = sb.from('az_entries').select('id', {count:'exact', head:true}).eq('tab_id', az.id);
+      let q = sb.from('az_entries').select('id', {count:'exact', head:true}).eq('tab_id', az.id).neq('pres_status', 'Черновик');
       if(filter) q = filter(q);
       const r = await q; return r.count || 0;
     }catch(e){ return 0; }
@@ -6619,6 +6785,105 @@ async function editNewsSave(id){
 async function delNews(id){ if(SYNC){ await sb.from('announcements').delete().eq('id',id); loadNews(); } else { store.set('news_'+(team?team.id:'x'), store.get('news_'+(team?team.id:'x'),[]).filter(x=>x.id!==id)); render(); } }
 
 /* ---------- ФАЙЛЫ ---------- */
+/* ---------- Текстовая часть PDF / чтение .txt в Документах (v168) ----------
+   PDF: извлечение текстового слоя проекта (pdf.js уже в приложении) — чтение прямо
+   в приложении без скачивания, сохранение как .txt (скачать или в «Документы»).
+   Скан без текстового слоя честно сообщает о невозможности извлечения. */
+function isPdfFile(n){ return /\.pdf$/i.test(String(n || '')); }
+function isTxtFile(n){ return /\.(txt|md|log)$/i.test(String(n || '')); }
+let _txtCur = {name: '', text: ''};
+async function pdfToPages(buf){
+  await loadPdfJs();
+  const pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+  const pages = [];
+  for(let p = 1; p <= pdf.numPages; p++){
+    const pg = await pdf.getPage(p);
+    const tc = await pg.getTextContent();
+    let line = ''; const out = [];
+    tc.items.forEach(it => {
+      line += (line && !/\s$/.test(line) && !/^\s/.test(it.str) ? ' ' : '') + it.str;
+      if(it.hasEOL){ out.push(line); line = ''; }
+    });
+    if(line) out.push(line);
+    pages.push(out.join('\n'));
+  }
+  return pages;
+}
+function textReaderShow(name, text, saveable){
+  _txtCur = {name, text};
+  $('#sheet').innerHTML = `<h2>📝 ${esc(name)}</h2>
+    <p class="mut" style="font-size:12px;margin:0 0 8px">Текстовая часть документа · читается прямо здесь, скачивание не нужно</p>
+    <div id="txtView" style="max-height:56vh;overflow:auto;background:var(--card2);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.55;white-space:pre-wrap;user-select:text;-webkit-user-select:text"></div>
+    <div style="height:10px"></div><div class="row" id="txtBtns">
+      <button class="sec" style="flex:1" onclick="txtDl()">⬇ Скачать .txt</button>
+      ${saveable ? `<button class="sec" style="flex:1" onclick="txtToDocs(this)">📁 В Документы</button>` : ''}
+      <button class="sec" style="flex:1" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button></div>`;
+  $('#overlay').style.display = 'flex';
+  document.getElementById('txtView').textContent = text;
+}
+async function viewPdfTextIdx(i){ const f = (window._filesList || [])[i]; if(f) viewPdfText(f.url || f.d, f.name); }
+async function viewPdfText(url, name){
+  if(!url) return;
+  const nm = name || 'документ.pdf';
+  $('#sheet').innerHTML = `<h2>📝 ${esc(nm)}</h2><div id="docBody"><p class="mut">Извлекаю текстовую часть из PDF… (большой проект может занять до минуты)</p></div>
+    <div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+  $('#overlay').style.display = 'flex';
+  try{
+    if(window._pdfTxtCache && window._pdfTxtCache.url === url){ textReaderShow(nm.replace(/\.pdf$/i, '') + ' — текст', window._pdfTxtCache.text, true); return; }
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    const pages = await pdfToPages(buf);
+    const text = pages.map((p, i) => '── стр. ' + (i + 1) + ' ──\n' + p).join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+    if(text.replace(/── стр\. \d+ ──/g, '').trim().length < 15){
+      $('#sheet').innerHTML = `<h2>📝 ${esc(nm)}</h2><div class="card"><p style="font-size:13.5px">В этом PDF нет текстового слоя: страницы — сканированные изображения. Распознавание сканов в приложении недоступно, откройте оригинал кнопкой ⬇.</p></div>
+        <div style="height:10px"></div><button class="sec" style="width:100%" onclick="document.querySelector('#overlay').style.display='none'">Закрыть</button>`;
+      return;
+    }
+    window._pdfTxtCache = {url, text};
+    textReaderShow(nm.replace(/\.pdf$/i, '') + ' — текст', text, true);
+  }catch(e){
+    const b = document.getElementById('docBody');
+    if(b) b.innerHTML = '<p class="mut">Не удалось извлечь текст: ' + esc(e.message || e) + '. Попробуйте скачать файл кнопкой ⬇.</p>';
+  }
+}
+async function viewTxtIdx(i){ const f = (window._filesList || [])[i]; if(f) viewTxtFile(f.url || f.d, f.name); }
+async function viewTxtFile(url, name){
+  if(!url) return;
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    let t = new TextDecoder('utf-8').decode(buf);
+    const bad = (t.match(new RegExp('\\uFFFD', 'g')) || []).length;    if(bad > t.length * 0.02) t = new TextDecoder('windows-1251').decode(buf);
+    textReaderShow(name || 'текст', t.trim() || '(пустой файл)', false);
+  }catch(e){ alert('Не удалось открыть текст: ' + (e.message || e)); }
+}
+function txtDl(){
+  if(!_txtCur.text) return;
+  const b = new Blob([_txtCur.text], {type: 'text/plain;charset=utf-8'});
+  const u = URL.createObjectURL(b);
+  const a = document.createElement('a');
+  a.href = u; a.download = (_txtCur.name || 'текст').replace(/[\\/:*?"<>|]+/g, '_') + '.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 8000);
+}
+async function txtToDocs(btn){
+  if(!_txtCur.text || !SYNC) return alert('Нужна связь с сервером');
+  const old = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Сохраняю…';
+  try{
+    const name = (_txtCur.name || 'текст проекта').replace(/[\\/:*?"<>|]+/g, '_') + '.txt';
+    const path = tid() + '/' + cid + '/' + Date.now() + '_' + name;
+    const up = await sb.storage.from('files').upload(path, new Blob([_txtCur.text], {type: 'text/plain;charset=utf-8'}), {contentType: 'text/plain;charset=utf-8'});
+    if(up.error) throw up.error;
+    const {data: u} = sb.storage.from('files').getPublicUrl(path);
+    const ins = await sb.from('documents').insert({team_id: tid(), name, size: (_txtCur.text.length / 1024).toFixed(1) + ' КБ', url: u.publicUrl, author: me.name});
+    if(ins.error) throw ins.error;
+    btn.textContent = '✅ В Документах';
+    loadDocs();
+  }catch(e){ alert('Не сохранено: ' + (e.message || e)); btn.disabled = false; btn.textContent = old; }
+}
+
 function renderFiles(v){
   const fs = SYNC ? (rDocs||[]) : store.get('files_'+(team?team.id:'x'), []);
   window._filesList = fs;
@@ -6626,7 +6891,7 @@ function renderFiles(v){
   <div class="card" style="padding:10px 12px"><div class="row" style="gap:6px"><input type="file" id="projFile" style="flex:1;min-width:0;padding:8px"><button class="pri" id="upBtn" style="flex:none;padding:9px 14px" onclick="addFile()">Загрузить</button></div>
   <p class="mut" style="font-size:11px;margin-top:6px">Лимит 48 МБ на файл · загрузка идёт в фоне, индикатор внизу экрана.</p></div>
   ${fs.map((f,i)=>`<div class="frow"><div class="finf"><b>📄 ${esc(f.name)}</b><span>${esc(f.size||'')} · ${esc(f.author||'')} · ${fmtT(f.created_at)}</span></div>
-  <div class="fbtns">${isSheetFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:isDocFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewDocIdx(${i})">👁</button>`:isImgFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewPhotoIdx(${i})">👁</button>`:''}
+  <div class="fbtns">${isSheetFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewFileIdx(${i})">👁</button>`:isDocFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewDocIdx(${i})">👁</button>`:isImgFile(f.name)?`<button class="fbtn" title="Открыть в приложении" onclick="viewPhotoIdx(${i})">👁</button>`:isTxtFile(f.name)?`<button class="fbtn" title="Читать в приложении" onclick="viewTxtIdx(${i})">👁</button>`:''}${isPdfFile(f.name)?`<button class="fbtn" title="Текстовая часть: читать в приложении" onclick="viewPdfTextIdx(${i})">📝</button>`:''}
   <a class="fbtn" href="javascript:void(0)" onclick="dlFile('${f.url||f.d}',decodeURIComponent('${encodeURIComponent(f.name||'файл')}'),this)" title="Скачать">⬇</a>
   <button class="fbtn del" title="Удалить" onclick="delFile(${f.id})">✖</button></div></div>`).join('') || '<p class="mut">Документов нет.</p>'}`;
 }
@@ -7251,6 +7516,8 @@ function subscribeAll(){
         rMsgs.push(rowToMsg(m)); if(view==='chat') render();
       }
       if(m.dm && m.dm.split('||').includes(me.name)){ loadDmPartners(); if(view==='chat' && !dmWith) render(); }
+      // v168: мой ответ в чате «Дымовой трубы» завершает пару «вопрос/ответ» — запуск ИИ-обработки в черновик АН
+      try{ if(!m.dm && m.team_id === AZ_CHAT_TEAM && m.author === (me && me.name)) azChatScan(false); }catch(e){}
     })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'reads'}, p => {
       const r = p.new; const k = r.kind+':'+r.ref_id+':'+r.member;
@@ -7341,7 +7608,7 @@ if(isIOS && !isInStandalone && me){
    скачивается, активируется (SKIP_WAITING) и приложение перезагружается само.
    Дополнительно: рукопожатие версий — сверка APP_BUILD с версией sw.js на сервере
    (ловит случай, когда update() отдаёт закешированный воркер). */
-const APP_BUILD = 167; /* версия сборки — менять вместе с CACHE в sw.js */
+const APP_BUILD = 168; /* версия сборки — менять вместе с CACHE в sw.js */
 if('serviceWorker' in navigator){
   const _hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(reg => {
