@@ -1,1 +1,1 @@
-deploy trigger: 2026-10-31T09:40Z — проверка сборки Pages
+deploy trigger: 2026-10-31T10:36Z — запуск деплоя v171
