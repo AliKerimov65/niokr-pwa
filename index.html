@@ -1315,7 +1315,7 @@ async function loadTabs(){
   if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) view = 'chat';
   if(view.startsWith('tab:') && !TABS.find(t => 'tab:'+t.id === view)) { view = 'chat'; }
   renderTabbar(); renderStructBar();
-  if(view.startsWith('tab:') || view === 'plan' || view === 'home') render();
+  if(view.startsWith('tab:') || view === 'plan' || view === 'home' || view === 'model') render();
 }
 function renderTabbar(){
   const av = document.getElementById('teamAv'), nm = document.getElementById('teamNm');
@@ -4278,7 +4278,8 @@ const helpVisible = () => HELP.filter(x => !x.own || (team && team.is_owner && t
 /* Автообновление */     helpReg('🔄','#33608a','Автообновление приложения','При каждом открытии приложение само проверяет наличие новой версии: находит — скачивает, активирует и перезагружается, показывая уведомление «✨ Приложение обновлено». Проверка также идёт каждые 3 минуты и при возврате во вкладку. «Битые» ответы сети не кэшируются — защита от ситуации «приложение не загружается».', 167);
 /* Текст из PDF */       helpReg('📝','#5a6a33','Текстовая часть проекта (PDF)','В разделе «Файлы» у PDF появилась кнопка 📝: текстовая часть проекта извлекается и читается прямо в приложении, без скачивания. Можно сохранить как .txt (⬇) или в «Документы» (📁) — тогда текст доступен всей команде. Скан без текстового слоя честно сообщит о невозможности извлечения.', 168);
 /* Свайп-обновление */     helpReg('↻','#4a5a7a','Обновление по свайпу вниз','Потяните любой экран вниз от самого верха — приложение проверит новую версию на сервере: если она есть, скачает и обновится само; если нет — покажет «Уже актуально». Работает на всех экранах, не мешает прокрутке и горизонтальным свайпам.', 170, true);
-/* Карточки скважин */    helpReg('⛏','#6a5a3a','Карточки контроля скважин (Дымовая труба)','Во вкладке «Модель» — список всех 84 скважин по очередям и режим «📍 По факту»: схема окрашивается по реальному статусу каждой скважины. Нажмите номер скважины в списке или саму скважину на схеме — откроется карточка: начало/завершение бурения, начало/завершение инъекции, давление по проекту, рабочее и по факту. Кнопка «⚙ P по проекту всем» задаёт проектное давление сразу на очередь. Заполняет владелец команды; ⚠ — отклонение давления от проекта более 10%.', 169, true);
+/* Карточки скважин */    helpReg('⛏','#6a5a3a','Карточки контроля скважин (Дымовая труба)','Во вкладке «Модель» — список всех 84 скважин по очередям и режим «📍 По факту»: схема окрашивается по реальному статусу каждой скважины. Нажмите номер скважины в списке или саму скважину на схеме — откроется карточка: начало/завершение бурения, начало/завершение инъекции, давление по проекту, рабочее и по факту. Кнопка «⚙ P по проекту всем» задаёт проектное давление сразу на очередь. Заполняют владелец и допущенные участники; ⚠ — отклонение давления от проекта более 10%.', 169, true);
+/* Допуск к карточкам */    helpReg('👥','#4a6a4a','Допуск к заполнению карточек скважин','Карточки контроля скважин может заполнять не только владелец. Кнопка «👥 Допуск» в блоке «Контроль скважин» (вкладка «Модель») открывает список допущенных участников команды — например, представителей исполнителя или подрядной организации. Владелец добавляет и убирает людей; допущенные заполняют карточки со своих телефонов и ПК, изменения сразу видны всей команде.', 171, true);
 /* АН из чата */         helpReg('🧠','#7a4a8a','Записи журнала АН из чата (Дымовая труба)','В команде «Дымовая труба 120 м ЦЗ» у владельца: пара «вопрос участника — ваш ответ» в чате автоматически превращается в предварительную запись журнала авторского надзора (раздел «🧠 Черновики из чата» в журнале АН). Черновик можно исправить, удалить или сохранить в журнал; кнопка «🔄 Обработать прошедшие события чата» разбирает историю. Другие участники функцию и черновики не видят.', 168, true);
 /* Эксперт */            helpReg('🤖','#241a0e','Эксперт (для владельца)','Кнопка 🤖: постановка задач на доработку приложения, контроль качества кода, голосовой ввод.');
 /* Справка (этот раздел) */ helpReg('❓','#2e7d4f','Этот раздел','Обновляется автоматически: новые функции приложения появляются здесь сами, с бейджем «новое» и номером версии. Строка поиска выше фильтрует темы.',154);
@@ -5817,6 +5818,9 @@ async function mdlBuilderSave(){
 function mdlWellsData(){ const c = mdlCfg(); return (c && c.wells) || {}; }
 function mdlWellKey(q, n){ return (q + 1) + '-' + n; }
 function mdlWellRec(q, n){ return mdlWellsData()[mdlWellKey(q, n)] || null; }
+/* Допуск к заполнению карточек (v171): владелец — всегда, остальные — по списку editors в config.model */
+function mdlEditors(){ const c = mdlCfg(); const e = c && c.editors; return Array.isArray(e) ? e.filter(x => typeof x === 'string' && x) : []; }
+function mdlCanEditWells(){ return !!(team && team.is_owner) || !!(me && mdlEditors().indexOf(me.name) > -1); }
 const MDL_WST = [
   {t: 'Не начата', col: '#9a8c6e'},
   {t: 'Бурение', col: '#b07a2a'},
@@ -5841,10 +5845,13 @@ function mdlFactProg(){
   return mdlTrubaWells().map(w => [0, 0.2, 0.35, 0.65, 1][mdlWellStatus(D[mdlWellKey(w.q, w.n)])]);
 }
 function mdlWellsListHtml(){
-  const D = mdlWellsData(), isOwner = !!(team && team.is_owner);
+  const D = mdlWellsData(), isOwner = !!(team && team.is_owner), canEdit = mdlCanEditWells();
+  const eds = mdlEditors();
   const wells = mdlTrubaWells(), cnt = [0, 0, 0, 0, 0];
   wells.forEach(w => cnt[mdlWellStatus(D[mdlWellKey(w.q, w.n)])]++);
-  let h = '<div class="card"><h3>⛏ Контроль скважин</h3>'
+  let h = '<div class="card"><div style="display:flex;align-items:center;gap:8px"><h3 style="flex:1;margin:0">⛏ Контроль скважин</h3>'
+    + (isOwner ? '<button class="sec" style="font-size:11px;padding:4px 9px;white-space:nowrap" title="Кто может заполнять карточки скважин" onclick="mdlEditorsCard()">👥 Допуск</button>' : '')
+    + '</div>'
     + '<p class="mut" style="font-size:11.5px;margin:2px 0 6px">Нажмите на номер скважины (или на саму скважину на схеме выше) — откроется её карточка контроля: бурение, инъекция, давление.</p>'
     + '<div style="font-size:12px;margin-bottom:2px">Завершено <b>' + cnt[4] + ' из ' + wells.length + '</b> · идёт инъекция: ' + cnt[3] + ' · ждут инъекции: ' + cnt[2] + ' · бурятся: ' + cnt[1] + '</div>';
   MDL_T_Q.forEach((q, qi) => {
@@ -5852,7 +5859,7 @@ function mdlWellsListHtml(){
     let done = 0; ws.forEach(w => { if(mdlWellStatus(D[mdlWellKey(w.q, w.n)]) === 4) done++; });
     h += '<div style="margin:10px 0 5px;display:flex;align-items:center;flex-wrap:wrap;gap:6px"><b style="font-size:13px">' + q.label + '</b>'
       + '<span class="mut" style="font-size:11px">' + done + '/' + q.n + ' завершено</span>'
-      + (isOwner ? '<button class="sec" style="font-size:11px;padding:4px 9px" title="Задать давление по проекту сразу всем скважинам очереди" onclick="mdlWellProjFill(' + qi + ')">⚙ P по проекту всем</button>' : '')
+      + (canEdit ? '<button class="sec" style="font-size:11px;padding:4px 9px" title="Задать давление по проекту сразу всем скважинам очереди" onclick="mdlWellProjFill(' + qi + ')">⚙ P по проекту всем</button>' : '')
       + '</div><div style="display:flex;flex-wrap:wrap;gap:5px">'
       + ws.map(w => {
           const r = D[mdlWellKey(w.q, w.n)], st = mdlWellStatus(r);
@@ -5864,17 +5871,17 @@ function mdlWellsListHtml(){
   });
   h += '<div style="margin-top:9px;font-size:10.5px;color:var(--mut);line-height:1.9">'
     + MDL_WST.map((s, i) => '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><i style="width:10px;height:10px;border-radius:3px;background:' + s.col + ';display:inline-block"></i>' + s.t + '</span>').join('')
-    + '<br>⚠ — давление по факту отличается от проектного более чем на 10%.</div></div>';
+    + '<br>⚠ — давление по факту отличается от проектного более чем на 10%.<br>✎ Заполняют: владелец команды' + (eds.length ? ', ' + eds.map(esc).join(', ') : '') + '.</div></div>';
   return h;
 }
 function mdlWellCard(q, n){
-  const isOwner = !!(team && team.is_owner);
+  const canEdit = mdlCanEditWells();
   const w = mdlTrubaWells().find(x => x.q === q && x.n === n); if(!w) return;
   const qq = MDL_T_Q[q], r = mdlWellRec(q, n) || {};
   const st = mdlWellStatus(mdlWellRec(q, n));
   const m2s = v => String(v).replace('.', ',');
   const f = (id, label, type, val) => '<label style="display:block;font-size:11.5px;color:var(--mut);margin:8px 0 2px">' + label + '</label>'
-    + '<input id="' + id + '" type="' + (type === 'number' ? 'text' : (type || 'text')) + '" value="' + esc(val == null ? '' : String(val)) + '"' + (type === 'number' ? ' inputmode="decimal"' : '') + (isOwner ? '' : ' disabled') + '>';
+    + '<input id="' + id + '" type="' + (type === 'number' ? 'text' : (type || 'text')) + '" value="' + esc(val == null ? '' : String(val)) + '"' + (type === 'number' ? ' inputmode="decimal"' : '') + (canEdit ? '' : ' disabled') + '>';
   const pp = parseFloat(r.pp), pa = parseFloat(r.pa);
   const dp = (!isNaN(pp) && !isNaN(pa) && pp > 0) ? Math.round((pa - pp) / pp * 1000) / 10 : null;
   $('#sheet').innerHTML = '<h2>⛏ Скважина № ' + n + ' <span class="mut" style="font-size:13px">· ' + qq.label.toLowerCase() + '</span></h2>'
@@ -5891,14 +5898,15 @@ function mdlWellCard(q, n){
     + (dp !== null ? '<div style="font-size:12px;margin-top:7px;color:' + (Math.abs(dp) > 10 ? '#b3432b' : 'var(--mut)') + '">Отклонение факта от проекта: <b>' + (dp > 0 ? '+' : '') + m2s(dp) + '%</b>' + (Math.abs(dp) > 10 ? ' — более 10%, требует внимания' : '') + '</div>' : '')
     + (r.by ? '<div style="font-size:10.5px;color:var(--mut);margin-top:7px">Заполнил: ' + esc(r.by) + (r.at ? ', ' + mdlFmtDate(r.at) : '') + '</div>' : '')
     + '</div><div style="height:10px"></div>'
-    + (isOwner
+    + (canEdit
       ? '<button class="pri" style="width:100%" onclick="mdlWellSave(' + q + ',' + n + ')">💾 Сохранить</button><div style="height:8px"></div>'
         + '<button class="dng" style="width:100%" onclick="mdlWellClear(' + q + ',' + n + ')">🗑 Очистить карточку</button><div style="height:8px"></div>'
-      : '')
+      : '<p class="mut" style="font-size:11.5px;margin:0 0 8px">Только просмотр: заполняют владелец и допущенные участники (список «👥 Допуск» ведёт владелец).</p>')
     + '<button class="sec" style="width:100%" onclick="document.getElementById(\'overlay\').style.display=\'none\'">Закрыть</button>';
   $('#overlay').style.display = 'flex';
 }
 async function mdlWellWrite(q, n, rec, del){
+  if(!mdlCanEditWells()) return alert('Нет допуска: карточки заполняют владелец и допущенные участники.');
   const pt = TABS.find(x => x.kind === 'plan'); if(!pt) return alert('Вкладка «Технический план реализации» не найдена.');
   const c = mdlCfg(); if(!c) return alert('Модель ещё не создана.');
   let baseCfg = pt.config;
@@ -5936,6 +5944,7 @@ async function mdlWellClear(q, n){
   await mdlWellWrite(q, n, null, true);
 }
 async function mdlWellProjFill(q){
+  if(!mdlCanEditWells()) return alert('Нет допуска: карточки заполняют владелец и допущенные участники.');
   const qq = MDL_T_Q[q]; if(!qq) return;
   let cur = '';
   mdlTrubaWells().forEach(w => { if(w.q === q && !cur){ const r = mdlWellRec(q, w.n); if(r && r.pp) cur = r.pp; } });
@@ -5957,6 +5966,53 @@ async function mdlWellProjFill(q){
   pt.config = {...baseCfg, model: {...m0, wells}};
   try{ await updTabCfg(pt.id, pt.config); }
   catch(e){ return alert('Не удалось сохранить: ' + (e && e.message || e)); }
+  if(view === 'model') render();
+}
+/* ===== Допуск к заполнению карточек скважин (v171): список ведёт владелец ===== */
+function mdlEditorsCard(){
+  if(!(team && team.is_owner)) return;
+  const eds = mdlEditors();
+  const cand = TEAM_MEMBERS.map(m => m.member).filter(n => n && n !== me.name && eds.indexOf(n) === -1);
+  $('#sheet').innerHTML = '<h2>👥 Допуск к карточкам скважин</h2>'
+    + '<div class="card" style="padding:10px 12px">'
+    + '<p class="mut" style="font-size:12px;margin:0 0 6px">Кто вправе заполнять карточки контроля скважин: даты бурения и инъекции, давление. Владелец команды — всегда; остальные — по этому списку (исполнитель, подрядная организация).</p>'
+    + (eds.length
+        ? eds.map((n, i) => '<div style="display:flex;align-items:center;gap:8px;padding:7px 0' + (i ? ';border-top:1px solid var(--brd)' : '') + '"><b style="flex:1;font-size:13px">' + esc(n) + '</b><button class="dng" style="font-size:11px;padding:4px 10px" onclick="mdlEditorDel(' + i + ')">Убрать</button></div>').join('')
+        : '<p class="mut" style="font-size:12.5px;margin:4px 0 0">Список пуст — карточки заполняете только вы.</p>')
+    + '</div><div style="height:10px"></div>'
+    + (cand.length
+        ? '<select id="mdlEdSel" style="width:100%;margin-bottom:8px">' + cand.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('') + '</select>'
+          + '<button class="pri" style="width:100%" onclick="mdlEditorAdd()">➕ Допустить выбранного</button><div style="height:8px"></div>'
+        : '')
+    + '<button class="sec" style="width:100%" onclick="document.getElementById(\'overlay\').style.display=\'none\'">Закрыть</button>';
+  $('#overlay').style.display = 'flex';
+}
+async function mdlEditorsWrite(eds){
+  const pt = TABS.find(x => x.kind === 'plan'); if(!pt) return alert('Вкладка «Технический план реализации» не найдена.');
+  let baseCfg = pt.config || {};
+  try{ const fr = await sb.from('tabs').select('config').eq('id', pt.id).single(); if(fr.data && fr.data.config) baseCfg = fr.data.config; }catch(e){}
+  const m0 = baseCfg.model || {};
+  pt.config = {...baseCfg, model: {...m0, editors: eds}};
+  try{ await updTabCfg(pt.id, pt.config); }
+  catch(e){ return alert('Не удалось сохранить: ' + (e && e.message || e)); }
+}
+async function mdlEditorAdd(){
+  const s = document.getElementById('mdlEdSel'), n = s && s.value;
+  if(!n) return;
+  const eds = mdlEditors().slice();
+  if(eds.indexOf(n) === -1) eds.push(n);
+  await mdlEditorsWrite(eds);
+  mdlEditorsCard();
+  if(view === 'model') render();
+}
+async function mdlEditorDel(i){
+  const eds = mdlEditors().slice();
+  const nm = eds[i];
+  if(nm == null) return;
+  if(!confirm('Убрать допуск: ' + nm + '?')) return;
+  eds.splice(i, 1);
+  await mdlEditorsWrite(eds);
+  mdlEditorsCard();
   if(view === 'model') render();
 }
 function mdlCanvasTap(ev){
@@ -7849,7 +7905,7 @@ if(isIOS && !isInStandalone && me){
    скачивается, активируется (SKIP_WAITING) и приложение перезагружается само.
    Дополнительно: рукопожатие версий — сверка APP_BUILD с версией sw.js на сервере
    (ловит случай, когда update() отдаёт закешированный воркер). */
-const APP_BUILD = 170; /* версия сборки — менять вместе с CACHE в sw.js */
+const APP_BUILD = 171; /* версия сборки — менять вместе с CACHE в sw.js */
 if('serviceWorker' in navigator){
   const _hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(reg => {
